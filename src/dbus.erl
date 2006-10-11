@@ -29,6 +29,9 @@
 	 }).
 
 -define(SERVER, ?MODULE).
+-define(USER, "mikael").
+-define(PORT, 1236).
+-define(HOST, "localhost").
 
 start_link() ->
     {ok, Pid} = gen_server:start_link({local, ?SERVER}, ?MODULE, [], []),
@@ -76,14 +79,14 @@ make() ->
 	       "proxy"
 	      ],
 
-    Prefix = "/home/mikael/src/dbus/",
+    Prefix = "/home/mikael/svn/dberl/src/",
     Files = lists:map(fun(File) -> Prefix ++ File end, Modules),
 
     make:files(Files,
 	       [
 		load,
 		{i, "/usr/lib/erlang/lib/xmerl-1.0.5/include"},
-		{outdir, "/home/mikael/src/dbus"}
+		{outdir, Prefix}
 	       ]).
 
 
@@ -91,9 +94,9 @@ make() ->
 %% gen_server callbacks
 %%
 init([]) ->
-    User = "mikael",
-    DbusHost = "localhost",
-    DbusPort = 1235,
+    User = ?USER,
+    DbusHost = ?HOST,
+    DbusPort = ?PORT,
     {ok, Sock} = gen_tcp:connect(DbusHost, DbusPort, [list, {packet, 0}]),
     ok = gen_tcp:send(Sock, <<0>>),
     ok = gen_tcp:send(Sock, ["AUTH DBUS_COOKIE_SHA1 ",
