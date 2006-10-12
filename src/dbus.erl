@@ -1,5 +1,7 @@
 -module(dbus).
 
+-import(dberl.proxy).
+
 -include("dbus.hrl").
 
 %% -compile([export_all]).
@@ -77,8 +79,7 @@ make() ->
 	       "call",
 	       "dbus",
 	       "introspect",
-	       "marshaller",
-	       "proxy"
+	       "marshaller"
 	      ],
 
     Prefix = "/home/mikael/svn/dberl/src/",
@@ -87,6 +88,7 @@ make() ->
     Modules2 = [
 	       "auth",
 	       "connection",
+	       "proxy",
 	       "tcp_conn"		
 	       ],
     Prefix2 = "/home/mikael/svn/dberl/src/dberl/",
