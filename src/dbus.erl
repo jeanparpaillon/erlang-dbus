@@ -77,8 +77,7 @@ wait_ready(Bus) ->
 make() ->
     Modules = [
 	       "call",
-	       "dbus",
-	       "marshaller"
+	       "dbus"
 	      ],
 
     Prefix = "/home/mikael/svn/dberl/src/",
@@ -88,6 +87,7 @@ make() ->
 	       "auth",
 	       "connection",
 	       "introspect",
+	       "marshaller",
 	       "proxy",
 	       "tcp_conn"		
 	       ],

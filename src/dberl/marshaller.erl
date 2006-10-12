@@ -1,6 +1,11 @@
--module(marshaller).
+-module(dberl.marshaller).
+
+-import(file).
+-import(io).
+-import(lists).
 
 -include("dbus.hrl").
+
 
 -compile([export_all]).
 
