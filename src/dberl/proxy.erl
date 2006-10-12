@@ -143,15 +143,13 @@ handle_info({error, Header, introspect}, State) ->
     {stop, normal, State};
 
 handle_info({reply, Header, {tag, From}}, State) ->
-    Body = Header#header.body,
     error_logger:info_msg("Reply ~p: ~p~n", [?MODULE, From]),
-    gen_server:reply(From, {ok, Header, Body}),
+    gen_server:reply(From, {ok, Header}),
     {noreply, State};
 
 handle_info({error, Header, {tag, From}}, State) ->
-    Body = Header#header.body,
     error_logger:info_msg("Error ~p: ~p~n", [?MODULE, From]),
-    gen_server:reply(From, {error, Header, Body}),
+    gen_server:reply(From, {error, Header}),
     {noreply, State};
 
 handle_info(Info, State) ->

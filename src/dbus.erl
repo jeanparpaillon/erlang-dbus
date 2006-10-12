@@ -25,8 +25,8 @@ test() ->
     io:format("Ready~n"),
     {ok, BusObj} = dbus:get_object(Bus, 'org.freedesktop.DBus', '/'),
     {ok, BusIface} = proxy:interface(BusObj, 'org.freedesktop.DBus'),
-    {ok, Header1, Reply1} = proxy:call(BusIface, 'RequestName', ["org.za.hem.DBus", 0]),
-    io:format("ListNames: ~p ~p~n", [Header1, Reply1]),
+    {ok, Header1} = proxy:call(BusIface, 'RequestName', ["org.za.hem.DBus", 0]),
+    io:format("RequestName: ~p~n", [Header1]),
 
     {ok, Remote_object} = dbus:get_object(Bus, 'org.designfu.SampleService', '/SomeObject'),
     {ok, Iface} = proxy:interface(Remote_object, 'org.designfu.SampleInterface'),
