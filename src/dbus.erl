@@ -78,7 +78,6 @@ make() ->
     Modules = [
 	       "call",
 	       "dbus",
-	       "introspect",
 	       "marshaller"
 	      ],
 
@@ -88,6 +87,7 @@ make() ->
     Modules2 = [
 	       "auth",
 	       "connection",
+	       "introspect",
 	       "proxy",
 	       "tcp_conn"		
 	       ],

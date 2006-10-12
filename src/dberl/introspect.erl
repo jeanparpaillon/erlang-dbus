@@ -1,4 +1,8 @@
--module(introspect).
+-module(dberl.introspect).
+
+-import(lists).
+-import(marshaller).
+-import(xmerl_scan).
 
 -include("xmerl.hrl").
 -include("dbus.hrl").
