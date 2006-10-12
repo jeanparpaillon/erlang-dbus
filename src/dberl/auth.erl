@@ -1,3 +1,7 @@
+%%%
+%%% D-Bus outgoing connection authenticator
+%%%
+
 -module(dberl.auth).
 
 -import(crypto).
@@ -12,7 +16,7 @@
 -behaviour(gen_server).
 
 %% api
--export([start_link/0, start_link/2, stop/0]).
+-export([start_link/2, stop/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -28,13 +32,6 @@
 	 }).
 
 -define(SERVER, ?MODULE).
--define(PORT, 1236).
--define(HOST, "localhost").
-
-start_link() ->
-    DbusHost = ?HOST,
-    DbusPort = ?PORT,
-    start_link(DbusHost, DbusPort).
 
 start_link(DbusHost, DbusPort) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [DbusHost, DbusPort, self()], []).
