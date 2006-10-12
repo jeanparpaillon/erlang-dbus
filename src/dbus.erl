@@ -56,7 +56,6 @@ wait_ready(Bus) ->
 
 make() ->
     Modules = [
-	       "call",
 	       "dbus"
 	      ],
 
@@ -66,6 +65,7 @@ make() ->
     Modules2 = [
 	       "auth",
 	       "bus",
+	       "call",
 	       "connection",
 	       "introspect",
 	       "marshaller",
