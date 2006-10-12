@@ -8,12 +8,16 @@
 
 -include("dbus.hrl").
 
--compile([export_all]).
-
 -behaviour(gen_server).
 
 %% api
--export([start_link/3, stop/1]).
+-export([
+	 start_link/3,
+	 stop/1,
+	 interface/2,
+	 call/3,
+	 cast/3
+	]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -107,7 +111,7 @@ handle_cast(Request, State) ->
     {noreply, State}.
 
 
-handle_info({reply, Header, Body, introspect}, State) ->
+handle_info({reply, _Header, Body, introspect}, State) ->
     [XmlBody] = Body,
     Node = introspect:from_xml_string(XmlBody),
 %%     error_logger:info_msg("introspect ~p: ~p~n", [?MODULE, Node]),
@@ -131,7 +135,7 @@ handle_info(Info, State) ->
     {noreply, State}.
 
 
-terminate(_Reason, State) ->
+terminate(_Reason, _State) ->
     terminated.
 
 fetch_interface(IfaceName, Node) ->
