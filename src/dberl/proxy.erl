@@ -125,9 +125,26 @@ handle_info({reply, _Header, Body, introspect}, State) ->
 
     {noreply, State#state{node=Node,waiting=undefined}};
 
+handle_info({error, Header, Body, introspect}, State) ->
+    error_logger:info_msg("Error in introspect ~p: ~n", [?MODULE]),
+
+    case State#state.waiting of
+	undefined ->
+	    ignore;
+	From ->
+	    gen_server:reply(From, {error, 'FIXME interface', 'FIXME text'})
+    end,
+
+    {stop, normal, State};
+
 handle_info({reply, Header, Body, {tag, From}}, State) ->
     error_logger:info_msg("Reply ~p: ~p~n", [?MODULE, From]),
     gen_server:reply(From, {ok, Header, Body}),
+    {noreply, State};
+
+handle_info({error, Header, Body, {tag, From}}, State) ->
+    error_logger:info_msg("Error ~p: ~p~n", [?MODULE, From]),
+    gen_server:reply(From, {error, Header, Body}),
     {noreply, State};
 
 handle_info(Info, State) ->

@@ -5,8 +5,6 @@
 
 -include("dbus.hrl").
 
-%% -compile([export_all]).
-
 -behaviour(gen_server).
 
 %% api
@@ -217,7 +215,7 @@ send_introspect(State) ->
 handle_data(Data, State) ->
     {ok, Messages, Data1} = marshaller:unmarshal_data(Data),
 
-    io:format("handle_data ~p ~p~n", [Messages, size(Data1)]),
+%%     io:format("handle_data ~p ~p~n", [Messages, size(Data1)]),
 
     {ok, State1} = handle_messages(Messages, State#state{buf=Data1}),
 
@@ -233,15 +231,32 @@ handle_messages([Message|R], State) ->
 %% FIXME handle illegal messages
 handle_message(?TYPE_METHOD_RETURN, Header, Body, State) ->
     [_, SerialHdr] = header_fetch(?HEADER_REPLY_SERIAL, Header),
+    Pending = State#state.pending,
     Serial = SerialHdr#variant.value,
-    case lists:keysearch(Serial, 1, State#state.pending) of
-	{value, {Serial, Pid}} ->
-	    ok = call:reply(Pid, Header, Body);
-	_ ->
-	    io:format("Ignore reply ~p~n", [Serial]),
-	    ignore
-    end,
-    {ok, State};
+    State1 =
+	case lists:keysearch(Serial, 1, Pending) of
+	    {value, {Serial, Pid}} ->
+		ok = call:reply(Pid, Header, Body),
+		State#state{pending=lists:keydelete(Serial, 1, Pending)};
+	    _ ->
+		io:format("Ignore reply ~p~n", [Serial]),
+		State
+	end,
+    {ok, State1};
+handle_message(?TYPE_ERROR, Header, Body, State) ->
+    [_, SerialHdr] = header_fetch(?HEADER_REPLY_SERIAL, Header),
+    Pending = State#state.pending,
+    Serial = SerialHdr#variant.value,
+    State1 =
+	case lists:keysearch(Serial, 1, Pending) of
+	    {value, {Serial, Pid}} ->
+		ok = call:error(Pid, Header, Body),
+		State#state{pending=lists:keydelete(Serial, 1, Pending)};
+	    _ ->
+		io:format("Ignore error ~p~n", [Serial]),
+		State
+	end,
+    {ok, State1};
 handle_message(?TYPE_METHOD_CALL, Header, Body, State) ->
     io:format("Handle call ~p ~p~n", [Header, Body]),
 

@@ -2,12 +2,10 @@
 
 -include("dbus.hrl").
 
--compile([export_all]).
-
 -behaviour(gen_server).
 
 %% api
--export([start_link/3, stop/1]).
+-export([start_link/3, stop/1, reply/3, error/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -33,6 +31,9 @@ stop(Call) ->
 reply(Call, Header, Body) ->
     gen_server:cast(Call, {reply, Header, Body}).
 
+error(Call, Header, Body) ->
+    gen_server:cast(Call, {error, Header, Body}).
+
 %%
 %% gen_server callbacks
 %%
@@ -53,6 +54,11 @@ handle_cast({reply, Header, Body}, State) ->
     Pid = State#state.pid,
     From = State#state.from,
     Pid ! {reply, Header, Body, From},
+    {stop, normal, State};
+handle_cast({error, Header, Body}, State) ->
+    Pid = State#state.pid,
+    From = State#state.from,
+    Pid ! {error, Header, Body, From},
     {stop, normal, State};
 handle_cast(stop, State) ->
     {stop, normal, State};
