@@ -1,15 +1,18 @@
--module(connection).
+-module(dberl.auth).
 
--include("dbus.hrl").
-
-%% -compile([export_all]).
+-import(crypto).
+-import(error_logger).
+-import(file).
+-import(gen_server).
+-import(hex).
+-import(io).
+-import(lists).
+-import(os).
 
 -behaviour(gen_server).
 
 %% api
--export([start_link/0, stop/0]).
-
--export([hex_to_list/1, calc_response/3, list_to_hexlist/1]).
+-export([start_link/0, start_link/2, stop/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -21,21 +24,20 @@
 
 -record(state, {
 	  owner,
-	  serial=0,
-	  sock,
-	  state,
-	  buf= <<>>,
-	  pending=[]
+	  sock
 	 }).
 
 -define(SERVER, ?MODULE).
--define(USER, "mikael").
 -define(PORT, 1236).
 -define(HOST, "localhost").
 
 start_link() ->
-    {ok, Pid} = gen_server:start_link({local, ?SERVER}, ?MODULE, [], []),
-    {ok, Pid}.
+    DbusHost = ?HOST,
+    DbusPort = ?PORT,
+    start_link(DbusHost, DbusPort).
+
+start_link(DbusHost, DbusPort) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [DbusHost, DbusPort, self()], []).
 
 stop() ->
     gen_server:cast(?SERVER, stop).
@@ -44,16 +46,15 @@ stop() ->
 %%
 %% gen_server callbacks
 %%
-init([]) ->
-    User = ?USER,
-    DbusHost = ?HOST,
-    DbusPort = ?PORT,
-    {ok, Sock} = gen_tcp:connect(DbusHost, DbusPort, [list, {packet, 0}]),
-    ok = gen_tcp:send(Sock, <<0>>),
-    ok = gen_tcp:send(Sock, ["AUTH DBUS_COOKIE_SHA1 ",
+init([DbusHost, DbusPort, Owner]) ->
+    User = os:getenv("USER"),
+    {ok, Sock} = tcp_conn:connect(DbusHost, DbusPort, [list, {packet, 0}]),
+    ok = connection:send(Sock, <<0>>),
+    ok = connection:send(Sock, ["AUTH DBUS_COOKIE_SHA1 ",
 			     list_to_hexlist(User),
 			     "\r\n"]),
-    {ok, #state{sock=Sock}}.
+    {ok, #state{sock=Sock,
+		owner=Owner}}.
 
 
 code_change(_OldVsn, State, _Extra) ->
@@ -72,12 +73,7 @@ handle_cast(Request, State) ->
     {noreply, State}.
 
 
-handle_info({tcp, Sock, Data}, #state{sock=Sock,state=up}=State) ->
-    Buf = State#state.buf,
-    {ok, State1} = handle_data(<<Buf/binary, Data/binary>>, State),
-    {noreply, State1};
-
-handle_info({tcp, Sock, "DATA " ++ Line}, #state{sock=Sock}=State) ->
+handle_info({received, Sock, "DATA " ++ Line}, #state{sock=Sock}=State) ->
     Data = hex_to_list(strip_eol(Line, [])),
     [Context, CookieId, ServerChallenge] = split(Data, $\ ),
     io:format("Data: ~p,~p,~p ~n", [Context, CookieId, ServerChallenge]),
@@ -88,55 +84,29 @@ handle_info({tcp, Sock, "DATA " ++ Line}, #state{sock=Sock}=State) ->
 	{ok, Cookie} ->
 	    Challenge = calc_challenge(),
 	    Response = calc_response(ServerChallenge, Challenge, Cookie),
-	    ok = gen_tcp:send(Sock, ["DATA " ++ Response ++ "\r\n"]),
+	    ok = connection:send(Sock, ["DATA " ++ Response ++ "\r\n"]),
 
 	    {noreply, State}
     end;
 
-handle_info({tcp, Sock, "OK " ++ Line}, #state{sock=Sock}=State) ->
+handle_info({received, Sock, "OK " ++ Line}, #state{sock=Sock}=State) ->
     Guid = strip_eol(Line, []),
     error_logger:info_msg("GUID ~p~n", [Guid]),
-    ok = inet:setopts(Sock, [binary, {packet, raw}]),%, {recbuf, 8196}]),
-    ok = gen_tcp:send(Sock, ["BEGIN\r\n"]),
+    ok = connection:setopts(Sock, [binary, {packet, raw}]),%, {recbuf, 8196}]),
+    ok = connection:send(Sock, ["BEGIN\r\n"]),
 
     Owner = State#state.owner,
-    Owner ! {ready, self()},
-
-    {noreply, State#state{state=up}};
+    Owner ! {auth_ok, self(), Sock},
+    {stop, normal, State};
 
 handle_info(Info, State) ->
     error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
 
-terminate(_Reason, State) ->
-    Sock = State#state.sock,
-    gen_tcp:close(Sock),
+terminate(_Reason, _State) ->
     terminated.
 
-
-handle_call(Header, Body, Tag, Pid, State) ->
-%%     io:format("handle call ~p ~p~n", [Header, Body]),
-    Sock = State#state.sock,
-    Serial = State#state.serial + 1,
-
-    {ok, Call} = call:start_link(self(), Tag, Pid),
-    Pending = [{Serial, Call} | State#state.pending],
-
-    {ok, Data} = marshaller:marshal_message(Header#header{serial=Serial}, Body),
-    ok = gen_tcp:send(Sock, Data),
-    
-    {noreply, State#state{pending=Pending, serial=Serial}}.
-
-handle_data(Data, State) ->
-    {ok, Messages, Data1} = marshaller:unmarshal_data(Data),
-
-    io:format("handle_data ~p ~p~n", [Messages, size(Data1)]),
-
-%%     {ok, State1} = handle_messages(Messages, State#state{buf=Data1}),
-    State1 = State,
-
-    {ok, State1}.
 
 calc_challenge() ->
     {MegaSecs, Secs, _MicroSecs} = now(),
@@ -152,12 +122,6 @@ calc_response(ServerChallenge, Challenge, Cookie) ->
     Response = list_to_hexlist(Challenge ++ " " ++ DigestHex),
     Response.
 
-%% sha1_hash(Data) ->
-%%     Context = crypto:sha_init(),
-%%     Context1 = crypto:sha_update(Context, Data),
-%%     Digest = crypto:sha_final(Context1),
-%%     binary_Digest.
-    
 
 strip_eol([], Res) ->
     Res;
@@ -198,7 +162,9 @@ hex_to_list([H1, H2|R], List) ->
     hex_to_list(R, List1).
 
 read_cookie(CookieId) ->
-    {ok, File} = file:open("/home/mikael/.dbus-keyrings/org_freedesktop_general", [read]),
+    Home = os:getenv("HOME"),
+    Name = Home ++ "/.dbus-keyrings/org_freedesktop_general",
+    {ok, File} = file:open(Name, [read]),
     Result = read_cookie(File, CookieId),
     ok = file:close(File),
     Result.

@@ -2,14 +2,14 @@
 
 -include("dbus.hrl").
 
--compile([export_all]).
+%% -compile([export_all]).
 
 -behaviour(gen_server).
 
 %% api
 -export([start_link/0, stop/0]).
 
--export([make/0, hex_to_list/1, calc_response/3, list_to_hexlist/1]).
+-export([make/0, test/0, get_object/3, call/3, call/4, wait_ready/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -21,6 +21,7 @@
 
 -record(state, {
 	  serial=0,
+	  auth,
 	  sock,
 	  state,
 	  buf= <<>>,
@@ -29,13 +30,11 @@
 	 }).
 
 -define(SERVER, ?MODULE).
--define(USER, "mikael").
 -define(PORT, 1236).
 -define(HOST, "localhost").
 
 start_link() ->
-    {ok, Pid} = gen_server:start_link({local, ?SERVER}, ?MODULE, [], []),
-    {ok, Pid}.
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 stop() ->
     gen_server:cast(?SERVER, stop).
@@ -68,7 +67,10 @@ call(Bus, Header, Body, From) ->
     gen_server:cast(Bus, {call, Header, Body, From, self()}).
 
 wait_ready(Bus) ->
-    gen_server:call(Bus, wait_ready).
+    io:format("wait_ready enter ~p~n", [Bus]),
+    ok = gen_server:call(Bus, wait_ready),
+    io:format("wait_ready exit ~p~n", [Bus]),
+    ok.
 
 make() ->
     Modules = [
@@ -80,6 +82,18 @@ make() ->
 	      ],
 
     Prefix = "/home/mikael/svn/dberl/src/",
+    make_modules(Prefix, Modules),
+
+    Modules2 = [
+	       "auth",
+	       "connection",
+	       "tcp_conn"		
+	       ],
+    Prefix2 = "/home/mikael/svn/dberl/src/dberl/",
+    make_modules(Prefix2, Modules2).
+
+
+make_modules(Prefix, Modules) ->
     Files = lists:map(fun(File) -> Prefix ++ File end, Modules),
 
     make:files(Files,
@@ -88,21 +102,17 @@ make() ->
 		{i, "/usr/lib/erlang/lib/xmerl-1.0.5/include"},
 		{outdir, Prefix}
 	       ]).
+    
 
 
 %%
 %% gen_server callbacks
 %%
 init([]) ->
-    User = ?USER,
     DbusHost = ?HOST,
     DbusPort = ?PORT,
-    {ok, Sock} = gen_tcp:connect(DbusHost, DbusPort, [list, {packet, 0}]),
-    ok = gen_tcp:send(Sock, <<0>>),
-    ok = gen_tcp:send(Sock, ["AUTH DBUS_COOKIE_SHA1 ",
-			     list_to_hexlist(User),
-			     "\r\n"]),
-    {ok, #state{sock=Sock}}.
+    {ok, Auth} = dberl.auth:start_link(DbusHost, DbusPort),
+    {ok, #state{auth=Auth}}.
 
 
 code_change(_OldVsn, State, _Extra) ->
@@ -114,6 +124,7 @@ handle_call(wait_ready, _From, #state{state=up}=State) ->
 
 handle_call(wait_ready, From, State) ->
     Waiting = [ From | State#state.waiting ],
+    io:format("wait_ready received ~p~n", [Waiting]),
     {noreply, State#state{waiting=Waiting}};
 
 handle_call(Request, _From, State) ->
@@ -134,39 +145,26 @@ handle_cast(Request, State) ->
     {noreply, State}.
 
 
-handle_info({tcp, Sock, Data}, #state{sock=Sock,state=up}=State) ->
+handle_info({received, Sock, Data}, #state{sock=Sock}=State) ->
     Buf = State#state.buf,
     {ok, State1} = handle_data(<<Buf/binary, Data/binary>>, State),
     {noreply, State1};
 
-handle_info({tcp, Sock, "DATA " ++ Line}, #state{sock=Sock}=State) ->
-    Data = hex_to_list(strip_eol(Line, [])),
-    [Context, CookieId, ServerChallenge] = split(Data, $\ ),
-    io:format("Data: ~p,~p,~p ~n", [Context, CookieId, ServerChallenge]),
+handle_info({auth_ok, Auth, Sock}, #state{auth=Auth}=State) ->
+    ok = dberl.connection:change_owner(Sock, Auth, self()),
 
-    case read_cookie(CookieId) of
-	error ->
-	    {stop, {no_cookie, CookieId}, State};
-	{ok, Cookie} ->
-	    Challenge = calc_challenge(),
-	    Response = calc_response(ServerChallenge, Challenge, Cookie),
-	    ok = gen_tcp:send(Sock, ["DATA " ++ Response ++ "\r\n"]),
-
-	    {noreply, State}
-    end;
-
-handle_info({tcp, Sock, "OK " ++ Line}, #state{sock=Sock}=State) ->
-    Guid = strip_eol(Line, []),
-    error_logger:info_msg("GUID ~p~n", [Guid]),
-    ok = inet:setopts(Sock, [binary, {packet, raw}]),%, {recbuf, 8196}]),
-    ok = gen_tcp:send(Sock, ["BEGIN\r\n"]),
-
-    {ok, State1} = send_hello(State),
+    {ok, State1} = send_hello(State#state{sock=Sock}),
 %%     {ok, State2} = send_introspect(State1),
 
-    ok = reply_waiting(State#state.waiting),
+    Reply = fun(From) ->
+		    io:format("reply_waiting ~p~n", [From]),
+		    gen_server:reply(From, ok)
+	    end,
 
-    {noreply, State1#state{state=up, waiting=[]}};
+
+    lists:map(Reply, State1#state.waiting),
+
+    {noreply, State1#state{state=up, waiting=[], auth=terminated}};
 %%     {stop, normal, State};
 
 handle_info(Info, State) ->
@@ -175,8 +173,6 @@ handle_info(Info, State) ->
 
 
 terminate(_Reason, State) ->
-    Sock = State#state.sock,
-    gen_tcp:close(Sock),
     terminated.
 
 
@@ -189,35 +185,30 @@ handle_call(Header, Body, Tag, Pid, State) ->
     Pending = [{Serial, Call} | State#state.pending],
 
     {ok, Data} = marshaller:marshal_message(Header#header{serial=Serial}, Body),
-    ok = gen_tcp:send(Sock, Data),
+    ok = dberl.connection:send(Sock, Data),
     
     {noreply, State#state{pending=Pending, serial=Serial}}.
-
-reply_waiting([]) ->
-    ok;
-reply_waiting([From | R]) ->
-    gen_server:reply(From, ok),
-    reply_waiting(R).
 
 send_hello(State) ->
     Serial = State#state.serial + 1,
     Hello = build_hello(Serial),
     {ok, Data} = marshaller:marshal_message(Hello),
-    ok = gen_tcp:send(State#state.sock, Data),
+%%     io:format("send_hello ~p~n", [Hello]),
+    ok = dberl.connection:send(State#state.sock, Data),
     {ok, State#state{serial=Serial}}.
 
 send_list_names(State) ->
     Serial = State#state.serial + 1,
     Msg = build_list_names(Serial),
     {ok, Data} = marshaller:marshal_message(Msg),
-    ok = gen_tcp:send(State#state.sock, Data),
+    ok = dberl.connection:send(State#state.sock, Data),
     {ok, State#state{serial=Serial}}.
 
 send_introspect(State) ->
     Serial = State#state.serial + 1,
     Msg = introspect:build_introspect("org.freedesktop.DBus", "/"),
     {ok, Data} = marshaller:marshal_message(Msg#header{serial=Serial}),
-    ok = gen_tcp:send(State#state.sock, Data),
+    ok = dberl.connection:send(State#state.sock, Data),
     {ok, State#state{serial=Serial}}.
 
 handle_data(Data, State) ->
@@ -275,7 +266,7 @@ handle_message(?TYPE_METHOD_CALL, Header, Body, State) ->
     io:format("Reply ~p ~p~n", [ReplyHeader, ReplyBody]),
 
     {ok, Data} = marshaller:marshal_message(ReplyHeader, ReplyBody),
-    ok = gen_tcp:send(State#state.sock, Data),
+    ok = dberl.connection:send(State#state.sock, Data),
 
     {ok, State#state{serial=Serial}};
     
@@ -324,93 +315,3 @@ build_list_names(Serial) ->
     #header{type=?TYPE_METHOD_CALL,
 	    serial=Serial,
 	    headers=Headers}.
-
-calc_challenge() ->
-    {MegaSecs, Secs, _MicroSecs} = now(),
-    UnixTime = MegaSecs * 1000000 + Secs,
-    Challenge = list_to_hexlist("Hello " ++ integer_to_list(UnixTime)),
-    Challenge.
-
-calc_response(ServerChallenge, Challenge, Cookie) ->
-    A1 = ServerChallenge ++ ":" ++ Challenge ++ ":" ++ Cookie,
-    io:format("A1: ~p~n", [A1]),
-    Digest = crypto:sha(A1),
-    DigestHex = list_to_hexlist(binary_to_list(Digest)),
-    Response = list_to_hexlist(Challenge ++ " " ++ DigestHex),
-    Response.
-
-%% sha1_hash(Data) ->
-%%     Context = crypto:sha_init(),
-%%     Context1 = crypto:sha_update(Context, Data),
-%%     Digest = crypto:sha_final(Context1),
-%%     binary_Digest.
-    
-
-strip_eol([], Res) ->
-    Res;
-strip_eol([$\r|R], Res) ->
-    strip_eol(R, Res);
-strip_eol([$\n|R], Res) ->
-    strip_eol(R, Res);
-strip_eol([E|R], Res) ->
-    strip_eol(R, Res ++ [E]).
-
-
-list_to_hexlist(List) ->
-    Fun = fun(E) ->
-		  byte_to_hex(E)
-	  end,
-    
-    lists:flatten(lists:map(Fun, List)).
-
-byte_to_hex(E) ->
-    High = E div 16,
-    Low = E - High * 16,
-
-    [nibble_to_hex(High), nibble_to_hex(Low)].
-
-nibble_to_hex(Nibble) when Nibble >= 0, Nibble =< 9 ->
-    Nibble + $0;
-nibble_to_hex(Nibble) when Nibble >= 10, Nibble =< 15  ->
-    Nibble - 10 + $a.
-   
-
-hex_to_list(Hex) ->
-    hex_to_list(Hex, []).
-
-hex_to_list([], List) ->
-    List;
-hex_to_list([H1, H2|R], List) ->
-    List1 = List ++ [hex:from([H1, H2])],
-    hex_to_list(R, List1).
-
-read_cookie(CookieId) ->
-    {ok, File} = file:open("/home/mikael/.dbus-keyrings/org_freedesktop_general", [read]),
-    Result = read_cookie(File, CookieId),
-    ok = file:close(File),
-    Result.
-
-read_cookie(Device, CookieId) ->
-    case io:get_line(Device, "") of
-	eof ->
-	    error;
-	Line ->
-	    [CookieId1, _Time, Cookie] = split(strip_eol(Line, []), $\ ),
-	    if
-		CookieId == CookieId1 ->
-		    {ok, Cookie};
-		true ->
-		    read_cookie(Device, CookieId)
-	    end
-    end.
-
-split(List, Char) when is_list(List),
-		       is_integer(Char) ->
-    split(List, Char, "", []).
-
-split([], _Char, Str, Res) ->
-    Res ++ [Str];
-split([Char|R], Char, Str, Res) ->
-    split(R, Char, "", Res ++ [Str]);
-split([C|R], Char, Str, Res) ->
-    split(R, Char, Str ++ [C], Res).

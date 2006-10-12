@@ -27,7 +27,7 @@
 
 start_link(Bus, Service, Path) ->
     {ok, Pid} = gen_server:start_link(?MODULE, [Bus, Service, Path], []),
-    ok = gen_server:call(Pid, wait_ready),
+    ok = gen_server:call(Pid, proxy_ready),
     {ok, Pid}.
 
 stop(Proxy) ->
@@ -82,7 +82,7 @@ handle_call({method, IfaceName, MethodName, Args}, From, State) ->
 
     {noreply, State};
 
-handle_call(wait_ready, From, State) ->
+handle_call(proxy_ready, From, State) ->
     case State#state.node of
 	undefined ->
 	    {noreply, State#state{waiting=From}};
