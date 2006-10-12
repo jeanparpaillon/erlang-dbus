@@ -1,6 +1,5 @@
 -module(dberl.bus).
 
--import(call).
 -import(error_logger).
 -import(gen_server).
 -import(io).

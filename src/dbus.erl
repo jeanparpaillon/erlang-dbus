@@ -24,6 +24,7 @@ test() ->
     ok = dbus:wait_ready(Bus),
     io:format("Ready~n"),
     {ok, BusObj} = dbus:get_object(Bus, 'org.freedesktop.DBus', '/'),
+
     {ok, BusIface} = proxy:interface(BusObj, 'org.freedesktop.DBus'),
     {ok, Header1} = proxy:call(BusIface, 'RequestName', ["org.za.hem.DBus", 0]),
     io:format("RequestName: ~p~n", [Header1]),
@@ -35,7 +36,15 @@ test() ->
 %%     Var = <<"Hello from Erlang">>,
 %%     Var = #variant{type={struct, [int16, string]}, value=[17, "Hello from Erlang!"]},
     Var = #variant{type={struct, [int16, string]}, value={17, "Hello from Erlang!"}},
-    {ok, Header} = proxy:call(Iface, 'HelloWorld', [Var]).
+    {ok, Header} = proxy:call(Iface, 'HelloWorld', [Var]),
+
+    Var1 = #variant{type={struct, [int16, string]}, value={17, "Hello from Erlang no 2!"}},
+    proxy:call(Iface, 'HelloWorld', [Var1, 5]),
+
+%%     {ok, PeerIface} = proxy:interface(BusObj, 'org.freedesktop.DBus.Peer'),
+%%     proxy:call(PeerIface, 'Ping'),
+    ok.
+
 
 get_object(Bus, Service, Path) ->
     proxy:start_link(Bus, Service, Path).
