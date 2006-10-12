@@ -7,14 +7,20 @@
 -include("dbus.hrl").
 
 
--compile([export_all]).
-
 %% api
--export([]).
+-export([
+	 marshal_message/1,
+	 marshal_message/2,
+	 marshal_list/2,
+	 unmarshal_data/1,
+	 unmarshal_signature/1
+	]).
+
+-export([test/0]).
 
 test() ->
     Data = read_test(),
-    marshaller:unmarshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], Data).
+    unmarshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], Data).
 
 read_test() ->
     {ok, File} = file:open("/tmp/bytes", [binary, read]),
@@ -83,7 +89,8 @@ unmarshal_message(Data) ->
     {ok, Header, Body, Data1}.
 
 header_fetch(Code, Header) ->
-    {ok, Field} = header_find(Code, Header).
+    {ok, Field} = header_find(Code, Header),
+    Field.
 
 header_find(Code, Header) ->
     Headers = Header#header.headers,
@@ -171,7 +178,7 @@ marshal({array, SubType}, Value, Pos) when is_list(Value) ->
     Length = Pos2 - Pos1,
     {ok, Value1, Pos1} = marshal(uint32, Length, Pos0),
     {ok, [<<0:Pad>>, Value1, Value2], Pos2};
-marshal({struct, SubTypes}=Type, Value, Pos) when is_tuple(Value) ->
+marshal({struct, _SubTypes}=Type, Value, Pos) when is_tuple(Value) ->
     marshal(Type, tuple_to_list(Value), Pos);
 marshal({struct, SubTypes}, Value, Pos) when is_list(Value) ->
     marshal_struct(SubTypes, Value, Pos);
@@ -420,7 +427,7 @@ unmarshal_array(SubType, Length, Data, Res, Pos) when is_integer(Length), Length
     unmarshal_array(SubType, Length - Size, Data1, Res ++ [Value], Pos1).
 
 unmarshal_list(Types, Data) when is_list(Types), is_binary(Data) ->
-    {ok, Data1, Res, Pos} = unmarshal_list(Types, Data, [], 0),
+    {ok, Data1, Res, Pos} = unmarshal_list(Types, Data, 0),
     {ok, Data1, Res, Pos}.
 
 unmarshal_list(Types, Data, Pos) when is_list(Types) ->
