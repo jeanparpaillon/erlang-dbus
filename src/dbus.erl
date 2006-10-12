@@ -1,6 +1,7 @@
 -module(dbus).
 
 -import(dberl.proxy).
+-import(dberl.marshaller).
 
 -include("dbus.hrl").
 

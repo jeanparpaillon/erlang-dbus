@@ -3,10 +3,8 @@
 -import(dbus).
 -import(error_logger).
 -import(gen_server).
--import(introspect).
 -import(io).
 -import(lists).
--import(marshaller).
 
 -include("dbus.hrl").
 
