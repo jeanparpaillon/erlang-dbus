@@ -10,7 +10,7 @@
 %% api
 -export([
 	 marshal_message/1,
-	 marshal_message/2,
+%% 	 marshal_message/2,
 	 marshal_list/2,
 	 unmarshal_data/1,
 	 unmarshal_signature/1
@@ -35,31 +35,36 @@ unmarshal_data(<<>>, Res) ->
     {ok, Res, <<>>};
 unmarshal_data(Data, Res) ->
     case catch unmarshal_message(Data) of
-	{ok, Header, Body, Data1} ->
-	    unmarshal_data(Data1, Res ++ [{Header, Body}]);
+	{ok, Header, Data1} ->
+	    unmarshal_data(Data1, Res ++ [Header]);
 	{'EXIT', _Reason} ->
 	    {ok, Res, Data}
     end.
 
 
-marshal_message(Header) ->
-    marshal_message(Header, <<>>).
+%% marshal_message(Header) ->
+%%     marshal_message(Header, <<>>).
 
-marshal_message(Header, Body) when is_record(Header, header),
-				   is_list(Body) ->
-    marshal_message(Header, list_to_binary(Body));
-
-marshal_message(Header, Body) when is_record(Header, header),
-				   is_binary(Body) ->
+marshal_message(Header) when is_record(Header, header) ->
+    Body = Header#header.body,
+    Body1 =
+	if
+	    is_list(Body) ->
+		list_to_binary(Body);
+	    is_binary(Body) ->
+		Body
+	end,
+	    
+%%     HeaderList = message:to_list(Header),
     HeaderList = [$l,
 		  Header#header.type,
 		  Header#header.flags,
 		  ?DBUS_VERSION_MAJOR,
-		  size(Body),
+		  size(Body1),
 		  Header#header.serial,
 		  Header#header.headers],
     {ok, HeaderData} = marshal_header(HeaderList),
-    {ok, [ HeaderData, Body ]}.
+    {ok, [ HeaderData, Body1 ]}.
 
 marshal_header(Header) when is_list(Header) ->
     {ok, Value, Pos} = marshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], Header),
@@ -86,7 +91,8 @@ unmarshal_message(Data) ->
 	end,
     Types = unmarshal_signature(Signature),
     {ok, <<>>, Body, _Pos} = unmarshal_list(Types, BinBody),
-    {ok, Header, Body, Data1}.
+    Header1 = Header#header{body=Body},
+    {ok, Header1, Data1}.
 
 header_fetch(Code, Header) ->
     {ok, Field} = header_find(Code, Header),

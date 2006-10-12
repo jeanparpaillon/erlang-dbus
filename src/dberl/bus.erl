@@ -13,7 +13,10 @@
 %% api
 -export([start_link/0, stop/0]).
 
--export([get_object/3, call/3, call/4, wait_ready/1]).
+-export([get_object/3,
+	 call/2,
+	 call/3,
+	 wait_ready/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -46,11 +49,11 @@ stop() ->
 get_object(Bus, Service, Path) ->
     proxy:start_link(Bus, Service, Path).
 
-call(Bus, Header, Body) ->
-    gen_server:cast(Bus, {call, Header, Body, self()}).
+call(Bus, Header) ->
+    gen_server:cast(Bus, {call, Header, self()}).
 
-call(Bus, Header, Body, From) ->
-    gen_server:cast(Bus, {call, Header, Body, From, self()}).
+call(Bus, Header, From) ->
+    gen_server:cast(Bus, {call, Header, From, self()}).
 
 wait_ready(Bus) ->
     io:format("wait_ready enter ~p~n", [Bus]),
@@ -85,11 +88,11 @@ handle_call(Request, _From, State) ->
     {reply, ok, State}.
 
 
-handle_cast({call, Header, Body, Pid}, State) ->
-    handle_call(Header, Body, none, Pid, State);
+handle_cast({call, Header, Pid}, State) ->
+    handle_call(Header, none, Pid, State);
 
-handle_cast({call, Header, Body, From, Pid}, State) ->
-    handle_call(Header, Body, From, Pid, State);
+handle_cast({call, Header, From, Pid}, State) ->
+    handle_call(Header, From, Pid, State);
 
 handle_cast(stop, State) ->
     {stop, normal, State};
@@ -129,7 +132,7 @@ terminate(_Reason, State) ->
     terminated.
 
 
-handle_call(Header, Body, Tag, Pid, State) ->
+handle_call(Header, Tag, Pid, State) ->
 %%     io:format("handle call ~p ~p~n", [Header, Body]),
     Sock = State#state.sock,
     Serial = State#state.serial + 1,
@@ -137,7 +140,7 @@ handle_call(Header, Body, Tag, Pid, State) ->
     {ok, Call} = call:start_link(self(), Tag, Pid),
     Pending = [{Serial, Call} | State#state.pending],
 
-    {ok, Data} = marshaller:marshal_message(Header#header{serial=Serial}, Body),
+    {ok, Data} = marshaller:marshal_message(Header#header{serial=Serial}),
     ok = connection:send(Sock, Data),
     
     {noreply, State#state{pending=Pending, serial=Serial}}.
@@ -175,42 +178,41 @@ handle_data(Data, State) ->
 
 handle_messages([], State) ->
     {ok, State};
-handle_messages([Message|R], State) ->
-    {Header, Body} = Message,
-    {ok, State1} = handle_message(Header#header.type, Header, Body, State),
+handle_messages([Header|R], State) ->
+    {ok, State1} = handle_message(Header#header.type, Header, State),
     handle_messages(R, State1).
 
 %% FIXME handle illegal messages
-handle_message(?TYPE_METHOD_RETURN, Header, Body, State) ->
+handle_message(?TYPE_METHOD_RETURN, Header, State) ->
     [_, SerialHdr] = header_fetch(?HEADER_REPLY_SERIAL, Header),
     Pending = State#state.pending,
     Serial = SerialHdr#variant.value,
     State1 =
 	case lists:keysearch(Serial, 1, Pending) of
 	    {value, {Serial, Pid}} ->
-		ok = call:reply(Pid, Header, Body),
+		ok = call:reply(Pid, Header),
 		State#state{pending=lists:keydelete(Serial, 1, Pending)};
 	    _ ->
 		io:format("Ignore reply ~p~n", [Serial]),
 		State
 	end,
     {ok, State1};
-handle_message(?TYPE_ERROR, Header, Body, State) ->
+handle_message(?TYPE_ERROR, Header, State) ->
     [_, SerialHdr] = header_fetch(?HEADER_REPLY_SERIAL, Header),
     Pending = State#state.pending,
     Serial = SerialHdr#variant.value,
     State1 =
 	case lists:keysearch(Serial, 1, Pending) of
 	    {value, {Serial, Pid}} ->
-		ok = call:error(Pid, Header, Body),
+		ok = call:error(Pid, Header),
 		State#state{pending=lists:keydelete(Serial, 1, Pending)};
 	    _ ->
 		io:format("Ignore error ~p~n", [Serial]),
 		State
 	end,
     {ok, State1};
-handle_message(?TYPE_METHOD_CALL, Header, Body, State) ->
-    io:format("Handle call ~p ~p~n", [Header, Body]),
+handle_message(?TYPE_METHOD_CALL, Header, State) ->
+    io:format("Handle call ~p~n", [Header]),
 
     Serial = State#state.serial + 1,
     Path = header_fetch(?HEADER_PATH, Header),
@@ -240,8 +242,8 @@ handle_message(?TYPE_METHOD_CALL, Header, Body, State) ->
 
     {ok, State#state{serial=Serial}};
     
-handle_message(Type, Header, Body, State) ->
-    io:format("Ignore ~p ~p ~p~n", [Type, Header, Body]),
+handle_message(Type, Header, State) ->
+    io:format("Ignore ~p ~p~n", [Type, Header]),
     {ok, State}.
 
 handle_method_call(Header, Body) ->

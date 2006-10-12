@@ -5,7 +5,7 @@
 -behaviour(gen_server).
 
 %% api
--export([start_link/3, stop/1, reply/3, error/3]).
+-export([start_link/3, stop/1, reply/2, error/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -28,11 +28,11 @@ start_link(Bus, From, Pid) ->
 stop(Call) ->
     gen_server:cast(Call, stop).
 
-reply(Call, Header, Body) ->
-    gen_server:cast(Call, {reply, Header, Body}).
+reply(Call, Header) ->
+    gen_server:cast(Call, {reply, Header}).
 
-error(Call, Header, Body) ->
-    gen_server:cast(Call, {error, Header, Body}).
+error(Call, Header) ->
+    gen_server:cast(Call, {error, Header}).
 
 %%
 %% gen_server callbacks
@@ -50,15 +50,15 @@ handle_call(Request, _From, State) ->
     {reply, ok, State}.
 
 
-handle_cast({reply, Header, Body}, State) ->
+handle_cast({reply, Header}, State) ->
     Pid = State#state.pid,
     From = State#state.from,
-    Pid ! {reply, Header, Body, From},
+    Pid ! {reply, Header, From},
     {stop, normal, State};
-handle_cast({error, Header, Body}, State) ->
+handle_cast({error, Header}, State) ->
     Pid = State#state.pid,
     From = State#state.from,
-    Pid ! {error, Header, Body, From},
+    Pid ! {error, Header, From},
     {stop, normal, State};
 handle_cast(stop, State) ->
     {stop, normal, State};

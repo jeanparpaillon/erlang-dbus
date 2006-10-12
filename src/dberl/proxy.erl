@@ -60,7 +60,7 @@ cast({interface, Proxy, IfaceName}, MethodName, Args) ->
 %%
 init([Bus, Service, Path]) ->
     Header = introspect:build_introspect(Service, Path),
-    ok = dbus:call(Bus, Header, <<>>, introspect),
+    ok = dbus:call(Bus, Header, introspect),
     {ok, #state{bus=Bus, service=Service, path=Path}}.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -76,6 +76,9 @@ handle_call({method, IfaceName, MethodName, Args}, From, State) ->
     Service = State#state.service,
     Path = State#state.path,
     Bus = State#state.bus,
+
+    {ok, Body, _Pos} = marshaller:marshal_list(Types, Args),
+
     Headers = [
 	       [?HEADER_PATH, #variant{type=object_path, value=Path}],
 	       [?HEADER_INTERFACE, #variant{type=string, value=IfaceName}],
@@ -84,11 +87,11 @@ handle_call({method, IfaceName, MethodName, Args}, From, State) ->
 	       [?HEADER_SIGNATURE, #variant{type=signature, value=Signature}]
 	      ],
     Header = #header{type=?TYPE_METHOD_CALL,
-		     headers=Headers},
+		     headers=Headers,
+		     body=Body},
 
-    {ok, Body, _Pos} = marshaller:marshal_list(Types, Args),
     io:format("before call~n"),
-    ok = dbus:call(Bus, Header, Body, {tag, From}),
+    ok = dbus:call(Bus, Header, {tag, From}),
 
     {noreply, State};
 
@@ -111,7 +114,8 @@ handle_cast(Request, State) ->
     {noreply, State}.
 
 
-handle_info({reply, _Header, Body, introspect}, State) ->
+handle_info({reply, Header, introspect}, State) ->
+    Body = Header#header.body,
     [XmlBody] = Body,
     Node = introspect:from_xml_string(XmlBody),
 %%     error_logger:info_msg("introspect ~p: ~p~n", [?MODULE, Node]),
@@ -125,7 +129,8 @@ handle_info({reply, _Header, Body, introspect}, State) ->
 
     {noreply, State#state{node=Node,waiting=undefined}};
 
-handle_info({error, Header, Body, introspect}, State) ->
+handle_info({error, Header, introspect}, State) ->
+%%     Body = Header#header.body,
     error_logger:info_msg("Error in introspect ~p: ~n", [?MODULE]),
 
     case State#state.waiting of
@@ -137,12 +142,14 @@ handle_info({error, Header, Body, introspect}, State) ->
 
     {stop, normal, State};
 
-handle_info({reply, Header, Body, {tag, From}}, State) ->
+handle_info({reply, Header, {tag, From}}, State) ->
+    Body = Header#header.body,
     error_logger:info_msg("Reply ~p: ~p~n", [?MODULE, From]),
     gen_server:reply(From, {ok, Header, Body}),
     {noreply, State};
 
-handle_info({error, Header, Body, {tag, From}}, State) ->
+handle_info({error, Header, {tag, From}}, State) ->
+    Body = Header#header.body,
     error_logger:info_msg("Error ~p: ~p~n", [?MODULE, From]),
     gen_server:reply(From, {error, Header, Body}),
     {noreply, State};

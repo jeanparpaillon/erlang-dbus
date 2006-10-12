@@ -9,7 +9,7 @@
 %% api
 -export([start_link/0, stop/0]).
 
--export([make/0, test/0, get_object/3, call/3, call/4, wait_ready/1]).
+-export([make/0, test/0, get_object/3, call/2, call/3, wait_ready/1]).
 
 -define(SERVER, ?MODULE).
 -define(PORT, 1236).
@@ -42,11 +42,11 @@ test() ->
 get_object(Bus, Service, Path) ->
     proxy:start_link(Bus, Service, Path).
 
-call(Bus, Header, Body) ->
-    gen_server:cast(Bus, {call, Header, Body, self()}).
+call(Bus, Header) ->
+    gen_server:cast(Bus, {call, Header, self()}).
 
-call(Bus, Header, Body, From) ->
-    gen_server:cast(Bus, {call, Header, Body, From, self()}).
+call(Bus, Header, From) ->
+    gen_server:cast(Bus, {call, Header, From, self()}).
 
 wait_ready(Bus) ->
     io:format("wait_ready enter ~p~n", [Bus]),
@@ -69,6 +69,7 @@ make() ->
 	       "connection",
 	       "introspect",
 	       "marshaller",
+	       "message",
 	       "proxy",
 	       "tcp_conn"		
 	       ],

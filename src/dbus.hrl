@@ -38,7 +38,8 @@
 	  type,
 	  flags=0,
 	  serial,
-	  headers
+	  headers,
+	  body= <<>>
 	 }).
 
 -record(variant, {
