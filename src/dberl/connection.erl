@@ -1,3 +1,7 @@
+%%%
+%%% Glue module to tcp_conn transport module
+%%%
+
 -module(dberl.connection).
 
 -import(gen_server).
