@@ -178,7 +178,7 @@ handle_messages([Header|R], State) ->
 
 %% FIXME handle illegal messages
 handle_message(?TYPE_METHOD_RETURN, Header, State) ->
-    [_, SerialHdr] = header_fetch(?HEADER_REPLY_SERIAL, Header),
+    [_, SerialHdr] = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
     Pending = State#state.pending,
     Serial = SerialHdr#variant.value,
     State1 =
@@ -192,7 +192,7 @@ handle_message(?TYPE_METHOD_RETURN, Header, State) ->
 	end,
     {ok, State1};
 handle_message(?TYPE_ERROR, Header, State) ->
-    [_, SerialHdr] = header_fetch(?HEADER_REPLY_SERIAL, Header),
+    [_, SerialHdr] = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
     Pending = State#state.pending,
     Serial = SerialHdr#variant.value,
     State1 =
@@ -209,10 +209,10 @@ handle_message(?TYPE_METHOD_CALL, Header, State) ->
     io:format("Handle call ~p~n", [Header]),
 
     Serial = State#state.serial + 1,
-    Path = header_fetch(?HEADER_PATH, Header),
-    Iface = header_fetch(?HEADER_INTERFACE, Header),
-    [_Type1, To] = header_fetch(?HEADER_DESTINATION, Header),
-    [_Type2, From] = header_fetch(?HEADER_SENDER, Header),
+    Path = message:header_fetch(?HEADER_PATH, Header),
+    Iface = message:header_fetch(?HEADER_INTERFACE, Header),
+    [_Type1, To] = message:header_fetch(?HEADER_DESTINATION, Header),
+    [_Type2, From] = message:header_fetch(?HEADER_SENDER, Header),
     Error = #variant{type=string, value="org.freedesktop.DBus.Error.UnknownObject"},
     ReplySerial = #variant{type=uint32, value=Header#header.serial},
 
@@ -243,20 +243,6 @@ handle_message(Type, Header, State) ->
 handle_method_call(Header, Body) ->
     ok.
 
-
-header_fetch(Code, Header) ->
-    Headers = Header#header.headers,
-    Fun = fun(F) ->
-		  case F of
-		      [Code | _] ->
-			  true;
-		      _ ->
-			  false
-		  end
-	  end,
-
-    [Field] = lists:filter(Fun, Headers),
-    Field.
 
 build_hello(Serial) ->
     Headers = [

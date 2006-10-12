@@ -37,8 +37,12 @@
 
 start_link(Bus, Service, Path) ->
     {ok, Pid} = gen_server:start_link(?MODULE, [Bus, Service, Path], []),
-    ok = gen_server:call(Pid, proxy_ready),
-    {ok, Pid}.
+    case gen_server:call(Pid, proxy_ready) of
+	ok ->
+	    {ok, Pid};
+	{error, Reason} ->
+	    throw(Reason)
+    end.
 
 stop(Proxy) ->
     gen_server:cast(Proxy, stop).
@@ -50,7 +54,12 @@ interface(Proxy, IfaceName) when is_atom(IfaceName) ->
     {ok, Iface}.
 
 call({interface, Proxy, IfaceName}, MethodName, Args) ->
-    gen_server:call(Proxy, {method, IfaceName, MethodName, Args}).
+    case gen_server:call(Proxy, {method, IfaceName, MethodName, Args}) of
+	{ok, Result} ->
+	    {ok, Result};
+	{error, Reason} ->
+	    throw(Reason)
+    end.
 
 cast({interface, Proxy, IfaceName}, MethodName, Args) ->
     gen_server:cast(Proxy, {method, IfaceName, MethodName, Args}).
@@ -133,11 +142,13 @@ handle_info({error, Header, introspect}, State) ->
 %%     Body = Header#header.body,
     error_logger:info_msg("Error in introspect ~p: ~n", [?MODULE]),
 
+    [_Type1, ErrorName] = message:header_fetch(?HEADER_ERROR_NAME, Header),
+
     case State#state.waiting of
 	undefined ->
 	    ignore;
 	From ->
-	    gen_server:reply(From, {error, 'FIXME interface', 'FIXME text'})
+	    gen_server:reply(From, {error, {ErrorName#variant.value, Header#header.body}})
     end,
 
     {stop, normal, State};
@@ -149,7 +160,10 @@ handle_info({reply, Header, {tag, From}}, State) ->
 
 handle_info({error, Header, {tag, From}}, State) ->
     error_logger:info_msg("Error ~p: ~p~n", [?MODULE, From]),
-    gen_server:reply(From, {error, Header}),
+
+    [_Type1, ErrorName] = message:header_fetch(?HEADER_ERROR_NAME, Header),
+
+    gen_server:reply(From, {error, {ErrorName#variant.value, Header#header.body}}),
     {noreply, State};
 
 handle_info(Info, State) ->

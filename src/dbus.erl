@@ -35,7 +35,7 @@ test() ->
 %%     Var = <<"Hello from Erlang">>,
 %%     Var = #variant{type={struct, [int16, string]}, value=[17, "Hello from Erlang!"]},
     Var = #variant{type={struct, [int16, string]}, value={17, "Hello from Erlang!"}},
-    {ok, Header, ReplyList} = proxy:call(Iface, 'HelloWorld', [Var]).
+    {ok, Header} = proxy:call(Iface, 'HelloWorld', [Var]).
 
 get_object(Bus, Service, Path) ->
     proxy:start_link(Bus, Service, Path).
