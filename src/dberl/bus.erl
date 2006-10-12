@@ -11,7 +11,7 @@
 -behaviour(gen_server).
 
 %% api
--export([start_link/0, stop/0]).
+-export([connect/2, stop/1]).
 
 -export([get_object/3,
 	 call/2,
@@ -36,15 +36,11 @@
 	  waiting=[]
 	 }).
 
--define(SERVER, ?MODULE).
--define(PORT, 1236).
--define(HOST, "localhost").
+connect(Host, Port) ->
+    gen_server:start_link(?MODULE, [Host, Port], []).
 
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
-
-stop() ->
-    gen_server:cast(?SERVER, stop).
+stop(Bus) ->
+    gen_server:cast(Bus, stop).
 
 get_object(Bus, Service, Path) ->
     proxy:start_link(Bus, Service, Path).
@@ -64,9 +60,7 @@ wait_ready(Bus) ->
 %%
 %% gen_server callbacks
 %%
-init([]) ->
-    DbusHost = ?HOST,
-    DbusPort = ?PORT,
+init([DbusHost, DbusPort]) ->
     {ok, Auth} = auth:start_link(DbusHost, DbusPort),
     {ok, #state{auth=Auth}}.
 
