@@ -6,7 +6,11 @@
 -include("xmerl.hrl").
 -include("dbus.hrl").
 
--compile([export_all]).
+-export([
+	 build_introspect/2,
+	 from_xml/1,
+	 from_xml_string/1
+	]).
 
 %% api
 
@@ -23,9 +27,6 @@ build_introspect(Service, Path) ->
 	    headers=Headers}.
 
 
-
-from_xml() ->
-    from_xml("/home/mikael/src/dbus/introspect.xml").
 
 from_xml_string(Data) when is_list(Data) ->
     {Xml, _Misc} = xmerl_scan:string(Data),
