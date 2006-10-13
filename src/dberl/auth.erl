@@ -95,7 +95,7 @@ handle_info({received, Sock, "DATA " ++ Line}, #state{sock=Sock}=State) ->
 
     case read_cookie(CookieId) of
 	error ->
-	    {stop, {no_cookie, CookieId}, State};
+	    {stop, {error, {no_cookie, CookieId}}, State};
 	{ok, Cookie} ->
 	    Challenge = calc_challenge(),
 	    Response = calc_response(ServerChallenge, Challenge, Cookie),
@@ -116,9 +116,9 @@ handle_info({received, Sock, "OK " ++ Line}, #state{sock=Sock}=State) ->
 
 handle_info({received, Sock, "REJECTED " ++ _Line}, #state{sock=Sock}=State) ->
     ok = connection:close(Sock),
-    Owner = State#state.owner,
-    Owner ! {auth_rejected, self()},
-    {stop, normal, State};
+%%     Owner = State#state.owner,
+%%     Owner ! {auth_rejected, self()},
+    {stop, {error, auth_rejected}, State};
 
 handle_info(Info, State) ->
     error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
