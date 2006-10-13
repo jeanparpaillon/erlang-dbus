@@ -36,6 +36,7 @@ connect(Host, Port, Options) ->
 %% gen_server callbacks
 %%
 init([Host, Port, Options, Owner]) ->
+    true = link(Owner),
     {ok, Sock} = gen_tcp:connect(Host, Port, Options),
     {ok, #state{sock=Sock,
 		owner=Owner}}.
@@ -50,6 +51,8 @@ handle_call({setopts, Options}, _From, State) ->
     {reply, ok, State};
 
 handle_call({change_owner, OldPid, NewPid}, _From, #state{owner=OldPid}=State) when is_pid(NewPid) ->
+    true = link(NewPid),
+    true = unlink(OldPid),
     {reply, ok, State#state{owner=NewPid}};
 
 handle_call({change_owner, _OldPid, _NewPid}, _From, State) ->
