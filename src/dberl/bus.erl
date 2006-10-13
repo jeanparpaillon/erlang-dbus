@@ -59,7 +59,9 @@ wait_ready(Bus) ->
 %% gen_server callbacks
 %%
 init([DbusHost, DbusPort]) ->
-    {ok, Auth} = auth:start_link(DbusHost, DbusPort),
+    {ok, Sock} = tcp_conn:connect(DbusHost, DbusPort, [list, {packet, 0}]),
+%%     {ok, Auth} = auth:start_link(DbusHost, DbusPort),
+    {ok, Auth} = auth:start_link(Sock),
     {ok, #state{auth=Auth}}.
 
 

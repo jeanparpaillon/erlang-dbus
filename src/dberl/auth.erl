@@ -20,7 +20,11 @@
 -behaviour(gen_server).
 
 %% api
--export([start_link/2, stop/0]).
+-export([
+	 start_link/1,
+	 start_link/2,
+	 stop/0
+	]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -40,6 +44,9 @@
 start_link(DbusHost, DbusPort) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [DbusHost, DbusPort, self()], []).
 
+start_link(Sock) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [Sock, self()], []).
+
 stop() ->
     gen_server:cast(?SERVER, stop).
 
@@ -48,8 +55,15 @@ stop() ->
 %% gen_server callbacks
 %%
 init([DbusHost, DbusPort, Owner]) ->
-    User = os:getenv("USER"),
     {ok, Sock} = tcp_conn:connect(DbusHost, DbusPort, [list, {packet, 0}]),
+    init_common(Sock, Owner);
+init([Sock, Owner]) ->
+    connection:change_owner(Sock, Owner, self()),
+    init_common(Sock, Owner).
+
+
+init_common(Sock, Owner) ->
+    User = os:getenv("USER"),
     ok = connection:send(Sock, <<0>>),
     ok = connection:send(Sock, ["AUTH DBUS_COOKIE_SHA1 ",
 			     list_to_hexlist(User),
