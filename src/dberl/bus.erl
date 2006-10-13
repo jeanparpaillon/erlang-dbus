@@ -34,7 +34,8 @@
 	  pending=[],
 	  waiting=[],
 	  hello_ref,
-	  id
+	  id,
+	  dbus_object
 	 }).
 
 connect(Host, Port) ->
@@ -105,14 +106,11 @@ handle_info({received, Sock, Data}, #state{sock=Sock}=State) ->
 handle_info({auth_ok, Auth, Sock}, #state{auth=Auth}=State) ->
     ok = connection:change_owner(Sock, Auth, self()),
 
-    HelloMethod = #method{name='Hello', args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
-    DBusIface = #interface{name='org.freedesktop.DBus', methods=[HelloMethod]},
-    DBusRootNode = #node{elements=[], interfaces=[DBusIface]},
+    DBusRootNode = default_dbus_node(),
     {ok, DBusObj} =
 	proxy:start_link(self(), 'org.freedesktop.DBus', '/', DBusRootNode),
     {ok, DBusIfaceObj} = proxy:interface(DBusObj, 'org.freedesktop.DBus'),
-    HelloRef = make_ref(),
-    ok = proxy:call(DBusIfaceObj, 'Hello', [], [{reply, self(), HelloRef}]),
+    ok = proxy:call(DBusIfaceObj, 'Hello', [], [{reply, self(), hello}]),
     io:format("Call returned~n"),
 
 %%     {ok, State2} = send_introspect(State1),
@@ -120,18 +118,29 @@ handle_info({auth_ok, Auth, Sock}, #state{auth=Auth}=State) ->
     {noreply, State#state{sock=Sock,
 			  state=up,
 			  auth=terminated,
-			  hello_ref=HelloRef}};
+			  dbus_object=DBusObj
+			 }};
 %%     {stop, normal, State};
 
 handle_info({auth_rejected, Auth}, #state{auth=Auth}=State) ->
     reply_waiting({error, auth_error}, State),
     {stop, normal, State};
 
-handle_info({reply, Ref, {ok, Header}}, #state{hello_ref=Ref}=State) ->
+handle_info({reply, hello, {ok, Header}}, State) ->
+    DBusObj = State#state.dbus_object,
     error_logger:error_msg("Hello reply ~p~n", [Header]),
     [Id] = Header#header.body,
+
+    {ok, DBusIntrospectable} = proxy:interface(DBusObj, 'org.freedesktop.DBus.Introspectable'),
+    ok = proxy:call(DBusIntrospectable, 'Introspect', [], [{reply, self(), introspect}]),
+
     reply_waiting(ok, State),
-    {noreply, State#state{hello_ref=undefined, id=Id, waiting=[]}};
+    {noreply, State#state{id=Id}};
+
+handle_info({reply, introspect, {ok, Header}}, State) ->
+    error_logger:error_msg("Introspect reply ~p~n", [Header]),
+    reply_waiting(ok, State),
+    {noreply, State#state{waiting=[]}};
 
 handle_info({reply, Ref, {error, Reason}}, #state{hello_ref=Ref}=State) ->
     {stop, {error, Reason}, State};
@@ -215,16 +224,31 @@ handle_message(?TYPE_ERROR, Header, State) ->
 handle_message(?TYPE_METHOD_CALL, Header, State) ->
 %%     io:format("Handle call ~p~n", [Header]),
 
+    ErrorName = "org.freedesktop.DBus.Error.UnknownObject",
+    ErrorText = "Erlang: Object not found.",
+    {ok, Reply, State1} = build_error(Header, ErrorName, ErrorText, State),
+    io:format("Reply ~p~n", [Reply]),
+
+    {ok, Data} = marshaller:marshal_message(Reply),
+    ok = connection:send(State#state.sock, Data),
+
+    {ok, State1};
+    
+handle_message(Type, Header, State) ->
+    io:format("Ignore ~p ~p~n", [Type, Header]),
+    {ok, State}.
+
+build_error(Header, ErrorName, ErrorText, State) ->
     Serial = State#state.serial + 1,
 %%     Path = message:header_fetch(?HEADER_PATH, Header),
 %%     Iface = message:header_fetch(?HEADER_INTERFACE, Header),
 %%     [_Type1, To] = message:header_fetch(?HEADER_DESTINATION, Header),
     [_Type2, From] = message:header_fetch(?HEADER_SENDER, Header),
-    Error = #variant{type=string, value="org.freedesktop.DBus.Error.UnknownObject"},
+    Error = #variant{type=string, value=ErrorName},
     ReplySerial = #variant{type=uint32, value=Header#header.serial},
 
     {ok, ReplyBody, _Pos} = 
-	marshaller:marshal_list([string], ["Erlang: Object not found."]),
+	marshaller:marshal_list([string], [ErrorText]),
     Headers = [
 	       [?HEADER_ERROR_NAME, Error],
 	       [?HEADER_REPLY_SERIAL, ReplySerial],
@@ -234,15 +258,17 @@ handle_message(?TYPE_METHOD_CALL, Header, State) ->
 
     ReplyHeader = #header{type=?TYPE_ERROR,
 			  serial=Header#header.serial,
-			  headers=Headers},
+			  headers=Headers,
+			  body=ReplyBody},
+    {ok, ReplyHeader, State#state{serial=Serial}}.
 
-    io:format("Reply ~p ~p~n", [ReplyHeader, ReplyBody]),
 
-    {ok, Data} = marshaller:marshal_message(ReplyHeader, ReplyBody),
-    ok = connection:send(State#state.sock, Data),
+default_dbus_node() ->
+    HelloMethod = #method{name='Hello', args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
+    DBusIface = #interface{name='org.freedesktop.DBus', methods=[HelloMethod]},
 
-    {ok, State#state{serial=Serial}};
-    
-handle_message(Type, Header, State) ->
-    io:format("Ignore ~p ~p~n", [Type, Header]),
-    {ok, State}.
+    IntrospectMethod = #method{name='Introspect', args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
+    DBusIntrospectableIface = #interface{name='org.freedesktop.DBus.Introspectable', methods=[IntrospectMethod]},
+
+    DBusRootNode = #node{elements=[], interfaces=[DBusIface, DBusIntrospectableIface]},
+    DBusRootNode.

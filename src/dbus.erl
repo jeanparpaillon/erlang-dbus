@@ -6,12 +6,18 @@
 -include("dbus.hrl").
 
 %% api
--export([connect/2, stop/0]).
+-export([
+	 connect/0,
+	 connect/2,
+	 stop/0]).
 
 -export([make/0, test/0, get_object/3, call/2, call/3, wait_ready/1]).
 
 -define(PORT, 1236).
 -define(HOST, "localhost").
+
+connect() ->
+    connect(?HOST, ?PORT).
 
 connect(Host, Port) when is_list(Host), is_integer(Port) ->
     bus:connect(Host, Port).
@@ -20,16 +26,19 @@ stop() ->
     gen_server:cast(todo, stop).
 
 test() ->
-    {ok, Bus} = dbus:connect(?HOST, ?PORT),
+    {ok, Bus} = dbus:connect(),
     ok = dbus:wait_ready(Bus),
     io:format("Ready~n"),
     {ok, BusObj} = dbus:get_object(Bus, 'org.freedesktop.DBus', '/'),
+    io:format("BusObj: ~p~n", [BusObj]),
 
     {ok, BusIface} = proxy:interface(BusObj, 'org.freedesktop.DBus'),
     {ok, Header1} = proxy:call(BusIface, 'RequestName', ["org.za.hem.DBus", 0]),
+    ok = proxy:stop(BusObj),
     io:format("RequestName: ~p~n", [Header1]),
 
     {ok, Remote_object} = dbus:get_object(Bus, 'org.designfu.SampleService', '/SomeObject'),
+    io:format("Remote_object: ~p~n", [Remote_object]),
     {ok, Iface} = proxy:interface(Remote_object, 'org.designfu.SampleInterface'),
 %%     Var = #variant{type=string, value="Hello from Erlang!"},
 %%      Var = #variant{type={array, string}, value=["Hello", "from", "Erlang!"]},
@@ -40,6 +49,8 @@ test() ->
 
     Var1 = #variant{type={struct, [int16, string]}, value={17, "Hello from Erlang no 2!"}},
     proxy:call(Iface, 'HelloWorld', [Var1]),
+    ok = proxy:stop(Remote_object),
+    ok = bus:stop(Bus),
 
 %%     {ok, PeerIface} = proxy:interface(BusObj, 'org.freedesktop.DBus.Peer'),
 %%     proxy:call(PeerIface, 'Ping'),
