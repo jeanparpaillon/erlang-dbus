@@ -168,28 +168,6 @@ handle_call(Header, Tag, Pid, State) ->
     
     {ok, State#state{pending=Pending, serial=Serial}}.
 
-send_hello(State) ->
-    Serial = State#state.serial + 1,
-    Hello = build_hello(Serial),
-    {ok, Data} = marshaller:marshal_message(Hello),
-%%     io:format("send_hello ~p~n", [Hello]),
-    ok = connection:send(State#state.sock, Data),
-    {ok, State#state{serial=Serial}}.
-
-send_list_names(State) ->
-    Serial = State#state.serial + 1,
-    Msg = build_list_names(Serial),
-    {ok, Data} = marshaller:marshal_message(Msg),
-    ok = connection:send(State#state.sock, Data),
-    {ok, State#state{serial=Serial}}.
-
-send_introspect(State) ->
-    Serial = State#state.serial + 1,
-    Msg = introspect:build_introspect("org.freedesktop.DBus", "/"),
-    {ok, Data} = marshaller:marshal_message(Msg#header{serial=Serial}),
-    ok = connection:send(State#state.sock, Data),
-    {ok, State#state{serial=Serial}}.
-
 handle_data(Data, State) ->
     {ok, Messages, Data1} = marshaller:unmarshal_data(Data),
 
@@ -238,9 +216,9 @@ handle_message(?TYPE_METHOD_CALL, Header, State) ->
 %%     io:format("Handle call ~p~n", [Header]),
 
     Serial = State#state.serial + 1,
-    Path = message:header_fetch(?HEADER_PATH, Header),
-    Iface = message:header_fetch(?HEADER_INTERFACE, Header),
-    [_Type1, To] = message:header_fetch(?HEADER_DESTINATION, Header),
+%%     Path = message:header_fetch(?HEADER_PATH, Header),
+%%     Iface = message:header_fetch(?HEADER_INTERFACE, Header),
+%%     [_Type1, To] = message:header_fetch(?HEADER_DESTINATION, Header),
     [_Type2, From] = message:header_fetch(?HEADER_SENDER, Header),
     Error = #variant{type=string, value="org.freedesktop.DBus.Error.UnknownObject"},
     ReplySerial = #variant{type=uint32, value=Header#header.serial},
@@ -268,31 +246,3 @@ handle_message(?TYPE_METHOD_CALL, Header, State) ->
 handle_message(Type, Header, State) ->
     io:format("Ignore ~p ~p~n", [Type, Header]),
     {ok, State}.
-
-handle_method_call(Header, Body) ->
-    ok.
-
-
-build_hello(Serial) ->
-    Headers = [
-	       [?HEADER_PATH, #variant{type=object_path, value="/org/freedesktop/DBus"}],
-	       [?HEADER_DESTINATION, #variant{type=string, value="org.freedesktop.DBus"}],
-	       [?HEADER_INTERFACE, #variant{type=string, value="org.freedesktop.DBus"}],
-	       [?HEADER_MEMBER, #variant{type=string, value="Hello"}]
-	      ],
-
-    #header{type=?TYPE_METHOD_CALL,
-	    serial=Serial,
-	    headers=Headers}.
-
-build_list_names(Serial) ->
-    Headers = [
-	       [?HEADER_PATH, #variant{type=object_path, value="/org/freedesktop/DBus"}],
-	       [?HEADER_DESTINATION, #variant{type=string, value="org.freedesktop.DBus"}],
-	       [?HEADER_INTERFACE, #variant{type=string, value="org.freedesktop.DBus"}],
-	       [?HEADER_MEMBER, #variant{type=string, value="ListNames"}]
-	      ],
-
-    #header{type=?TYPE_METHOD_CALL,
-	    serial=Serial,
-	    headers=Headers}.
