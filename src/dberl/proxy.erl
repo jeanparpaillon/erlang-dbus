@@ -13,10 +13,12 @@
 %% api
 -export([
 	 start_link/3,
+	 start_link/4,
 	 stop/1,
 	 interface/2,
 	 call/2,
 	 call/3,
+	 call/4,
 	 cast/3
 	]).
 
@@ -45,6 +47,9 @@ start_link(Bus, Service, Path) ->
 	    throw(Reason)
     end.
 
+start_link(Bus, Service, Path, Node) when is_record(Node, node) ->
+    gen_server:start_link(?MODULE, [Bus, Service, Path, Node], []).
+
 stop(Proxy) ->
     gen_server:cast(Proxy, stop).
 
@@ -58,14 +63,20 @@ interface(Proxy, IfaceName) when is_atom(IfaceName) ->
 call(Interface, MethodName) ->
     call(Interface, MethodName, []).
 
-call({interface, Proxy, IfaceName}, MethodName, Args) ->
-    io:format("before gen_server call ~p~n", [MethodName]),
-    case gen_server:call(Proxy, {method, IfaceName, MethodName, Args}) of
+call(Interface, MethodName, Args) ->
+    call(Interface, MethodName, Args, []).
+
+call({interface, Proxy, IfaceName}, MethodName, Args, Options) ->
+%%     io:format("before gen_server call ~p~n", [MethodName]),
+    case gen_server:call(Proxy, {method, IfaceName, MethodName, Args, Options}) of
+	ok ->
+	    ok;
 	{ok, Result} ->
 	    {ok, Result};
 	{error, Reason} ->
 	    throw(Reason)
     end.
+
 
 cast({interface, Proxy, IfaceName}, MethodName, Args) ->
     gen_server:cast(Proxy, {method, IfaceName, MethodName, Args}).
@@ -73,16 +84,22 @@ cast({interface, Proxy, IfaceName}, MethodName, Args) ->
 %%
 %% gen_server callbacks
 %%
+init([Bus, Service, Path, Node]) ->
+%%     io:format("~p ~p: init~n", [?MODULE, ?LINE]),
+    {ok, #state{bus=Bus, service=Service, path=Path, node=Node}};
+
 init([Bus, Service, Path]) ->
+%%     io:format("~p ~p: init ~p ~p~n", [?MODULE, ?LINE, Service, Path]),
     Header = introspect:build_introspect(Service, Path),
     ok = dbus:call(Bus, Header, introspect),
     {ok, #state{bus=Bus, service=Service, path=Path}}.
+
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
-handle_call({method, IfaceName, MethodName, Args}, From, State) ->
+handle_call({method, IfaceName, MethodName, Args, Options}, From, State) ->
     io:format("in gen_server call ~p~n", [MethodName]),
 
     Method =
@@ -102,7 +119,7 @@ handle_call({method, IfaceName, MethodName, Args}, From, State) ->
 	{error, _}=Error ->
 	    {reply, Error, State}; 
 	_ ->
-	    do_method(IfaceName, Method, Args, From, State)
+	    do_method(IfaceName, Method, Args, Options, From, State)
     end;
 
 handle_call(proxy_ready, From, State) ->
@@ -155,18 +172,18 @@ handle_info({error, Header, introspect}, State) ->
 
     {stop, normal, State};
 
-handle_info({reply, Header, {tag, From}}, State) ->
+handle_info({reply, Header, {tag, From, Options}}, State) ->
     error_logger:info_msg("Reply ~p: ~p~n", [?MODULE, From]),
-    gen_server:reply(From, {ok, Header}),
+    reply(From, {ok, Header}, Options),
     {noreply, State};
 
-handle_info({error, Header, {tag, From}}, State) ->
+handle_info({error, Header, {tag, From, Options}}, State) ->
     error_logger:info_msg("Error ~p: ~p~n", [?MODULE, From]),
 
     [_Type1, ErrorName] = message:header_fetch(?HEADER_ERROR_NAME, Header),
     ErrorName1 = list_to_atom(ErrorName#variant.value),
 
-    gen_server:reply(From, {error, {ErrorName1, Header#header.body}}),
+    reply(From, {error, {ErrorName1, Header#header.body}}, Options),
     {noreply, State};
 
 handle_info(Info, State) ->
@@ -177,8 +194,16 @@ handle_info(Info, State) ->
 terminate(_Reason, _State) ->
     terminated.
 
+reply(From, Reply, Options) ->
+    case lists:keysearch(reply, 1, Options) of
+	{value, {reply, Pid, Ref}} ->
+	    Pid ! {reply, Ref, Reply};
+	_ ->
+	    gen_server:reply(From, Reply)
+    end,
+    ok.
 
-do_method(IfaceName, Method, Args, From, State) ->
+do_method(IfaceName, Method, Args, Options, From, State) ->
     MethodName = Method#method.name,
     Signature = Method#method.in_sig,
     Types = Method#method.in_types,
@@ -195,17 +220,26 @@ do_method(IfaceName, Method, Args, From, State) ->
 	       [?HEADER_SIGNATURE, #variant{type=signature, value=Signature}]
 	      ],
 
+%%     io:format("before marshal~n"),
     case catch marshaller:marshal_list(Types, Args) of
 	{ok, Body, _Pos} ->
 	    Header = #header{type=?TYPE_METHOD_CALL,
 			     headers=Headers,
 			     body=Body},
 
-	    io:format("before call~n"),
-	    ok = dbus:call(Bus, Header, {tag, From}),
-	    {noreply, State};
+%% 	    io:format("before call~n"),
+	    ok = dbus:call(Bus, Header, {tag, From, Options}),
+%% 	    io:format("after call~n"),
+	    case lists:keysearch(reply, 1, Options) of
+		{value, {reply, _Pid, _Ref}} ->
+%% 		    io:format("reply ok~n"),
+		    {reply, ok, State};
+		_ ->
+		    {noreply, State}
+	    end;
 	{'EXIT', Reason} ->
-	    {reply, {error, {'org.freedesktop.DBus.InvalidParameters', ""}}, State}
+%% 	    io:format("exit call~n"),
+	    {reply, {error, {'org.freedesktop.DBus.InvalidParameters', Reason}}, State}
     end.
 
 

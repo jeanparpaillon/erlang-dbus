@@ -39,7 +39,7 @@ test() ->
     {ok, Header} = proxy:call(Iface, 'HelloWorld', [Var]),
 
     Var1 = #variant{type={struct, [int16, string]}, value={17, "Hello from Erlang no 2!"}},
-    proxy:call(Iface, 'HelloWorld', [Var1, 5]),
+    proxy:call(Iface, 'HelloWorld', [Var1]),
 
 %%     {ok, PeerIface} = proxy:interface(BusObj, 'org.freedesktop.DBus.Peer'),
 %%     proxy:call(PeerIface, 'Ping'),

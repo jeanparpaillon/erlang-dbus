@@ -32,7 +32,9 @@
 	  state,
 	  buf= <<>>,
 	  pending=[],
-	  waiting=[]
+	  waiting=[],
+	  hello_ref,
+	  id
 	 }).
 
 connect(Host, Port) ->
@@ -82,10 +84,12 @@ handle_call(Request, _From, State) ->
 
 
 handle_cast({call, Header, Pid}, State) ->
-    handle_call(Header, none, Pid, State);
+    {ok, State1} = handle_call(Header, none, Pid, State),
+    {noreply, State1};
 
 handle_cast({call, Header, From, Pid}, State) ->
-    handle_call(Header, From, Pid, State);
+    {ok, State1} = handle_call(Header, From, Pid, State),
+    {noreply, State1};
 
 handle_cast(stop, State) ->
     {stop, normal, State};
@@ -102,31 +106,53 @@ handle_info({received, Sock, Data}, #state{sock=Sock}=State) ->
 handle_info({auth_ok, Auth, Sock}, #state{auth=Auth}=State) ->
     ok = connection:change_owner(Sock, Auth, self()),
 
-    {ok, State1} = send_hello(State#state{sock=Sock}),
+    HelloMethod = #method{name='Hello', args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
+    DBusIface = #interface{name='org.freedesktop.DBus', methods=[HelloMethod]},
+    DBusRootNode = #node{elements=[], interfaces=[DBusIface]},
+    {ok, DBusObj} =
+	proxy:start_link(self(), 'org.freedesktop.DBus', '/', DBusRootNode),
+    {ok, DBusIfaceObj} = proxy:interface(DBusObj, 'org.freedesktop.DBus'),
+    HelloRef = make_ref(),
+    ok = proxy:call(DBusIfaceObj, 'Hello', [], [{reply, self(), HelloRef}]),
+    io:format("Call returned~n"),
+
 %%     {ok, State2} = send_introspect(State1),
 
-    Reply = fun(From) ->
-		    io:format("reply_waiting ~p~n", [From]),
-		    gen_server:reply(From, ok)
-	    end,
-
-
-    lists:map(Reply, State1#state.waiting),
-
-    {noreply, State1#state{state=up, waiting=[], auth=terminated}};
+    {noreply, State#state{sock=Sock,
+			  state=up,
+			  auth=terminated,
+			  hello_ref=HelloRef}};
 %%     {stop, normal, State};
+
+handle_info({reply, Ref, {ok, Header}}, #state{hello_ref=Ref}=State) ->
+    error_logger:error_msg("Hello reply ~p~n", [Header]),
+    [Id] = Header#header.body,
+    reply_waiting(State),
+    {noreply, State#state{hello_ref=undefined, id=Id, waiting=[]}};
+
+handle_info({reply, Ref, {error, Reason}}, #state{hello_ref=Ref}=State) ->
+    {stop, {error, Reason}, State};
 
 handle_info(Info, State) ->
     error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
 
-terminate(_Reason, State) ->
+terminate(_Reason, _State) ->
     terminated.
 
 
+reply_waiting(State) ->
+    Reply = fun(From) ->
+		    io:format("reply_waiting ~p~n", [From]),
+		    gen_server:reply(From, ok)
+	    end,
+
+    lists:map(Reply, State#state.waiting).
+
+
 handle_call(Header, Tag, Pid, State) ->
-%%     io:format("handle call ~p ~p~n", [Header, Body]),
+%%     io:format("handle call ~p ~p ~p~n", [Header, Tag, Pid]),
     Sock = State#state.sock,
     Serial = State#state.serial + 1,
 
@@ -135,8 +161,9 @@ handle_call(Header, Tag, Pid, State) ->
 
     {ok, Data} = marshaller:marshal_message(Header#header{serial=Serial}),
     ok = connection:send(Sock, Data),
+%%     io:format("sent call ~p ~p~n", [Sock, Data]),
     
-    {noreply, State#state{pending=Pending, serial=Serial}}.
+    {ok, State#state{pending=Pending, serial=Serial}}.
 
 send_hello(State) ->
     Serial = State#state.serial + 1,
@@ -205,7 +232,7 @@ handle_message(?TYPE_ERROR, Header, State) ->
 	end,
     {ok, State1};
 handle_message(?TYPE_METHOD_CALL, Header, State) ->
-    io:format("Handle call ~p~n", [Header]),
+%%     io:format("Handle call ~p~n", [Header]),
 
     Serial = State#state.serial + 1,
     Path = message:header_fetch(?HEADER_PATH, Header),
