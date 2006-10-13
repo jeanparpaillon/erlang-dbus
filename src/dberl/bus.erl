@@ -113,14 +113,11 @@ handle_info({auth_ok, Auth, Sock}, #state{auth=Auth}=State) ->
     ok = proxy:call(DBusIfaceObj, 'Hello', [], [{reply, self(), hello}]),
     io:format("Call returned~n"),
 
-%%     {ok, State2} = send_introspect(State1),
-
     {noreply, State#state{sock=Sock,
 			  state=up,
 			  auth=terminated,
 			  dbus_object=DBusObj
 			 }};
-%%     {stop, normal, State};
 
 handle_info({auth_rejected, Auth}, #state{auth=Auth}=State) ->
     reply_waiting({error, auth_error}, State),
