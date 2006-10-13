@@ -1,6 +1,10 @@
 %%%
 %%% Glue module to tcp_conn transport module
 %%%
+%%% Messages imlemented by transport modules
+%%%
+%%% {received, Conn, Data}
+%%% {closed, Conn}
 
 -module(dberl.connection).
 
@@ -10,7 +14,7 @@
 -export([send/2, change_owner/3, setopts/2, stop/1, close/1]).
 
 close(Conn) ->
-    gen_server:call(Conn, close).
+    gen_server:cast(Conn, close).
 
 send(Conn, Data) -> 
     gen_server:cast(Conn, {send, Data}).

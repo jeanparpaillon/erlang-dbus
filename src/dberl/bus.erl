@@ -53,10 +53,7 @@ call(Bus, Header, From) ->
     gen_server:cast(Bus, {call, Header, From, self()}).
 
 wait_ready(Bus) ->
-    io:format("wait_ready enter ~p~n", [Bus]),
-    ok = gen_server:call(Bus, wait_ready),
-    io:format("wait_ready exit ~p~n", [Bus]),
-    ok.
+    gen_server:call(Bus, wait_ready).
 
 %%
 %% gen_server callbacks
@@ -124,10 +121,14 @@ handle_info({auth_ok, Auth, Sock}, #state{auth=Auth}=State) ->
 			  hello_ref=HelloRef}};
 %%     {stop, normal, State};
 
+handle_info({auth_rejected, Auth}, #state{auth=Auth}=State) ->
+    reply_waiting({error, auth_error}, State),
+    {stop, normal, State};
+
 handle_info({reply, Ref, {ok, Header}}, #state{hello_ref=Ref}=State) ->
     error_logger:error_msg("Hello reply ~p~n", [Header]),
     [Id] = Header#header.body,
-    reply_waiting(State),
+    reply_waiting(ok, State),
     {noreply, State#state{hello_ref=undefined, id=Id, waiting=[]}};
 
 handle_info({reply, Ref, {error, Reason}}, #state{hello_ref=Ref}=State) ->
@@ -142,13 +143,13 @@ terminate(_Reason, _State) ->
     terminated.
 
 
-reply_waiting(State) ->
-    Reply = fun(From) ->
+reply_waiting(Reply, State) ->
+    Fun = fun(From) ->
 		    io:format("reply_waiting ~p~n", [From]),
-		    gen_server:reply(From, ok)
+		    gen_server:reply(From, Reply)
 	    end,
 
-    lists:map(Reply, State#state.waiting).
+    lists:map(Fun, State#state.waiting).
 
 
 handle_call(Header, Tag, Pid, State) ->

@@ -1,6 +1,10 @@
 %%%
 %%% D-Bus outgoing connection authenticator
 %%%
+%%% Messages
+%%%
+%%% {auth_ok, Pid, Sock}
+%%% Sent after successfull authentication
 
 -module(dberl.auth).
 
@@ -94,6 +98,12 @@ handle_info({received, Sock, "OK " ++ Line}, #state{sock=Sock}=State) ->
 
     Owner = State#state.owner,
     Owner ! {auth_ok, self(), Sock},
+    {stop, normal, State};
+
+handle_info({received, Sock, "REJECTED " ++ _Line}, #state{sock=Sock}=State) ->
+    ok = connection:close(Sock),
+    Owner = State#state.owner,
+    Owner ! {auth_rejected, self()},
     {stop, normal, State};
 
 handle_info(Info, State) ->

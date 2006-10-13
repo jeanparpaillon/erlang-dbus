@@ -45,10 +45,6 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
-handle_call(close, _From, State) ->
-    ok = gen_tcp:close(State#state.sock),
-    {stop, normal, State#state{sock=undefined}};
-
 handle_call({setopts, Options}, _From, State) ->
     ok = inet:setopts(State#state.sock, Options),
     {reply, ok, State};
@@ -69,6 +65,9 @@ handle_cast({send, Data}, State) ->
     gen_tcp:send(Sock, Data),
     {noreply, State};
 
+handle_cast(close, State) ->
+    ok = gen_tcp:close(State#state.sock),
+    {stop, normal, State#state{sock=undefined}};
 handle_cast(stop, State) ->
     {stop, normal, State};
 handle_cast(Request, State) ->
