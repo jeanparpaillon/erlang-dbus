@@ -1,12 +1,13 @@
 -module(dberl.marshaller).
 
+-import(error_logger).
 -import(file).
 -import(io).
 -import(lists).
 
 -include("dbus.hrl").
 
-%% -compile([export_all]).
+-compile([export_all]).
 
 %% api
 -export([
@@ -39,7 +40,7 @@ unmarshal_data(Data, Res) ->
 	{ok, Header, Data1} ->
 	    unmarshal_data(Data1, Res ++ [Header]);
 	{'EXIT', Reason} ->
-	    error_logger:info_msg("unmarshal_data: ~p~n", [Reason]),
+	    error_logger:info_msg("unmarshal_data: ~p~n", [Data]),
 	    {ok, Res, Data}
     end.
 
@@ -85,8 +86,8 @@ marshal_header(Header) when is_list(Header) ->
 unmarshal_message(Data) ->
     {ok, Header, BinBody, Data1} = unmarshal_header(Data),
     Signature =
-	case header_find(?HEADER_SIGNATURE, Header) of
-	    {ok, [?HEADER_SIGNATURE, #variant{type=signature, value=Signature1}]} ->
+	case message:header_find(?HEADER_SIGNATURE, Header) of
+	    {ok, {?HEADER_SIGNATURE, #variant{type=signature, value=Signature1}}} ->
 		Signature1;
 	    error ->
 		""
@@ -95,28 +96,6 @@ unmarshal_message(Data) ->
     {ok, <<>>, Body, _Pos} = unmarshal_list(Types, BinBody),
     Header1 = Header#header{body=Body},
     {ok, Header1, Data1}.
-
-header_fetch(Code, Header) ->
-    {ok, Field} = header_find(Code, Header),
-    Field.
-
-header_find(Code, Header) ->
-    Headers = Header#header.headers,
-    Fun = fun(F) ->
-		  case F of
-		      [Code | _] ->
-			  true;
-		      _ ->
-			  false
-		  end
-	  end,
-
-    case lists:filter(Fun, Headers) of
-	[Field] ->
-	    {ok, Field};
-	_ ->
-	    error
-    end.
 
 unmarshal_header(Bin) ->
     {ok, Data1, HeaderData, Pos} = unmarshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], Bin),
@@ -352,7 +331,9 @@ unmarshal({struct, SubTypes}, Data, Pos) ->
 %%     io:format("padding2 ~p~n", [Pad]),
     << 0:Pad, Data1/binary >> = Data,
     Pos1 = Pos + Pad div 8,
-    unmarshal_struct(SubTypes, Data1, Pos1);
+    {ok, Res, Data2, Pos2} = unmarshal_struct(SubTypes, Data1, Pos1),
+    {ok, list_to_tuple(Res), Data2, Pos2};
+%%     {ok, Res, Data2, Pos2};
 
 unmarshal(variant, Data, Pos) ->
     {ok, Signature, Data1, Pos1} = unmarshal(signature, Data, Pos),

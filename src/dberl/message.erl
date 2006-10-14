@@ -10,7 +10,7 @@
 
 %% api
 
--export([header_fetch/2]).
+-export([header_find/2, header_fetch/2]).
 
 %% send_hello(State) ->
 %%     Serial = State#state.serial + 1,
@@ -161,10 +161,10 @@
 
 build_hello(Serial) ->
     Headers = [
-	       [?HEADER_PATH, #variant{type=object_path, value="/org/freedesktop/DBus"}],
-	       [?HEADER_DESTINATION, #variant{type=string, value="org.freedesktop.DBus"}],
-	       [?HEADER_INTERFACE, #variant{type=string, value="org.freedesktop.DBus"}],
-	       [?HEADER_MEMBER, #variant{type=string, value="Hello"}]
+	       {?HEADER_PATH, #variant{type=object_path, value="/org/freedesktop/DBus"}},
+	       {?HEADER_DESTINATION, #variant{type=string, value="org.freedesktop.DBus"}},
+	       {?HEADER_INTERFACE, #variant{type=string, value="org.freedesktop.DBus"}},
+	       {?HEADER_MEMBER, #variant{type=string, value="Hello"}}
 	      ],
 
     #header{type=?TYPE_METHOD_CALL,
@@ -173,10 +173,10 @@ build_hello(Serial) ->
 
 build_list_names(Serial) ->
     Headers = [
-	       [?HEADER_PATH, #variant{type=object_path, value="/org/freedesktop/DBus"}],
-	       [?HEADER_DESTINATION, #variant{type=string, value="org.freedesktop.DBus"}],
-	       [?HEADER_INTERFACE, #variant{type=string, value="org.freedesktop.DBus"}],
-	       [?HEADER_MEMBER, #variant{type=string, value="ListNames"}]
+	       {?HEADER_PATH, #variant{type=object_path, value="/org/freedesktop/DBus"}},
+	       {?HEADER_DESTINATION, #variant{type=string, value="org.freedesktop.DBus"}},
+	       {?HEADER_INTERFACE, #variant{type=string, value="org.freedesktop.DBus"}},
+	       {?HEADER_MEMBER, #variant{type=string, value="ListNames"}}
 	      ],
 
     #header{type=?TYPE_METHOD_CALL,
@@ -184,15 +184,15 @@ build_list_names(Serial) ->
 	    headers=Headers}.
 
 header_fetch(Code, Header) ->
-    Headers = Header#header.headers,
-    Fun = fun(F) ->
-		  case F of
-		      [Code | _] ->
-			  true;
-		      _ ->
-			  false
-		  end
-	  end,
-
-    [Field] = lists:filter(Fun, Headers),
+    {ok, Field} = header_find(Code, Header),
     Field.
+
+header_find(Code, Header) ->
+    Headers = Header#header.headers,
+
+    case lists:keysearch(Code, 1, Headers) of
+	{value, Field} ->
+	    {ok, Field};
+	_ ->
+	    error
+    end.

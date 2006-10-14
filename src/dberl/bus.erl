@@ -15,7 +15,8 @@
 -export([get_object/3,
 	 call/2,
 	 call/3,
-	 wait_ready/1]).
+	 wait_ready/1,
+	 add_match/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -56,6 +57,9 @@ call(Bus, Header, From) ->
 wait_ready(Bus) ->
     gen_server:call(Bus, wait_ready).
 
+add_match(Bus, Match) ->
+    gen_server:cast(Bus, {add_match, Match}).
+
 %%
 %% gen_server callbacks
 %%
@@ -82,6 +86,43 @@ handle_call(Request, _From, State) ->
     error_logger:error_msg("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
 
+
+handle_cast({add_match, Match}, State) ->
+    DBusObj = State#state.dbus_object,
+    Fold = fun({Key, Value}, Str) ->
+		   Prefix =
+		       if
+			   Str == "" ->
+			       "";
+			   true ->
+			       ", "
+		       end,
+		   KeyStr =
+		       if
+			   is_atom(Key) ->
+			       atom_to_list(Key);
+			   is_list(Key) ->
+			       Key
+		       end,
+		   ValueStr =
+		       if
+			   is_atom(Value) ->
+			       atom_to_list(Value);
+			   is_list(Value) ->
+			       Value
+		       end,
+
+			   
+		   Item = Prefix ++ KeyStr ++ "='" ++ ValueStr ++ "'",
+		   Str ++ Item
+	   end,
+
+    MatchStr = lists:foldl(Fold, "", Match),
+
+    {ok, DBusIFace} = proxy:interface(DBusObj, 'org.freedesktop.DBus'),
+    ok = proxy:call(DBusIFace, 'AddMatch', [MatchStr], [{reply, self(), add_match}]),
+
+    {noreply, State};
 
 handle_cast({call, Header, Pid}, State) ->
     {ok, State1} = handle_call(Header, none, Pid, State),
@@ -119,28 +160,37 @@ handle_info({auth_ok, Auth, Sock}, #state{auth=Auth}=State) ->
 			  dbus_object=DBusObj
 			 }};
 
-handle_info({auth_rejected, Auth}, #state{auth=Auth}=State) ->
-    reply_waiting({error, auth_error}, State),
-    {stop, normal, State};
+%% handle_info({auth_rejected, Auth}, #state{auth=Auth}=State) ->
+%%     reply_waiting({error, auth_error}, State),
+%%     {stop, normal, State};
 
-handle_info({reply, hello, {ok, Header}}, State) ->
+handle_info({reply, hello, {ok, Reply}}, State) ->
     DBusObj = State#state.dbus_object,
-    error_logger:error_msg("Hello reply ~p~n", [Header]),
-    [Id] = Header#header.body,
+    error_logger:error_msg("Hello reply ~p~n", [Reply]),
+    [Id] = Reply,
 
-    {ok, DBusIntrospectable} = proxy:interface(DBusObj, 'org.freedesktop.DBus.Introspectable'),
-    ok = proxy:call(DBusIntrospectable, 'Introspect', [], [{reply, self(), introspect}]),
+%%     {ok, DBusIntrospectable} = proxy:interface(DBusObj, 'org.freedesktop.DBus.Introspectable'),
+%%     ok = proxy:call(DBusIntrospectable, 'Introspect', [], [{reply, self(), introspect}]),
+
+%%     ok = proxy:introspect(DBusObj),
 
     reply_waiting(ok, State),
     {noreply, State#state{id=Id}};
 
-handle_info({reply, introspect, {ok, Header}}, State) ->
-    error_logger:error_msg("Introspect reply ~p~n", [Header]),
-    reply_waiting(ok, State),
-    {noreply, State#state{waiting=[]}};
+%% handle_info({reply, introspect, {ok, Header}}, State) ->
+%%     error_logger:error_msg("Introspect reply ~p~n", [Header]),
+
+%%     xxxxx
+
+%%     reply_waiting(ok, State),
+%%     {noreply, State#state{waiting=[]}};
 
 handle_info({reply, Ref, {error, Reason}}, #state{hello_ref=Ref}=State) ->
     {stop, {error, Reason}, State};
+
+handle_info({reply, add_match, {ok, Header}}, State) ->
+    %% Ignore reply
+    {noreply, State};
 
 handle_info(Info, State) ->
     error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
@@ -161,7 +211,7 @@ reply_waiting(Reply, State) ->
 
 
 handle_call(Header, Tag, Pid, State) ->
-%%     io:format("handle call ~p ~p ~p~n", [Header, Tag, Pid]),
+    io:format("handle call ~p ~p ~p~n", [Header, Tag, Pid]),
     Sock = State#state.sock,
     Serial = State#state.serial + 1,
 
@@ -191,7 +241,8 @@ handle_messages([Header|R], State) ->
 
 %% FIXME handle illegal messages
 handle_message(?TYPE_METHOD_RETURN, Header, State) ->
-    [_, SerialHdr] = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
+    io:format("Return ~p~n", [Header]),
+    {_, SerialHdr} = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
     Pending = State#state.pending,
     Serial = SerialHdr#variant.value,
     State1 =
@@ -205,7 +256,8 @@ handle_message(?TYPE_METHOD_RETURN, Header, State) ->
 	end,
     {ok, State1};
 handle_message(?TYPE_ERROR, Header, State) ->
-    [_, SerialHdr] = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
+    io:format("Error ~p~n", [Header]),
+    {_, SerialHdr} = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
     Pending = State#state.pending,
     Serial = SerialHdr#variant.value,
     State1 =
@@ -230,6 +282,22 @@ handle_message(?TYPE_METHOD_CALL, Header, State) ->
     ok = connection:send(State#state.sock, Data),
 
     {ok, State1};
+handle_message(?TYPE_SIGNAL, Header, State) ->
+    io:format("Signal ~p~n", [Header]),
+%%     {_, SerialHdr} = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
+%%     Pending = State#state.pending,
+%%     Serial = SerialHdr#variant.value,
+%%     State1 =
+%% 	case lists:keysearch(Serial, 1, Pending) of
+%% 	    {value, {Serial, Pid}} ->
+%% 		ok = call:reply(Pid, Header),
+%% 		State#state{pending=lists:keydelete(Serial, 1, Pending)};
+%% 	    _ ->
+%% 		io:format("Ignore reply ~p~n", [Serial]),
+%% 		State
+%% 	end,
+%%     {ok, State1};
+    {ok, State};
     
 handle_message(Type, Header, State) ->
     io:format("Ignore ~p ~p~n", [Type, Header]),
@@ -239,18 +307,18 @@ build_error(Header, ErrorName, ErrorText, State) ->
     Serial = State#state.serial + 1,
 %%     Path = message:header_fetch(?HEADER_PATH, Header),
 %%     Iface = message:header_fetch(?HEADER_INTERFACE, Header),
-%%     [_Type1, To] = message:header_fetch(?HEADER_DESTINATION, Header),
-    [_Type2, From] = message:header_fetch(?HEADER_SENDER, Header),
+%%     {_Type1, To} = message:header_fetch(?HEADER_DESTINATION, Header),
+    {_Type2, From} = message:header_fetch(?HEADER_SENDER, Header),
     Error = #variant{type=string, value=ErrorName},
     ReplySerial = #variant{type=uint32, value=Header#header.serial},
 
     {ok, ReplyBody, _Pos} = 
 	marshaller:marshal_list([string], [ErrorText]),
     Headers = [
-	       [?HEADER_ERROR_NAME, Error],
-	       [?HEADER_REPLY_SERIAL, ReplySerial],
- 	       [?HEADER_DESTINATION, From],
-	       [?HEADER_SIGNATURE, #variant{type=signature, value="s"}]
+	       {?HEADER_ERROR_NAME, Error},
+	       {?HEADER_REPLY_SERIAL, ReplySerial},
+ 	       {?HEADER_DESTINATION, From},
+	       {?HEADER_SIGNATURE, #variant{type=signature, value="s"}}
 	      ],
 
     ReplyHeader = #header{type=?TYPE_ERROR,
@@ -262,7 +330,8 @@ build_error(Header, ErrorName, ErrorText, State) ->
 
 default_dbus_node() ->
     HelloMethod = #method{name='Hello', args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
-    DBusIface = #interface{name='org.freedesktop.DBus', methods=[HelloMethod]},
+    AddMatch = #method{name='AddMatch', args=[#arg{direction=in, type="s"}], in_sig="s", in_types=[string]},
+    DBusIface = #interface{name='org.freedesktop.DBus', methods=[HelloMethod, AddMatch]},
 
     IntrospectMethod = #method{name='Introspect', args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
     DBusIntrospectableIface = #interface{name='org.freedesktop.DBus.Introspectable', methods=[IntrospectMethod]},

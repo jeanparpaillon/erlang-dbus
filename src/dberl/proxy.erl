@@ -19,7 +19,8 @@
 	 call/2,
 	 call/3,
 	 call/4,
-	 cast/3
+	 cast/3,
+	 connect_signal/3
 	]).
 
 %% gen_server callbacks
@@ -35,7 +36,7 @@
 	  path,
 	  node,					% #node()
 	  bus,					% bus connection
-	  waiting
+	  waiting=[]
 	 }).
 
 start_link(Bus, Service, Path) ->
@@ -81,6 +82,9 @@ call({interface, Proxy, IfaceName}, MethodName, Args, Options) ->
 cast({interface, Proxy, IfaceName}, MethodName, Args) ->
     gen_server:cast(Proxy, {method, IfaceName, MethodName, Args}).
 
+connect_signal({interface, Proxy, IfaceName}, SignalName, Tag) ->
+    gen_server:cast(Proxy, {connect_signal, IfaceName, SignalName, Tag}).
+
 %%
 %% gen_server callbacks
 %%
@@ -109,7 +113,7 @@ handle_call({method, IfaceName, MethodName, Args, Options}, From, State) ->
 		    {ok, Method1} ->
 			Method1;
 		    error ->
-			{error, {'org.freedesktop.DBus.UnknownMethod',  [MethodName]}}
+			{error, {'org.freedesktop.DBus.UnknownMethod',  [MethodName], IfaceName, State#state.node}}
 		end;
 	    error ->
 		{error, {'org.freedesktop.DBus.UnknownInterface',  [IfaceName]}}
@@ -125,7 +129,7 @@ handle_call({method, IfaceName, MethodName, Args, Options}, From, State) ->
 handle_call(proxy_ready, From, State) ->
     case State#state.node of
 	undefined ->
-	    {noreply, State#state{waiting=From}};
+	    {noreply, State#state{waiting=[From]}};
 	_ ->
 	    {reply, ok, State}
     end;
@@ -136,6 +140,16 @@ handle_call(Request, _From, State) ->
 
 handle_cast(stop, State) ->
     {stop, normal, State};
+handle_cast({connect_signal, IfaceName, SignalName, _Tag}, State) ->
+    Match = [{type, signal},
+	     {sender, State#state.service},
+	     {interface, IfaceName},
+	     {member, SignalName},
+	     {path, State#state.path}],
+
+    bus:add_match(State#state.bus, Match),
+
+    {noreply, State};
 handle_cast(Request, State) ->
     error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
@@ -145,42 +159,40 @@ handle_info({reply, Header, introspect}, State) ->
     Body = Header#header.body,
     [XmlBody] = Body,
     Node = introspect:from_xml_string(XmlBody),
-%%     error_logger:info_msg("introspect ~p: ~p~n", [?MODULE, Node]),
+%%    error_logger:info_msg("introspect ~p: ~p~n", [?MODULE, Node]),
 
-    case State#state.waiting of
-	undefined ->
-	    ignore;
-	From ->
-	    gen_server:reply(From, ok)
-    end,
+    Fun =
+	fun(From) ->
+		gen_server:reply(From, ok)
+	end,
+    lists:map(Fun, State#state.waiting),
 
-    {noreply, State#state{node=Node,waiting=undefined}};
+    {noreply, State#state{node=Node,waiting=[]}};
 
 handle_info({error, Header, introspect}, State) ->
 %%     Body = Header#header.body,
     error_logger:info_msg("Error in introspect ~p: ~n", [?MODULE]),
 
-    [_Type1, ErrorName] = message:header_fetch(?HEADER_ERROR_NAME, Header),
+    {_Type1, ErrorName} = message:header_fetch(?HEADER_ERROR_NAME, Header),
     ErrorName1 = list_to_atom(ErrorName#variant.value),
 
-    case State#state.waiting of
-	undefined ->
-	    ignore;
-	From ->
-	    gen_server:reply(From, {error, {ErrorName1, Header#header.body}})
-    end,
+    Fun =
+	fun(From) ->
+		gen_server:reply(From, {error, {ErrorName1, Header#header.body}})
+	end,
+    lists:map(Fun, State#state.waiting),
 
     {stop, normal, State};
 
 handle_info({reply, Header, {tag, From, Options}}, State) ->
     error_logger:info_msg("Reply ~p: ~p~n", [?MODULE, From]),
-    reply(From, {ok, Header}, Options),
+    reply(From, {ok, Header#header.body}, Options),
     {noreply, State};
 
 handle_info({error, Header, {tag, From, Options}}, State) ->
     error_logger:info_msg("Error ~p: ~p~n", [?MODULE, From]),
 
-    [_Type1, ErrorName] = message:header_fetch(?HEADER_ERROR_NAME, Header),
+    {_Type1, ErrorName} = message:header_fetch(?HEADER_ERROR_NAME, Header),
     ErrorName1 = list_to_atom(ErrorName#variant.value),
 
     reply(From, {error, {ErrorName1, Header#header.body}}, Options),
@@ -213,11 +225,11 @@ do_method(IfaceName, Method, Args, Options, From, State) ->
     Bus = State#state.bus,
 
     Headers = [
-	       [?HEADER_PATH, #variant{type=object_path, value=Path}],
-	       [?HEADER_INTERFACE, #variant{type=string, value=IfaceName}],
-	       [?HEADER_MEMBER, #variant{type=string, value=MethodName}],
-	       [?HEADER_DESTINATION, #variant{type=string, value=Service}],
-	       [?HEADER_SIGNATURE, #variant{type=signature, value=Signature}]
+	       {?HEADER_PATH, #variant{type=object_path, value=Path}},
+	       {?HEADER_INTERFACE, #variant{type=string, value=IfaceName}},
+	       {?HEADER_MEMBER, #variant{type=string, value=MethodName}},
+	       {?HEADER_DESTINATION, #variant{type=string, value=Service}},
+	       {?HEADER_SIGNATURE, #variant{type=signature, value=Signature}}
 	      ],
 
 %%     io:format("before marshal~n"),

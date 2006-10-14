@@ -17,10 +17,10 @@
 
 build_introspect(Service, Path) ->
     Headers = [
-	       [?HEADER_PATH, #variant{type=object_path, value=Path}],
-	       [?HEADER_DESTINATION, #variant{type=string, value=Service}],
-	       [?HEADER_INTERFACE, #variant{type=string, value="org.freedesktop.DBus.Introspectable"}],
-	       [?HEADER_MEMBER, #variant{type=string, value="Introspect"}]
+	       {?HEADER_PATH, #variant{type=object_path, value=Path}},
+	       {?HEADER_DESTINATION, #variant{type=string, value=Service}},
+	       {?HEADER_INTERFACE, #variant{type=string, value="org.freedesktop.DBus.Introspectable"}},
+	       {?HEADER_MEMBER, #variant{type=string, value="Introspect"}}
 	      ],
 
     #header{type=?TYPE_METHOD_CALL,

@@ -29,26 +29,29 @@ test() ->
     {ok, Bus} = dbus:connect(),
     ok = dbus:wait_ready(Bus),
     io:format("Ready~n"),
-    {ok, BusObj} = dbus:get_object(Bus, 'org.freedesktop.DBus', '/'),
-    io:format("BusObj: ~p~n", [BusObj]),
+%%     {ok, BusObj} = dbus:get_object(Bus, 'org.freedesktop.DBus', '/'),
+%%     io:format("BusObj: ~p~n", [BusObj]),
 
-    {ok, BusIface} = proxy:interface(BusObj, 'org.freedesktop.DBus'),
-    {ok, Header1} = proxy:call(BusIface, 'RequestName', ["org.za.hem.DBus", 0]),
-    ok = proxy:stop(BusObj),
-    io:format("RequestName: ~p~n", [Header1]),
+%%     {ok, BusIface} = proxy:interface(BusObj, 'org.freedesktop.DBus'),
+%%     {ok, Header1} = proxy:call(BusIface, 'RequestName', ["org.za.hem.DBus", 0]),
+%%     ok = proxy:stop(BusObj),
+%%     io:format("RequestName: ~p~n", [Header1]),
 
     {ok, Remote_object} = dbus:get_object(Bus, 'org.designfu.SampleService', '/SomeObject'),
     io:format("Remote_object: ~p~n", [Remote_object]),
     {ok, Iface} = proxy:interface(Remote_object, 'org.designfu.SampleInterface'),
+    ok = proxy:connect_signal(Iface, 'OnClick', mytag),
 %%     Var = #variant{type=string, value="Hello from Erlang!"},
 %%      Var = #variant{type={array, string}, value=["Hello", "from", "Erlang!"]},
 %%     Var = <<"Hello from Erlang">>,
 %%     Var = #variant{type={struct, [int16, string]}, value=[17, "Hello from Erlang!"]},
     Var = #variant{type={struct, [int16, string]}, value={17, "Hello from Erlang!"}},
-    {ok, Header} = proxy:call(Iface, 'HelloWorld', [Var]),
+    {ok, Reply1} = proxy:call(Iface, 'HelloWorld', [Var]),
+    io:format("HelloWorld 1: ~p~n", [Reply1]),
 
     Var1 = #variant{type={struct, [int16, string]}, value={17, "Hello from Erlang no 2!"}},
-    proxy:call(Iface, 'HelloWorld', [Var1]),
+    {ok, Reply2} = proxy:call(Iface, 'HelloWorld', [Var1]),
+    io:format("HelloWorld 2: ~p~n", [Reply2]),
     ok = proxy:stop(Remote_object),
     ok = bus:stop(Bus),
 
@@ -71,7 +74,8 @@ wait_ready(Bus) ->
 
 make() ->
     Modules = [
-	       "dbus"
+	       "dbus",
+	       "service"
 	      ],
 
     Prefix = "/home/mikael/svn/dberl/src/",
@@ -82,6 +86,7 @@ make() ->
 	       "bus",
 	       "call",
 	       "connection",
+	       "gen_dbus",
 	       "introspect",
 	       "marshaller",
 	       "message",
