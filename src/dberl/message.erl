@@ -10,7 +10,11 @@
 
 %% api
 
--export([header_find/2, header_fetch/2]).
+-export([
+	 header_find/2,
+	 header_fetch/2,
+	 build_error/3
+	]).
 
 %% send_hello(State) ->
 %%     Serial = State#state.serial + 1,
@@ -182,6 +186,29 @@ build_list_names(Serial) ->
     #header{type=?TYPE_METHOD_CALL,
 	    serial=Serial,
 	    headers=Headers}.
+
+build_error(Header, ErrorName, ErrorText) ->
+%%     Path = message:header_fetch(?HEADER_PATH, Header),
+%%     Iface = message:header_fetch(?HEADER_INTERFACE, Header),
+%%     {_Type1, To} = message:header_fetch(?HEADER_DESTINATION, Header),
+    {_Type2, From} = message:header_fetch(?HEADER_SENDER, Header),
+    Error = #variant{type=string, value=ErrorName},
+    ReplySerial = #variant{type=uint32, value=Header#header.serial},
+
+    {ok, ReplyBody, _Pos} = 
+	marshaller:marshal_list([string], [ErrorText]),
+    Headers = [
+	       {?HEADER_ERROR_NAME, Error},
+	       {?HEADER_REPLY_SERIAL, ReplySerial},
+ 	       {?HEADER_DESTINATION, From},
+	       {?HEADER_SIGNATURE, #variant{type=signature, value="s"}}
+	      ],
+
+    ReplyHeader = #header{type=?TYPE_ERROR,
+			  serial=Header#header.serial,
+			  headers=Headers,
+			  body=ReplyBody},
+    {ok, ReplyHeader}.
 
 header_fetch(Code, Header) ->
     {ok, Field} = header_find(Code, Header),

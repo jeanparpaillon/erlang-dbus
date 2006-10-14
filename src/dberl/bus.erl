@@ -167,6 +167,22 @@ handle_info({reply, add_match, {ok, _Header}}, State) ->
     %% Ignore reply
     {noreply, State};
 
+handle_info({dbus_method_call, Header, Conn}, #state{conn=Conn}=State) ->
+    io:format("Handle call ~p~n", [Header]),
+
+    ErrorName = "org.freedesktop.DBus.Error.UnknownObject",
+    ErrorText = "Erlang: Object not found.",
+    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
+    io:format("Reply ~p~n", [Reply]),
+
+    ok = connection:cast(Conn, Reply),
+
+    {noreply, State};
+
+handle_info({dbus_signal, Header, Conn}, #state{conn=Conn}=State) ->
+    io:format("Ignore signal ~p~n", [Header]),
+    {noreply, State};
+
 handle_info(Info, State) ->
     error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
@@ -195,3 +211,7 @@ default_dbus_node() ->
 
     DBusRootNode = #node{elements=[], interfaces=[DBusIface, DBusIntrospectableIface]},
     DBusRootNode.
+
+%% 'HelloWorld'(Msg) ->
+%%     io:format("HelloWorld ~p~n", [Msg]),
+%%     ok.

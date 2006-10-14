@@ -149,7 +149,7 @@ terminate(_Reason, State) ->
 handle_data(Data, State) ->
     {ok, Messages, Data1} = marshaller:unmarshal_data(Data),
 
-%%     io:format("handle_data ~p ~p~n", [Messages, size(Data1)]),
+    io:format("handle_data ~p ~p~n", [Messages, size(Data1)]),
 
     {ok, State1} = handle_messages(Messages, State#state{buf=Data1}),
 
@@ -177,7 +177,6 @@ handle_messages([Header|R], State) ->
     {ok, State1} = handle_message(Header#header.type, Header, State),
     handle_messages(R, State1).
 
-%% FIXME handle illegal messages
 handle_message(?TYPE_METHOD_RETURN, Header, State) ->
     io:format("Return ~p~n", [Header]),
     {_, SerialHdr} = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
@@ -209,57 +208,17 @@ handle_message(?TYPE_ERROR, Header, State) ->
 	end,
     {ok, State1};
 handle_message(?TYPE_METHOD_CALL, Header, State) ->
-%%     io:format("Handle call ~p~n", [Header]),
-
-    ErrorName = "org.freedesktop.DBus.Error.UnknownObject",
-    ErrorText = "Erlang: Object not found.",
-    {ok, Reply} = build_error(Header, ErrorName, ErrorText),
-    io:format("Reply ~p~n", [Reply]),
-
-%%     ok = connection:cast(State#state.conn, Reply),
-    %% TODO send reply
-
+    Owner = State#state.owner,
+    io:format("Method call ~p~n", [Owner]),
+    Owner ! {dbus_method_call, Header, self()},
     {ok, State};
+
 handle_message(?TYPE_SIGNAL, Header, State) ->
-    io:format("Signal ~p~n", [Header]),
-%%     {_, SerialHdr} = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
-%%     Pending = State#state.pending,
-%%     Serial = SerialHdr#variant.value,
-%%     State1 =
-%% 	case lists:keysearch(Serial, 1, Pending) of
-%% 	    {value, {Serial, Pid}} ->
-%% 		ok = call:reply(Pid, Header),
-%% 		State#state{pending=lists:keydelete(Serial, 1, Pending)};
-%% 	    _ ->
-%% 		io:format("Ignore reply ~p~n", [Serial]),
-%% 		State
-%% 	end,
-%%     {ok, State1};
+    Owner = State#state.owner,
+    Owner ! {dbus_signal, Header, self()},
     {ok, State};
-    
+
 handle_message(Type, Header, State) ->
     io:format("Ignore ~p ~p~n", [Type, Header]),
     {ok, State}.
 
-build_error(Header, ErrorName, ErrorText) ->
-%%     Path = message:header_fetch(?HEADER_PATH, Header),
-%%     Iface = message:header_fetch(?HEADER_INTERFACE, Header),
-%%     {_Type1, To} = message:header_fetch(?HEADER_DESTINATION, Header),
-    {_Type2, From} = message:header_fetch(?HEADER_SENDER, Header),
-    Error = #variant{type=string, value=ErrorName},
-    ReplySerial = #variant{type=uint32, value=Header#header.serial},
-
-    {ok, ReplyBody, _Pos} = 
-	marshaller:marshal_list([string], [ErrorText]),
-    Headers = [
-	       {?HEADER_ERROR_NAME, Error},
-	       {?HEADER_REPLY_SERIAL, ReplySerial},
- 	       {?HEADER_DESTINATION, From},
-	       {?HEADER_SIGNATURE, #variant{type=signature, value="s"}}
-	      ],
-
-    ReplyHeader = #header{type=?TYPE_ERROR,
-			  serial=Header#header.serial,
-			  headers=Headers,
-			  body=ReplyBody},
-    {ok, ReplyHeader}.
