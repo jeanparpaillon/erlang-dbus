@@ -6,6 +6,7 @@
 
 -include("dbus.hrl").
 
+%% -compile([export_all]).
 
 %% api
 -export([
@@ -37,7 +38,8 @@ unmarshal_data(Data, Res) ->
     case catch unmarshal_message(Data) of
 	{ok, Header, Data1} ->
 	    unmarshal_data(Data1, Res ++ [Header]);
-	{'EXIT', _Reason} ->
+	{'EXIT', Reason} ->
+	    error_logger:info_msg("unmarshal_data: ~p~n", [Reason]),
 	    {ok, Res, Data}
     end.
 
@@ -315,12 +317,23 @@ unmarshal(byte, Data, Pos) ->
     << Value:8, Data1/binary >> = Data,
     {ok, Value, Data1, Pos + 1};
 
+unmarshal(uint16, Data, Pos) ->
+    unmarshal_uint(2, Data, Pos);
+
 unmarshal(uint32, Data, Pos) ->
-    Pad = padding(4, Pos),
-%%     io:format("padding1 ~p ~p~n", [Pad, Pos]),
-    << 0:Pad, Value:32/native, Data1/binary >> = Data,
-    Pos1 = Pos + Pad div 8 + 4,
-    {ok, Value, Data1, Pos1};
+    unmarshal_uint(4, Data, Pos);
+
+unmarshal(uint64, Data, Pos) ->
+    unmarshal_uint(8, Data, Pos);
+
+unmarshal(int16, Data, Pos) ->
+    unmarshal_int(2, Data, Pos);
+
+unmarshal(int32, Data, Pos) ->
+    unmarshal_int(4, Data, Pos);
+
+unmarshal(int64, Data, Pos) ->
+    unmarshal_int(8, Data, Pos);
 
 unmarshal(signature, Data, Pos) ->
     unmarshal_string(byte, Data, Pos);
@@ -347,6 +360,20 @@ unmarshal(variant, Data, Pos) ->
     {ok, Value, Data2, Pos2} = unmarshal(Type, Data1, Pos1),
     {ok, #variant{type=Type, value=Value}, Data2, Pos2}.
 
+
+unmarshal_uint(Len, Data, Pos) when is_integer(Len) ->
+    Bitlen = Len * 8,
+    Pad = padding(Len, Pos),
+    << 0:Pad, Value:Bitlen/native-unsigned, Data1/binary >> = Data,
+    Pos1 = Pos + Pad div 8 + Len,
+    {ok, Value, Data1, Pos1}.
+
+unmarshal_int(Len, Data, Pos) ->
+    Bitlen = Len * 8,
+    Pad = padding(Len, Pos),
+    << 0:Pad, Value:Bitlen/native-signed, Data1/binary >> = Data,
+    Pos1 = Pos + Pad div 8 + Len,
+    {ok, Value, Data1, Pos1}.
 
 unmarshal_signature([], Res) ->
     Res;
