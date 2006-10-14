@@ -13,8 +13,6 @@
 -export([connect/2, stop/1]).
 
 -export([get_object/3,
-	 call/2,
-	 call/3,
 	 wait_ready/1,
 	 add_match/2]).
 
@@ -27,16 +25,13 @@
 	 terminate/2]).
 
 -record(state, {
-	  serial=0,
-	  auth,
-	  sock,
+	  conn,
 	  state,
-	  buf= <<>>,
-	  pending=[],
 	  waiting=[],
 	  hello_ref,
 	  id,
-	  dbus_object
+	  dbus_object,
+	  objects
 	 }).
 
 connect(Host, Port) ->
@@ -46,13 +41,8 @@ stop(Bus) ->
     gen_server:cast(Bus, stop).
 
 get_object(Bus, Service, Path) ->
-    proxy:start_link(Bus, Service, Path).
-
-call(Bus, Header) ->
-    gen_server:cast(Bus, {call, Header, self()}).
-
-call(Bus, Header, From) ->
-    gen_server:cast(Bus, {call, Header, From, self()}).
+    gen_server:call(Bus, {get_object, Service, Path}).
+%%     proxy:start_link(Bus, Service, Path).
 
 wait_ready(Bus) ->
     gen_server:call(Bus, wait_ready).
@@ -64,15 +54,19 @@ add_match(Bus, Match) ->
 %% gen_server callbacks
 %%
 init([DbusHost, DbusPort]) ->
-    {ok, Sock} = tcp_conn:connect(DbusHost, DbusPort, [list, {packet, 0}]),
-%%     {ok, Auth} = auth:start_link(DbusHost, DbusPort),
-    {ok, Auth} = auth:start_link(Sock),
-    {ok, #state{auth=Auth}}.
+    {ok, Conn} = connection:start_link(DbusHost, DbusPort, [list, {packet, 0}]),
+    {ok, #state{conn=Conn}}.
 
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+
+handle_call({get_object, Service, Path}, _From, State) ->
+    %% FIX async
+    {ok, Obj} = proxy:start_link(self(), State#state.conn, Service, Path),
+    
+    {reply, {ok, Obj}, State};
 
 handle_call(wait_ready, _From, #state{state=up}=State) ->
     {reply, ok, State};
@@ -124,14 +118,6 @@ handle_cast({add_match, Match}, State) ->
 
     {noreply, State};
 
-handle_cast({call, Header, Pid}, State) ->
-    {ok, State1} = handle_call(Header, none, Pid, State),
-    {noreply, State1};
-
-handle_cast({call, Header, From, Pid}, State) ->
-    {ok, State1} = handle_call(Header, From, Pid, State),
-    {noreply, State1};
-
 handle_cast(stop, State) ->
     {stop, normal, State};
 handle_cast(Request, State) ->
@@ -139,33 +125,22 @@ handle_cast(Request, State) ->
     {noreply, State}.
 
 
-handle_info({received, Sock, Data}, #state{sock=Sock}=State) ->
-    Buf = State#state.buf,
-    {ok, State1} = handle_data(<<Buf/binary, Data/binary>>, State),
-    {noreply, State1};
-
-handle_info({auth_ok, Auth, Sock}, #state{auth=Auth}=State) ->
-    ok = connection:change_owner(Sock, Auth, self()),
-
+handle_info({auth_ok, Conn}, #state{conn=Conn}=State) ->
+    
     DBusRootNode = default_dbus_node(),
     {ok, DBusObj} =
-	proxy:start_link(self(), 'org.freedesktop.DBus', '/', DBusRootNode),
+	proxy:start_link(self(), Conn, 'org.freedesktop.DBus', '/', DBusRootNode),
     {ok, DBusIfaceObj} = proxy:interface(DBusObj, 'org.freedesktop.DBus'),
     ok = proxy:call(DBusIfaceObj, 'Hello', [], [{reply, self(), hello}]),
     io:format("Call returned~n"),
 
-    {noreply, State#state{sock=Sock,
-			  state=up,
-			  auth=terminated,
+    {noreply, State#state{state=up,
 			  dbus_object=DBusObj
 			 }};
 
-%% handle_info({auth_rejected, Auth}, #state{auth=Auth}=State) ->
-%%     reply_waiting({error, auth_error}, State),
-%%     {stop, normal, State};
 
 handle_info({reply, hello, {ok, Reply}}, State) ->
-    DBusObj = State#state.dbus_object,
+%%     DBusObj = State#state.dbus_object,
     error_logger:error_msg("Hello reply ~p~n", [Reply]),
     [Id] = Reply,
 
@@ -188,7 +163,7 @@ handle_info({reply, hello, {ok, Reply}}, State) ->
 handle_info({reply, Ref, {error, Reason}}, #state{hello_ref=Ref}=State) ->
     {stop, {error, Reason}, State};
 
-handle_info({reply, add_match, {ok, Header}}, State) ->
+handle_info({reply, add_match, {ok, _Header}}, State) ->
     %% Ignore reply
     {noreply, State};
 
@@ -208,124 +183,6 @@ reply_waiting(Reply, State) ->
 	    end,
 
     lists:map(Fun, State#state.waiting).
-
-
-handle_call(Header, Tag, Pid, State) ->
-    io:format("handle call ~p ~p ~p~n", [Header, Tag, Pid]),
-    Sock = State#state.sock,
-    Serial = State#state.serial + 1,
-
-    {ok, Call} = call:start_link(self(), Tag, Pid),
-    Pending = [{Serial, Call} | State#state.pending],
-
-    {ok, Data} = marshaller:marshal_message(Header#header{serial=Serial}),
-    ok = connection:send(Sock, Data),
-%%     io:format("sent call ~p ~p~n", [Sock, Data]),
-    
-    {ok, State#state{pending=Pending, serial=Serial}}.
-
-handle_data(Data, State) ->
-    {ok, Messages, Data1} = marshaller:unmarshal_data(Data),
-
-%%     io:format("handle_data ~p ~p~n", [Messages, size(Data1)]),
-
-    {ok, State1} = handle_messages(Messages, State#state{buf=Data1}),
-
-    {ok, State1}.
-
-handle_messages([], State) ->
-    {ok, State};
-handle_messages([Header|R], State) ->
-    {ok, State1} = handle_message(Header#header.type, Header, State),
-    handle_messages(R, State1).
-
-%% FIXME handle illegal messages
-handle_message(?TYPE_METHOD_RETURN, Header, State) ->
-    io:format("Return ~p~n", [Header]),
-    {_, SerialHdr} = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
-    Pending = State#state.pending,
-    Serial = SerialHdr#variant.value,
-    State1 =
-	case lists:keysearch(Serial, 1, Pending) of
-	    {value, {Serial, Pid}} ->
-		ok = call:reply(Pid, Header),
-		State#state{pending=lists:keydelete(Serial, 1, Pending)};
-	    _ ->
-		io:format("Ignore reply ~p~n", [Serial]),
-		State
-	end,
-    {ok, State1};
-handle_message(?TYPE_ERROR, Header, State) ->
-    io:format("Error ~p~n", [Header]),
-    {_, SerialHdr} = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
-    Pending = State#state.pending,
-    Serial = SerialHdr#variant.value,
-    State1 =
-	case lists:keysearch(Serial, 1, Pending) of
-	    {value, {Serial, Pid}} ->
-		ok = call:error(Pid, Header),
-		State#state{pending=lists:keydelete(Serial, 1, Pending)};
-	    _ ->
-		io:format("Ignore error ~p~n", [Serial]),
-		State
-	end,
-    {ok, State1};
-handle_message(?TYPE_METHOD_CALL, Header, State) ->
-%%     io:format("Handle call ~p~n", [Header]),
-
-    ErrorName = "org.freedesktop.DBus.Error.UnknownObject",
-    ErrorText = "Erlang: Object not found.",
-    {ok, Reply, State1} = build_error(Header, ErrorName, ErrorText, State),
-    io:format("Reply ~p~n", [Reply]),
-
-    {ok, Data} = marshaller:marshal_message(Reply),
-    ok = connection:send(State#state.sock, Data),
-
-    {ok, State1};
-handle_message(?TYPE_SIGNAL, Header, State) ->
-    io:format("Signal ~p~n", [Header]),
-%%     {_, SerialHdr} = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
-%%     Pending = State#state.pending,
-%%     Serial = SerialHdr#variant.value,
-%%     State1 =
-%% 	case lists:keysearch(Serial, 1, Pending) of
-%% 	    {value, {Serial, Pid}} ->
-%% 		ok = call:reply(Pid, Header),
-%% 		State#state{pending=lists:keydelete(Serial, 1, Pending)};
-%% 	    _ ->
-%% 		io:format("Ignore reply ~p~n", [Serial]),
-%% 		State
-%% 	end,
-%%     {ok, State1};
-    {ok, State};
-    
-handle_message(Type, Header, State) ->
-    io:format("Ignore ~p ~p~n", [Type, Header]),
-    {ok, State}.
-
-build_error(Header, ErrorName, ErrorText, State) ->
-    Serial = State#state.serial + 1,
-%%     Path = message:header_fetch(?HEADER_PATH, Header),
-%%     Iface = message:header_fetch(?HEADER_INTERFACE, Header),
-%%     {_Type1, To} = message:header_fetch(?HEADER_DESTINATION, Header),
-    {_Type2, From} = message:header_fetch(?HEADER_SENDER, Header),
-    Error = #variant{type=string, value=ErrorName},
-    ReplySerial = #variant{type=uint32, value=Header#header.serial},
-
-    {ok, ReplyBody, _Pos} = 
-	marshaller:marshal_list([string], [ErrorText]),
-    Headers = [
-	       {?HEADER_ERROR_NAME, Error},
-	       {?HEADER_REPLY_SERIAL, ReplySerial},
- 	       {?HEADER_DESTINATION, From},
-	       {?HEADER_SIGNATURE, #variant{type=signature, value="s"}}
-	      ],
-
-    ReplyHeader = #header{type=?TYPE_ERROR,
-			  serial=Header#header.serial,
-			  headers=Headers,
-			  body=ReplyBody},
-    {ok, ReplyHeader, State#state{serial=Serial}}.
 
 
 default_dbus_node() ->

@@ -1,5 +1,5 @@
 %%%
-%%% D-Bus outgoing connection authenticator
+%%% D-Bus outgoing transport authenticator
 %%%
 %%% Messages
 %%%
@@ -58,14 +58,14 @@ init([DbusHost, DbusPort, Owner]) ->
     {ok, Sock} = tcp_conn:connect(DbusHost, DbusPort, [list, {packet, 0}]),
     init_common(Sock, Owner);
 init([Sock, Owner]) ->
-    connection:change_owner(Sock, Owner, self()),
+    transport:change_owner(Sock, Owner, self()),
     init_common(Sock, Owner).
 
 
 init_common(Sock, Owner) ->
     User = os:getenv("USER"),
-    ok = connection:send(Sock, <<0>>),
-    ok = connection:send(Sock, ["AUTH DBUS_COOKIE_SHA1 ",
+    ok = transport:send(Sock, <<0>>),
+    ok = transport:send(Sock, ["AUTH DBUS_COOKIE_SHA1 ",
 			     list_to_hexlist(User),
 			     "\r\n"]),
     {ok, #state{sock=Sock,
@@ -99,7 +99,7 @@ handle_info({received, Sock, "DATA " ++ Line}, #state{sock=Sock}=State) ->
 	{ok, Cookie} ->
 	    Challenge = calc_challenge(),
 	    Response = calc_response(ServerChallenge, Challenge, Cookie),
-	    ok = connection:send(Sock, ["DATA " ++ Response ++ "\r\n"]),
+	    ok = transport:send(Sock, ["DATA " ++ Response ++ "\r\n"]),
 
 	    {noreply, State}
     end;
@@ -107,15 +107,15 @@ handle_info({received, Sock, "DATA " ++ Line}, #state{sock=Sock}=State) ->
 handle_info({received, Sock, "OK " ++ Line}, #state{sock=Sock}=State) ->
     Guid = strip_eol(Line, []),
     error_logger:info_msg("GUID ~p~n", [Guid]),
-    ok = connection:setopts(Sock, [binary, {packet, raw}]),%, {recbuf, 8196}]),
-    ok = connection:send(Sock, ["BEGIN\r\n"]),
+    ok = transport:setopts(Sock, [binary, {packet, raw}]),%, {recbuf, 8196}]),
+    ok = transport:send(Sock, ["BEGIN\r\n"]),
 
     Owner = State#state.owner,
     Owner ! {auth_ok, self(), Sock},
     {stop, normal, State};
 
 handle_info({received, Sock, "REJECTED " ++ _Line}, #state{sock=Sock}=State) ->
-    ok = connection:close(Sock),
+    ok = transport:close(Sock),
 %%     Owner = State#state.owner,
 %%     Owner ! {auth_rejected, self()},
     {stop, {error, auth_rejected}, State};

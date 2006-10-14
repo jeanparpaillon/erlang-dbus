@@ -61,7 +61,7 @@ test() ->
 
 
 get_object(Bus, Service, Path) ->
-    proxy:start_link(Bus, Service, Path).
+    bus:get_object(Bus, Service, Path).
 
 call(Bus, Header) ->
     bus:call(Bus, Header).
@@ -85,13 +85,14 @@ make() ->
 	       "auth",
 	       "bus",
 	       "call",
-	       "connection",
+ 	       "connection",
 	       "gen_dbus",
 	       "introspect",
 	       "marshaller",
 	       "message",
 	       "proxy",
-	       "tcp_conn"		
+	       "tcp_conn",
+	       "transport"
 	       ],
     Prefix2 = "/home/mikael/svn/dberl/src/dberl/",
     make_modules(Prefix2, Modules2).

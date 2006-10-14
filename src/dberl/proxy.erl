@@ -12,8 +12,8 @@
 
 %% api
 -export([
-	 start_link/3,
 	 start_link/4,
+	 start_link/5,
 	 stop/1,
 	 interface/2,
 	 call/2,
@@ -36,11 +36,12 @@
 	  path,
 	  node,					% #node()
 	  bus,					% bus connection
+	  conn,
 	  waiting=[]
 	 }).
 
-start_link(Bus, Service, Path) ->
-    {ok, Pid} = gen_server:start_link(?MODULE, [Bus, Service, Path], []),
+start_link(Bus, Conn, Service, Path) ->
+    {ok, Pid} = gen_server:start_link(?MODULE, [Bus, Conn, Service, Path], []),
     case gen_server:call(Pid, proxy_ready) of
 	ok ->
 	    {ok, Pid};
@@ -48,8 +49,10 @@ start_link(Bus, Service, Path) ->
 	    throw(Reason)
     end.
 
-start_link(Bus, Service, Path, Node) when is_record(Node, node) ->
-    gen_server:start_link(?MODULE, [Bus, Service, Path, Node], []).
+start_link(Bus, Conn, Service, Path, Node) when is_record(Node, node),
+						is_pid(Conn),
+						is_pid(Bus) ->
+    gen_server:start_link(?MODULE, [Bus, Conn, Service, Path, Node], []).
 
 stop(Proxy) ->
     gen_server:cast(Proxy, stop).
@@ -83,20 +86,20 @@ cast({interface, Proxy, IfaceName}, MethodName, Args) ->
     gen_server:cast(Proxy, {method, IfaceName, MethodName, Args}).
 
 connect_signal({interface, Proxy, IfaceName}, SignalName, Tag) ->
-    gen_server:cast(Proxy, {connect_signal, IfaceName, SignalName, Tag}).
+    gen_server:cast(Proxy, {connect_signal, IfaceName, SignalName, Tag, self()}).
 
 %%
 %% gen_server callbacks
 %%
-init([Bus, Service, Path, Node]) ->
+init([Bus, Conn, Service, Path, Node]) ->
 %%     io:format("~p ~p: init~n", [?MODULE, ?LINE]),
-    {ok, #state{bus=Bus, service=Service, path=Path, node=Node}};
+    {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path, node=Node}};
 
-init([Bus, Service, Path]) ->
+init([Bus, Conn, Service, Path]) ->
 %%     io:format("~p ~p: init ~p ~p~n", [?MODULE, ?LINE, Service, Path]),
     Header = introspect:build_introspect(Service, Path),
-    ok = dbus:call(Bus, Header, introspect),
-    {ok, #state{bus=Bus, service=Service, path=Path}}.
+    ok = connection:call(Conn, Header, introspect),
+    {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path}}.
 
 
 code_change(_OldVsn, State, _Extra) ->
@@ -140,7 +143,7 @@ handle_call(Request, _From, State) ->
 
 handle_cast(stop, State) ->
     {stop, normal, State};
-handle_cast({connect_signal, IfaceName, SignalName, _Tag}, State) ->
+handle_cast({connect_signal, IfaceName, SignalName, _Tag, _Pid}, State) ->
     Match = [{type, signal},
 	     {sender, State#state.service},
 	     {interface, IfaceName},
@@ -222,7 +225,7 @@ do_method(IfaceName, Method, Args, Options, From, State) ->
     error_logger:info_msg("Call ~p: ~p ~p~n", [?MODULE, From, Signature]),
     Service = State#state.service,
     Path = State#state.path,
-    Bus = State#state.bus,
+    Conn = State#state.conn,
 
     Headers = [
 	       {?HEADER_PATH, #variant{type=object_path, value=Path}},
@@ -240,7 +243,7 @@ do_method(IfaceName, Method, Args, Options, From, State) ->
 			     body=Body},
 
 %% 	    io:format("before call~n"),
-	    ok = dbus:call(Bus, Header, {tag, From, Options}),
+	    ok = connection:call(Conn, Header, {tag, From, Options}),
 %% 	    io:format("after call~n"),
 	    case lists:keysearch(reply, 1, Options) of
 		{value, {reply, _Pid, _Ref}} ->
