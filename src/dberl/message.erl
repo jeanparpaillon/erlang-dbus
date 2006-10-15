@@ -13,7 +13,8 @@
 -export([
 	 header_find/2,
 	 header_fetch/2,
-	 build_error/3
+	 build_error/3,
+	 build_method_return/3
 	]).
 
 %% send_hello(State) ->
@@ -208,6 +209,25 @@ build_error(Header, ErrorName, ErrorText) ->
 			  serial=Header#header.serial,
 			  headers=Headers,
 			  body=ReplyBody},
+    {ok, ReplyHeader}.
+
+build_method_return(Header, Types, Body) ->
+    {_Type2, From} = message:header_fetch(?HEADER_SENDER, Header),
+    ReplySerial = #variant{type=uint32, value=Header#header.serial},
+    Signature = marshaller:marshal_signature(Types),
+
+    {ok, BinBody, _Pos} = 
+	marshaller:marshal_list(Types, Body),
+    Headers = [
+	       {?HEADER_REPLY_SERIAL, ReplySerial},
+ 	       {?HEADER_DESTINATION, From},
+	       {?HEADER_SIGNATURE, #variant{type=signature, value=Signature}}
+	      ],
+
+    ReplyHeader = #header{type=?TYPE_METHOD_RETURN,
+			  serial=Header#header.serial,
+			  headers=Headers,
+			  body=BinBody},
     {ok, ReplyHeader}.
 
 header_fetch(Code, Header) ->
