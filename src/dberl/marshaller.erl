@@ -280,7 +280,11 @@ marshal_signature({struct, SubTypes}) ->
 marshal_signature(variant) ->
     "v";
 marshal_signature(dict_entry) ->
-    exit(todo).
+    exit(todo);
+marshal_signature([]) ->
+    "";
+marshal_signature([Type|R]) ->
+    marshal_signature(Type) ++ marshal_signature(R).
 
 
 marshal_struct_signature([], Res) ->
