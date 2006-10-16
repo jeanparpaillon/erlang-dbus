@@ -134,7 +134,8 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
     Module = State#state.module,
     %%Service = State#state.service,
     {_, MemberVar} = message:header_fetch(?HEADER_MEMBER, Header),
-    Member = list_to_atom(MemberVar#variant.value),
+    MemberStr = MemberVar#variant.value,
+    Member = list_to_atom(MemberStr),
 
     io:format("Handle call ~p ~p~n", [Header, Member]),
     case Member of
@@ -151,14 +152,15 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 		{'EXIT', {undef, _}=Reason} ->
 		    io:format("undef method ~p~n", [Reason]),
 		    ErrorName = "org.freedesktop.DBus.Error.UnknownMethod",
-		    ErrorText = "Erlang: Function not found.",
+		    ErrorText = "Erlang: Function not found: " ++ MemberStr,
 		    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
 		    io:format("Reply ~p~n", [Reply]),
 		    ok = connection:cast(Conn, Reply),
 		    {noreply, State};
-		{'EXIT', _Reason} ->
+		{'EXIT', Reason} ->
+		    io:format("Error ~p~n", [Reason]),
 		    ErrorName = "org.freedesktop.DBus.Error.InvalidParameters",
-		    ErrorText = "Erlang: Object not found.",
+		    ErrorText = "Erlang: Invalid parameters.",
 		    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
 		    io:format("Reply ~p~n", [Reply]),
 		    ok = connection:cast(Conn, Reply),
