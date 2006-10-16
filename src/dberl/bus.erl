@@ -14,7 +14,9 @@
 
 -export([get_object/3,
 	 wait_ready/1,
-	 add_match/2]).
+	 add_match/2,
+	 export_service/2
+	]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -31,7 +33,8 @@
 	  hello_ref,
 	  id,
 	  dbus_object,
-	  objects
+	  objects,
+	  services=[]				% Exported services
 	 }).
 
 connect(Host, Port) ->
@@ -49,6 +52,9 @@ wait_ready(Bus) ->
 
 add_match(Bus, Match) ->
     gen_server:cast(Bus, {add_match, Match}).
+
+export_service(Bus, ServiceName) ->
+    gen_server:call(Bus, {export_service, ServiceName}).
 
 %%
 %% gen_server callbacks
@@ -75,6 +81,18 @@ handle_call(wait_ready, From, State) ->
     Waiting = [ From | State#state.waiting ],
     io:format("wait_ready received ~p~n", [Waiting]),
     {noreply, State#state{waiting=Waiting}};
+
+handle_call({export_service, ServiceName}, _From, State) ->
+    Services = State#state.services,
+    case lists:keysearch(ServiceName, 1, Services) of
+	{value, _} ->
+	    {reply, {already_exported, ServiceName}, State};
+	false ->
+	    Conn = State#state.conn,
+	    {ok, Service} = service:start_link(self(), Conn, ServiceName),
+	    Services1 = [{ServiceName, Service} | Services],
+	    {reply, {ok, Service}, State#state{services=Services1}}
+    end;
 
 handle_call(Request, _From, State) ->
     error_logger:error_msg("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
@@ -168,14 +186,21 @@ handle_info({reply, add_match, {ok, _Header}}, State) ->
     {noreply, State};
 
 handle_info({dbus_method_call, Header, Conn}, #state{conn=Conn}=State) ->
-    io:format("Handle call ~p~n", [Header]),
+    {_, ServiceNameVar} = message:header_fetch(?HEADER_DESTINATION, Header),
+    ServiceName = list_to_atom(ServiceNameVar#variant.value),
 
-    ErrorName = "org.freedesktop.DBus.Error.UnknownObject",
-    ErrorText = "Erlang: Object not found.",
-    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
-    io:format("Reply ~p~n", [Reply]),
+    io:format("Handle call ~p ~p~n", [Header, ServiceName]),
+    case lists:keysearch(ServiceName, 1, State#state.services) of
+	{value, {ServiceName, Service}} ->
+	    Service ! {dbus_method_call, Header, self()};
 
-    ok = connection:cast(Conn, Reply),
+	_ ->
+	    ErrorName = "org.freedesktop.DBus.Error.ServiceUnknown",
+	    ErrorText = "Erlang: Service not found.",
+	    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
+	    io:format("Reply ~p~n", [Reply]),
+	    ok = connection:cast(Conn, Reply)
+    end,
 
     {noreply, State};
 
@@ -212,6 +237,6 @@ default_dbus_node() ->
     DBusRootNode = #node{elements=[], interfaces=[DBusIface, DBusIntrospectableIface]},
     DBusRootNode.
 
-%% 'HelloWorld'(Msg) ->
-%%     io:format("HelloWorld ~p~n", [Msg]),
-%%     ok.
+'HelloWorld'(Id, Msg) ->
+    io:format("HelloWorld ~p ~p~n", [Id, Msg]),
+    "Hello from Erland ;)".

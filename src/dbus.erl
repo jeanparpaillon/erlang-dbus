@@ -50,7 +50,7 @@ wait_ready(Bus) ->
 make() ->
     Modules = [
 	       "dbus",
-	       "service"
+	       "hello"
 	      ],
 
     Prefix = "/home/mikael/svn/dberl/src/",
@@ -66,6 +66,7 @@ make() ->
 	       "marshaller",
 	       "message",
 	       "proxy",
+	       "service",
 	       "tcp_conn",
 	       "transport"
 	       ],
@@ -144,6 +145,9 @@ do_test(State) ->
 
 %%     ok = proxy:stop(BusObj),
 %%     io:format("RequestName: ~p~n", [Header1]),
+
+    {ok, Service} = bus:export_service(Bus, 'org.za.hem.DBus'),
+    {ok, Local_object} = hello:start_link(Service, '/Root'),
 
     {ok, Remote_object} = bus:get_object(Bus, 'org.designfu.SampleService', '/SomeObject'),
     io:format("Remote_object: ~p~n", [Remote_object]),
