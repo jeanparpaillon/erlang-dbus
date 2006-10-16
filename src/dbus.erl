@@ -69,6 +69,7 @@ make() ->
 	       "message",
 	       "proxy",
 	       "service",
+	       "service_sup",
 	       "sup",
 	       "tcp_conn",
 	       "transport"

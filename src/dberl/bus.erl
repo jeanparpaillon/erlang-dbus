@@ -4,6 +4,7 @@
 -import(gen_server).
 -import(io).
 -import(lists).
+-import(supervisor).
 
 -include("dbus.hrl").
 
@@ -88,7 +89,9 @@ handle_call({export_service, ServiceName}, _From, State) ->
 	{value, _} ->
 	    {reply, {already_exported, ServiceName}, State};
 	false ->
-	    {ok, Service} = service:start_link(self(), ServiceName),
+	    {ok, ServiceSup} = service_sup:start_link(ServiceName),
+	    ServiceChild = {service,{dberl.service,start_link,[self(),ServiceName]}, permanent, 10000, worker, [service]},
+	    {ok, Service} = supervisor:start_child(ServiceSup, ServiceChild),
 	    Services1 = [{ServiceName, Service} | Services],
 	    {reply, {ok, Service}, State#state{services=Services1}}
     end;
