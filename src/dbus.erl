@@ -19,6 +19,7 @@
 
 %% api
 -export([
+	 start_link/0,
 	 stop/0]).
 
 -define(SERVER, ?MODULE).
@@ -49,6 +50,7 @@ wait_ready(Bus) ->
 
 make() ->
     Modules = [
+	       "dberl",
 	       "dbus",
 	       "hello"
 	      ],
@@ -57,6 +59,7 @@ make() ->
     make_modules(Prefix, Modules),
 
     Modules2 = [
+	       "app",
 	       "auth",
 	       "bus",
 	       "call",
@@ -67,6 +70,7 @@ make() ->
 	       "message",
 	       "proxy",
 	       "service",
+	       "sup",
 	       "tcp_conn",
 	       "transport"
 	       ],
