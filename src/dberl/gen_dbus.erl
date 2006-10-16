@@ -97,10 +97,9 @@ handle_cast(Request, State) ->
     error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
-handle_info({dbus_method_call, Header, _From}, State) ->
+handle_info({dbus_method_call, Header, Conn}, State) ->
     Module = State#state.module,
     Service = State#state.service,
-    Conn = Service,
     {_, MemberVar} = message:header_fetch(?HEADER_MEMBER, Header),
     Member = list_to_atom(MemberVar#variant.value),
 

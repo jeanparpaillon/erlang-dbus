@@ -26,7 +26,8 @@
 	 close/1,
 	 call/2,
 	 call/3,
-	 cast/2
+	 cast/2,
+	 reply/2
 	]).
 
 %% gen_server callbacks
@@ -68,6 +69,9 @@ call(Conn, Header, From) ->
 cast(Conn, Header) ->
     gen_server:cast(Conn, {cast, Header}).
 
+reply(Conn, Header) ->
+    gen_server:cast(Conn, {dbus_reply, Header}).
+
 %%
 %% gen_server callbacks
 %%
@@ -99,10 +103,18 @@ handle_cast({call, Header, From, Pid}, State) ->
     {noreply, State1};
 
 handle_cast({cast, Header}, State) ->
-    %% FIXME serial
-    {ok, Data} = marshaller:marshal_message(Header),
+    Serial = State#state.serial+1,
+    Header1 = Header#header{serial=Serial},
+    {ok, Data} = marshaller:marshal_message(Header1),
     ok = transport:send(State#state.sock, Data),
-    {noreply, State};
+    {noreply, State#state{serial=Serial}};
+
+handle_cast({dbus_reply, Header}, State) ->
+    Serial = State#state.serial+1,
+    Header1 = Header#header{serial=Serial},
+    {ok, Data} = marshaller:marshal_message(Header1),
+    ok = transport:send(State#state.sock, Data),
+    {noreply, State#state{serial=Serial}};
 
 handle_cast(close, State) ->
     ok = transport:close(State#state.sock),

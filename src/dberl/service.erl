@@ -12,7 +12,7 @@
 
 %% api
 -export([
-	 start_link/3,
+	 start_link/2,
 	 register_object/3
 	]).
 
@@ -33,8 +33,8 @@
 	  objects=[]
 	 }).
 
-start_link(Bus, Conn, ServiceName) ->
-    gen_server:start_link(?MODULE, [Bus, Conn, ServiceName], []).
+start_link(Bus, ServiceName) ->
+    gen_server:start_link(?MODULE, [Bus, ServiceName], []).
 
 register_object(Service, Path, Object) ->
     gen_server:call(Service, {register_object, Path, Object}).
@@ -42,9 +42,8 @@ register_object(Service, Path, Object) ->
 %%
 %% gen_server callbacks
 %%
-init([Bus, Conn, ServiceName]) ->
+init([Bus, ServiceName]) ->
     State = #state{bus=Bus,
-		   conn=Conn,
 		   name=ServiceName},
     self() ! setup,
     {ok, State}.
@@ -86,16 +85,15 @@ handle_info(setup, State) ->
     {ok, _Header1} = proxy:call(BusIface, 'RequestName', [ServiceName, 0]),
     {noreply, State};
 
-handle_info({dbus_method_call, Header, _From}, State) ->
+handle_info({dbus_method_call, Header, Conn}, State) ->
     {_, PathVar} = message:header_fetch(?HEADER_PATH, Header),
     Path = list_to_atom(PathVar#variant.value),
 
     case lists:keysearch(Path, 1, State#state.objects) of
 	{value, {Path, Object}} ->
-	    Object ! {dbus_method_call, Header, self()};
+	    Object ! {dbus_method_call, Header, Conn};
 
 	_ ->
-	    Conn = State#state.conn,
 	    ErrorName = "org.freedesktop.DBus.Error.UnknownObject",
 	    ErrorText = "Erlang: Object not found.",
 	    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),

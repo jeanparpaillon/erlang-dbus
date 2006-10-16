@@ -88,8 +88,7 @@ handle_call({export_service, ServiceName}, _From, State) ->
 	{value, _} ->
 	    {reply, {already_exported, ServiceName}, State};
 	false ->
-	    Conn = State#state.conn,
-	    {ok, Service} = service:start_link(self(), Conn, ServiceName),
+	    {ok, Service} = service:start_link(self(), ServiceName),
 	    Services1 = [{ServiceName, Service} | Services],
 	    {reply, {ok, Service}, State#state{services=Services1}}
     end;
@@ -185,21 +184,21 @@ handle_info({reply, add_match, {ok, _Header}}, State) ->
     %% Ignore reply
     {noreply, State};
 
-handle_info({dbus_method_call, Header, Conn}, #state{conn=Conn}=State) ->
+handle_info({dbus_method_call, Header, Conn}, State) ->
     {_, ServiceNameVar} = message:header_fetch(?HEADER_DESTINATION, Header),
     ServiceName = list_to_atom(ServiceNameVar#variant.value),
 
     io:format("Handle call ~p ~p~n", [Header, ServiceName]),
     case lists:keysearch(ServiceName, 1, State#state.services) of
 	{value, {ServiceName, Service}} ->
-	    Service ! {dbus_method_call, Header, self()};
+	    Service ! {dbus_method_call, Header, Conn};
 
 	_ ->
 	    ErrorName = "org.freedesktop.DBus.Error.ServiceUnknown",
 	    ErrorText = "Erlang: Service not found.",
 	    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
 	    io:format("Reply ~p~n", [Reply]),
-	    ok = connection:cast(Conn, Reply)
+	    ok = connection:reply(Conn, Reply)
     end,
 
     {noreply, State};
