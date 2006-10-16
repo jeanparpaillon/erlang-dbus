@@ -159,20 +159,22 @@ marshal(signature, Value, Pos) ->
 marshal({array, byte}=Type, Value, Pos) when is_binary(Value) ->
     marshal(Type, binary_to_list(Value), Pos);
 marshal({array, SubType}, Value, Pos) when is_list(Value) ->
-    Pad = padding(4, Pos),
+    Pad = padding(uint32, Pos),
     Pos0 = Pos + Pad div 8,
     Pos1 = Pos0 + 4,
-    {ok, Value2, Pos2} = marshal_array(SubType, Value, Pos1),
-    Length = Pos2 - Pos1,
+    Pad1 = padding(SubType, Pos1),
+    Pos1b = Pos1 + Pad1 div 8,
+    io:format("Array ~p ~p ~p~n", [Pad1, Pos1, Pos1b]),
+    {ok, Value2, Pos2} = marshal_array(SubType, Value, Pos1b),
+    Length = Pos2 - Pos1b,
     {ok, Value1, Pos1} = marshal(uint32, Length, Pos0),
-    {ok, [<<0:Pad>>, Value1, Value2], Pos2};
+    {ok, [<<0:Pad>>, Value1, <<0:Pad1>>, Value2], Pos2};
 marshal({struct, _SubTypes}=Type, Value, Pos) when is_tuple(Value) ->
     marshal(Type, tuple_to_list(Value), Pos);
 marshal({struct, SubTypes}, Value, Pos) when is_list(Value) ->
     marshal_struct(SubTypes, Value, Pos);
-marshal({dict, KeyType, ValueType}, Value, Pos) when is_tuple(Value) ->
-    Array = dict:to_list(Value),
-    marshal({array, {struct, [KeyType, ValueType]}}, Array, Pos);
+marshal({dict, KeyType, ValueType}, Value, Pos) ->
+    marshal_dict(KeyType, ValueType, Value, Pos);
 marshal(variant, Value, Pos) when is_binary(Value) ->
     marshal_variant({array, byte}, Value, Pos);
 marshal(variant, #variant{type=Type, value=Value}, Pos) ->
@@ -292,6 +294,15 @@ marshal_array(_SubType, [], Pos, Res) ->
 marshal_array(SubType, [Value|R], Pos, Res) ->
     {ok, Value1, Pos1} = marshal(SubType, Value, Pos),
     marshal_array(SubType, R, Pos1, Res ++ [Value1]).
+
+
+marshal_dict(KeyType, ValueType, Value, Pos) when is_tuple(Value) ->
+    Array = dict:to_list(Value),
+    marshal_dict(KeyType, ValueType, Array, Pos);
+
+marshal_dict(KeyType, ValueType, Value, Pos) when is_list(Value) ->
+    marshal({array, {struct, [KeyType, ValueType]}}, Value, Pos).
+
 
 marshal_struct(SubTypes, Values, Pos) ->
     Pad = padding(8, Pos),
@@ -555,8 +566,44 @@ unmarshal_string(LenType, Data, Pos) ->
     Pos2 = Pos1 + Length + 1,
     {ok, binary_to_list(String), Data2, Pos2}.
 
+padding(byte) ->
+    1;
+padding(boolean) ->
+    4;
+padding(int16) ->
+    2;
+padding(uint16) ->
+    2;
+padding(int32) ->
+    4;
+padding(uint32) ->
+    4;
+padding(int64) ->
+    8;
+padding(uint64) ->
+    8;
+padding(double) ->
+    8;
+padding(string) ->
+    4;
+padding(object_path) ->
+    4;
+padding(signature) ->
+    1;
+padding({array, _Type}) ->
+    4;
+padding({struct, _Types}) ->
+    8;
+padding(variant) ->
+    1;
+padding(dict) ->
+    4.
+
+padding(Size, Pos) when is_integer(Size) ->
+    mod(Size - mod(Pos, Size), Size) * 8;
 padding(Size, Pos) ->
-    mod(Size - mod(Pos, Size), Size) * 8.
+    padding(padding(Size), Pos).
+
 
 mod(N, T) ->
     D = N div T,
