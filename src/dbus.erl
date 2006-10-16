@@ -59,7 +59,6 @@ make() ->
     make_modules(Prefix, Modules),
 
     Modules2 = [
-	       "app",
 	       "auth",
 	       "bus",
 	       "call",
@@ -106,11 +105,12 @@ init([Host, Port]) ->
     {ok, Bus} = bus:connect(Host, Port),
     ok = bus:wait_ready(Bus),
     io:format("Ready~n"),
+
+    {ok, Service} = bus:export_service(Bus, 'org.za.hem.DBus'),
+    {ok, Local_object} = hello:start_link(Service, '/Root'),
+
     {ok, BusObj} = bus:get_object(Bus, 'org.freedesktop.DBus', '/'),
     io:format("BusObj: ~p~n", [BusObj]),
-
-    {ok, BusIface} = proxy:interface(BusObj, 'org.freedesktop.DBus'),
-    {ok, _Header1} = proxy:call(BusIface, 'RequestName', ["org.za.hem.DBus", 0]),
 
     {ok, #state{bus=Bus,
 		bus_obj=BusObj
