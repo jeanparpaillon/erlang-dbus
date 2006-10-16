@@ -112,26 +112,28 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 %% 	    ok = connection:cast(Conn, Reply);
 
 	_ ->
-	    case catch do_method_call(Module, Member, Header, Conn) of
+	    Sub = State#state.sub,
+
+	    case catch do_method_call(Module, Member, Header, Conn, Sub) of
 		{'EXIT', {undef, _}=Reason} ->
 		    io:format("undef method ~p~n", [Reason]),
 		    ErrorName = "org.freedesktop.DBus.Error.UnknownMethod",
-		    ErrorText = "Erlang: Object not found.",
+		    ErrorText = "Erlang: Function not found.",
 		    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
 		    io:format("Reply ~p~n", [Reply]),
-		    ok = connection:cast(Conn, Reply);
+		    ok = connection:cast(Conn, Reply),
+		    {noreply, State};
 		{'EXIT', _Reason} ->
 		    ErrorName = "org.freedesktop.DBus.Error.InvalidParameters",
 		    ErrorText = "Erlang: Object not found.",
 		    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
 		    io:format("Reply ~p~n", [Reply]),
-		    ok = connection:cast(Conn, Reply);
-		_ ->
-		    ok
+		    ok = connection:cast(Conn, Reply),
+		    {noreply, State};
+		{ok, Sub1} ->
+		    {noreply, State#state{sub=Sub1}}
 	    end
-    end,
-
-    {noreply, State};
+    end;
 
 handle_info(Info, State) ->
     error_logger:error_msg("Unhandled info in ~p: ~p ~p~n", [?MODULE, Info, State]),
@@ -150,8 +152,9 @@ terminate(_Reason, _State) ->
     terminated.
 
 
-do_method_call(Module, Member, Header, Conn) ->
-    ReplyBody = apply(Module, Member, Header#header.body),
+do_method_call(Module, Member, Header, Conn, Sub) ->
+    {reply, ReplyBody, Sub1} = Module:Member(Header#header.body, Sub),
     {ok, Reply} = message:build_method_return(Header, [string], [ReplyBody]),
     io:format("Reply ~p~n", [Reply]),
-    ok = connection:cast(Conn, Reply).
+    ok = connection:cast(Conn, Reply),
+    {ok, Sub1}.

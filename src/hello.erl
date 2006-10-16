@@ -14,6 +14,7 @@
 
 %% dbus object callbacks
 -export([
+	 'HelloWorld'/2,
 	 hello_world/1,
 	 hello_world/2,
 	 get_tuple/1,
@@ -45,6 +46,11 @@ hello_world(dbus_info) ->
      {interface, 'org.designfu.SampleInterface'},
      {signature, [string], [{array, string}]}].
     
+
+'HelloWorld'([Id, Hello_message], State) ->
+    io:format("HelloWorld: ~p, ~p~n", [Id, Hello_message]),
+%%     on_click(17, 123),
+    {reply, ["Hello", " from Erlang service.erl"], State}.
 
 hello_world([Hello_message], State) ->
     io:format("~p~n", [Hello_message]),
