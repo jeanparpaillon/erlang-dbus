@@ -1,5 +1,6 @@
 -module(dberl.marshaller).
 
+-import(dict).
 -import(error_logger).
 -import(file).
 -import(io).
@@ -169,6 +170,9 @@ marshal({struct, _SubTypes}=Type, Value, Pos) when is_tuple(Value) ->
     marshal(Type, tuple_to_list(Value), Pos);
 marshal({struct, SubTypes}, Value, Pos) when is_list(Value) ->
     marshal_struct(SubTypes, Value, Pos);
+marshal({dict, KeyType, ValueType}, Value, Pos) when is_tuple(Value) ->
+    Array = dict:to_list(Value),
+    marshal({array, {struct, [KeyType, ValueType]}}, Array, Pos);
 marshal(variant, Value, Pos) when is_binary(Value) ->
     marshal_variant({array, byte}, Value, Pos);
 marshal(variant, #variant{type=Type, value=Value}, Pos) ->
@@ -180,7 +184,66 @@ marshal(variant, false=Value, Pos) ->
 marshal(variant, Value, Pos) when is_integer(Value), Value < 0 ->
     marshal_int_variant(Value, Pos);
 marshal(variant, Value, Pos) when is_integer(Value), Value >= 0 ->
-    marshal_uint_variant(Value, Pos).
+    marshal_uint_variant(Value, Pos);
+marshal(variant, Value, Pos) when is_tuple(Value) ->
+    Type = infer_type(Value),
+    marshal_variant(Type, Value, Pos).
+
+infer_type(Value) when is_binary(Value)->
+    {array, byte};
+infer_type(true) ->
+    boolean;
+infer_type(false) ->
+    boolean;
+infer_type(Value) when is_integer(Value), Value < 0 ->
+    infer_int(Value);
+infer_type(Value) when is_integer(Value), Value >= 0 ->
+    infer_uint(Value);
+infer_type(Value) when is_tuple(Value) ->
+    infer_struct(tuple_to_list(Value));
+
+%%     case is_dict(Value) of
+%% 	true ->
+%% 	    dict;
+%% 	false ->
+%% 	    infer_struct(tuple_to_list(Value))
+%%     end;
+infer_type(Value) when is_atom(Value)->
+    string;
+infer_type(Value) when is_list(Value) ->
+    %% FIXME check if it's a valid (UTF-8) string
+    string.
+
+
+is_dict(D) ->
+    case catch dict:to_list(D) of
+      L when is_list(L) ->
+        true;
+      {'EXIT',_} ->
+        false
+    end.
+
+infer_struct(Values) ->
+    {struct, infer_struct(Values, [])}.
+
+infer_struct([], Res) ->
+    Res;
+infer_struct([Value|R], Res) ->
+    infer_struct(R, Res ++ [infer_type(Value)]).
+
+infer_int(Value) when Value >= -32768 ->
+    int16;
+infer_int(Value) when Value >= -4294967296 ->
+    int32;
+infer_int(_Value) ->
+    int64.
+
+infer_uint(Value) when Value < 32768 ->
+    uint16;
+infer_uint(Value) when Value < 4294967296 ->
+    uint32;
+infer_uint(_Value) ->
+    uint64.
 
 
 marshal_int_variant(Value, Pos) when Value >= -32768 ->
@@ -230,7 +293,6 @@ marshal_array(SubType, [Value|R], Pos, Res) ->
     {ok, Value1, Pos1} = marshal(SubType, Value, Pos),
     marshal_array(SubType, R, Pos1, Res ++ [Value1]).
 
-
 marshal_struct(SubTypes, Values, Pos) ->
     Pad = padding(8, Pos),
 %%     io:format("marshal_struct ~p ~p ~n", [Pos, Pad]),
@@ -279,8 +341,13 @@ marshal_signature({struct, SubTypes}) ->
     [$(, marshal_struct_signature(SubTypes, []), $)];
 marshal_signature(variant) ->
     "v";
-marshal_signature(dict_entry) ->
-    exit(todo);
+marshal_signature({dict, KeyType, ValueType}) ->
+    KeySig = marshal_signature(KeyType),
+    ValueSig = marshal_signature(ValueType),
+
+    %% TODO check length(KeySig) == 1
+
+    [$a, ${, KeySig, ValueSig, $}];
 marshal_signature([]) ->
     "";
 marshal_signature([Type|R]) ->
@@ -339,6 +406,11 @@ unmarshal({struct, SubTypes}, Data, Pos) ->
     {ok, list_to_tuple(Res), Data2, Pos2};
 %%     {ok, Res, Data2, Pos2};
 
+unmarshal({dict, KeyType, ValueType}, Data, Pos) ->
+    {ok, Length, Data1, Pos1} = unmarshal(uint32, Data, Pos),
+    {ok, Res, Data2, Pos2} = unmarshal_array({struct, [KeyType, ValueType]}, Length, Data1, Pos1),
+    {ok, Res, Data2, Pos2};
+
 unmarshal(variant, Data, Pos) ->
     {ok, Signature, Data1, Pos1} = unmarshal(signature, Data, Pos),
     [Type] = unmarshal_signature(Signature),
@@ -361,20 +433,37 @@ unmarshal_int(Len, Data, Pos) ->
     {ok, Value, Data1, Pos1}.
 
 unmarshal_signature([], Res) ->
-    Res;
+    {Res, []};
+
+unmarshal_signature([$a, ${, KeySig|R], Res) ->
+    KeyType = unmarshal_signature(KeySig),
+    {[ValueType], Sig} = unmarshal_signature(R, []),
+    unmarshal_signature(Sig, Res ++ [{dict, KeyType, ValueType}]);
+
 unmarshal_signature([$a|R], Res) ->
-    [Type | Types] = unmarshal_signature(R, []),
-    Res ++ [{array, Type}] ++ Types;
+    {[Type | Types], []} = unmarshal_signature(R, []),
+    {Res ++ [{array, Type}] ++ Types, []};
 
 unmarshal_signature([$(|R], Res) ->
-    {Types, Rest} = unmarshal_struct_signature(R, []),
+    {Types, Rest} = unmarshal_signature(R, []),
 
     unmarshal_signature(Rest, Res ++ [{struct, Types}]);
+
+unmarshal_signature([$)|R], Res) ->
+    {Res, R};
+
+unmarshal_signature([$}|R], Res) ->
+    {Res, R};
 
 unmarshal_signature([Signature|R], Res) ->
     Type = unmarshal_signature(Signature),
     unmarshal_signature(R, Res ++ [Type]).
 
+
+%% unmarshal_dict_signature([$}|R], Res) ->
+%%     Res;
+%% unmarshal_dict_signature([Signature|R], Res) ->
+%%     unmarshal_signature(
 
 unmarshal_struct_signature([$)|R], Res) ->
     {Res, R};
@@ -387,7 +476,8 @@ unmarshal_signature(Signature) when is_binary(Signature) ->
     unmarshal_signature(binary_to_list(Signature));
 
 unmarshal_signature(Signature) when is_list(Signature) ->
-    unmarshal_signature(Signature, []);
+    {Sig, []} = unmarshal_signature(Signature, []),
+    Sig;
 
 unmarshal_signature($y) ->
     byte;
