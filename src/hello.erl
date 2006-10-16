@@ -14,7 +14,7 @@
 
 %% dbus object callbacks
 -export([
-	 'HelloWorld'/2,
+	 'HelloWorld'/3,
 	 hello_world/1,
 	 hello_world/2,
 	 get_tuple/1,
@@ -47,10 +47,15 @@ hello_world(dbus_info) ->
      {signature, [string], [{array, string}]}].
     
 
-'HelloWorld'([Id, Hello_message], State) ->
-    io:format("HelloWorld: ~p, ~p~n", [Id, Hello_message]),
-%%     on_click(17, 123),
-    {reply, ["Hello", " from Erlang service.erl"], State}.
+'HelloWorld'([Id, Hello_message], From, State) ->
+    {dbus_error, 'org.freedesktop.DBus.Error.InvalidArgs', "Invalid args", State}.
+
+%%     self() ! {hello, [Id, Hello_message], From},
+%%     {noreply, State}.
+
+%%     io:format("HelloWorld: ~p, ~p~n", [Id, Hello_message]),
+%% %%     on_click(17, 123),
+%%     {reply, ["Hello", " from Erlang service.erl"], State}.
 
 hello_world([Hello_message], State) ->
     io:format("~p~n", [Hello_message]),
@@ -77,6 +82,13 @@ get_dict([], State) ->
 %%     @dbus.service.signal("org.designfu.SampleInterface")
 %%     def OnClick(self, x, y):
 %%         pass
+
+handle_info({hello, [Id, Hello_message], From}, State) ->
+    io:format("HelloWorld: callback ~p, ~p~n", [Id, Hello_message]),
+    %%     on_click(17, 123),
+%%     gen_dbus:reply(From, {ok, ["Hello callback", " from Erlang service.erl"]}),
+    gen_dbus:reply(From, {dbus_error, 'org.freedesktop.DBus.Error.Timeout', "Error from Erlang service.erl"}),
+    {noreply, State};
 
 handle_info(Info, State) ->
     error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),

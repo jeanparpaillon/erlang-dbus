@@ -16,7 +16,8 @@
 
 %% api
 -export([
-	 start_link/5
+	 start_link/5,
+	 reply/2
 	]).
 
 %% behaviour callback
@@ -43,11 +44,15 @@ behaviour_info(callbacks) ->
 	  module,
 	  sub,
 	  default_iface,
-	  path
+	  path,
+	  pending=[]
 	 }).
 
 start_link(Service, Path, Module, Args, Options) ->
     gen_server:start_link(?MODULE, [Service, Path, Module, Args], Options).
+
+reply({Self, From}, Reply) ->
+    gen_server:cast(Self, {reply, From, Reply}).
 
 %%
 %% gen_server callbacks
@@ -93,13 +98,41 @@ handle_call(Request, _From, State) ->
 
 handle_cast(stop, State) ->
     {stop, normal, State};
+
+handle_cast({reply, From, Reply}, State) ->
+    Pending = State#state.pending,
+    case lists:keysearch(From, 1, Pending) of
+	{value, {_, Header, Conn}} ->
+	    ReplyMsg =
+		case Reply of
+		    {ok, ReplyBody} ->
+			%% Send method return
+			{ok, ReplyMsg1} = message:build_method_return(Header, [string], [ReplyBody]),
+			ReplyMsg1;
+		    {dbus_error, Iface, Text} ->
+			%% Send error
+			{ok, ReplyMsg1} = message:build_error(Header, Iface, Text),
+			ReplyMsg1;
+		    _ ->
+			error_logger:info_msg("Illegal reply ~p~n", [Reply]),
+			{ok, ReplyMsg1} = message:build_error(Header, 'org.freedesktop.DBus.Error.Failed', "Failed"),
+			ReplyMsg1
+		end,
+	    ok = connection:cast(Conn, ReplyMsg);
+	false ->
+	    error_logger:info_msg("Pending not found ~p: ~p ~p~n", [?MODULE, From, Pending]),
+	    ignore
+    end,
+    Pending1 = lists:keydelete(From, 1, Pending),
+    {noreply, State#state{pending=Pending1}};
+
 handle_cast(Request, State) ->
     error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
 handle_info({dbus_method_call, Header, Conn}, State) ->
     Module = State#state.module,
-    Service = State#state.service,
+    %%Service = State#state.service,
     {_, MemberVar} = message:header_fetch(?HEADER_MEMBER, Header),
     Member = list_to_atom(MemberVar#variant.value),
 
@@ -131,12 +164,15 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 		    ok = connection:cast(Conn, Reply),
 		    {noreply, State};
 		{ok, Sub1} ->
-		    {noreply, State#state{sub=Sub1}}
+		    {noreply, State#state{sub=Sub1}};
+		{pending, From, Sub1} ->
+		    io:format("Pending ~p~n", [From]),
+		    Pending = [{From, Header, Conn}, State#state.pending],
+		    {noreply, State#state{sub=Sub1, pending=Pending}}
 	    end
     end;
 
 handle_info(Info, State) ->
-    error_logger:error_msg("Unhandled info in ~p: ~p ~p~n", [?MODULE, Info, State]),
     Module = State#state.module,
     Sub = State#state.sub,
 
@@ -153,8 +189,29 @@ terminate(_Reason, _State) ->
 
 
 do_method_call(Module, Member, Header, Conn, Sub) ->
-    {reply, ReplyBody, Sub1} = Module:Member(Header#header.body, Sub),
-    {ok, Reply} = message:build_method_return(Header, [string], [ReplyBody]),
-    io:format("Reply ~p~n", [Reply]),
-    ok = connection:cast(Conn, Reply),
-    {ok, Sub1}.
+    From =
+	if
+	    Header#header.flags band ?NO_REPLY_EXPECTED ->
+		none;
+	    true ->
+		make_ref()
+	end,
+
+    case {Module:Member(Header#header.body, {self(), From}, Sub), From} of
+	{{dbus_error, Iface, Msg, Sub1}, _} ->
+	    {ok, Reply} = message:build_error(Header, Iface, Msg),
+	    ok = connection:cast(Conn, Reply),
+	    {ok, Sub1};
+	{{noreply, Sub1}, none} ->
+	    {ok, Sub1};
+	{{reply, ReplyBody, Sub1}, none} ->
+	    io:format("Ignore reply ~p~n", [ReplyBody]),
+	    {ok, Sub1};
+	{{reply, ReplyBody, Sub1}, _} ->
+	    {ok, Reply} = message:build_method_return(Header, [string], [ReplyBody]),
+	    io:format("Reply ~p~n", [Reply]),
+	    ok = connection:cast(Conn, Reply),
+	    {ok, Sub1};
+	{{noreply, Sub1}, _} ->
+	    {pending, From, Sub1}
+    end.
