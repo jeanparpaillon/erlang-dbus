@@ -210,7 +210,8 @@ do_method_call(Module, Member, Header, Conn, Sub) ->
 	    io:format("Ignore reply ~p~n", [ReplyBody]),
 	    {ok, Sub1};
 	{{reply, ReplyBody, Sub1}, _} ->
-	    {ok, Reply} = message:build_method_return(Header, [string], [ReplyBody]),
+	    io:format("Reply ~p~n", [ReplyBody]),
+	    {ok, Reply} = message:build_method_return(Header, [variant], [ReplyBody]),
 	    io:format("Reply ~p~n", [Reply]),
 	    ok = connection:cast(Conn, Reply),
 	    {ok, Sub1};
