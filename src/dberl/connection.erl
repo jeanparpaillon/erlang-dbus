@@ -23,6 +23,7 @@
 -export([
 	 start_link/2,
 	 start_link/3,
+	 start_link/4,
 	 close/1,
 	 call/2,
 	 call/3,
@@ -55,7 +56,10 @@ start_link(Host, Port) ->
     start_link(Host, Port, []).
 
 start_link(Host, Port, Options) ->
-    gen_server:start_link(?MODULE, [Host, Port, Options, self()], []).
+    start_link(Host, Port, Options, self()).
+
+start_link(Host, Port, Options, Owner) ->
+    gen_server:start_link(?MODULE, [Host, Port, Options, Owner], []).
 
 close(Conn) ->
     gen_server:cast(Conn, close).
@@ -161,7 +165,7 @@ terminate(_Reason, State) ->
 handle_data(Data, State) ->
     {ok, Messages, Data1} = marshaller:unmarshal_data(Data),
 
-    io:format("handle_data ~p ~p~n", [Messages, size(Data1)]),
+%%     io:format("handle_data ~p ~p~n", [Messages, size(Data1)]),
 
     {ok, State1} = handle_messages(Messages, State#state{buf=Data1}),
 
@@ -171,7 +175,7 @@ handle_data(Data, State) ->
 handle_method_call(Header, Tag, Pid, State) ->
     Sock = State#state.sock,
     Serial = State#state.serial + 1,
-    io:format("handle call ~p ~p ~p~n", [Header, Tag, Pid]),
+%%     io:format("handle call ~p ~p ~p~n", [Header, Tag, Pid]),
 
     {ok, Call} = call:start_link(self(), Tag, Pid),
     Pending = [{Serial, Call} | State#state.pending],
@@ -190,7 +194,7 @@ handle_messages([Header|R], State) ->
     handle_messages(R, State1).
 
 handle_message(?TYPE_METHOD_RETURN, Header, State) ->
-    io:format("Return ~p~n", [Header]),
+%%     io:format("Return ~p~n", [Header]),
     {_, SerialHdr} = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
     Pending = State#state.pending,
     Serial = SerialHdr#variant.value,
@@ -205,7 +209,7 @@ handle_message(?TYPE_METHOD_RETURN, Header, State) ->
 	end,
     {ok, State1};
 handle_message(?TYPE_ERROR, Header, State) ->
-    io:format("Error ~p~n", [Header]),
+%%     io:format("Error ~p~n", [Header]),
     {_, SerialHdr} = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
     Pending = State#state.pending,
     Serial = SerialHdr#variant.value,
@@ -221,7 +225,7 @@ handle_message(?TYPE_ERROR, Header, State) ->
     {ok, State1};
 handle_message(?TYPE_METHOD_CALL, Header, State) ->
     Owner = State#state.owner,
-    io:format("Method call ~p~n", [Owner]),
+%%     io:format("Method call ~p~n", [Owner]),
     Owner ! {dbus_method_call, Header, self()},
     {ok, State};
 
