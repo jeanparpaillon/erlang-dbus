@@ -188,12 +188,12 @@ handle_info({error, Header, introspect}, State) ->
     {stop, normal, State};
 
 handle_info({reply, Header, {tag, From, Options}}, State) ->
-    error_logger:info_msg("Reply ~p: ~p~n", [?MODULE, From]),
+%%     error_logger:info_msg("Reply ~p: ~p~n", [?MODULE, From]),
     reply(From, {ok, Header#header.body}, Options),
     {noreply, State};
 
 handle_info({error, Header, {tag, From, Options}}, State) ->
-    error_logger:info_msg("Error ~p: ~p~n", [?MODULE, From]),
+%%     error_logger:info_msg("Error ~p: ~p~n", [?MODULE, From]),
 
     {_Type1, ErrorName} = message:header_fetch(?HEADER_ERROR_NAME, Header),
     ErrorName1 = list_to_atom(ErrorName#variant.value),
@@ -222,7 +222,7 @@ do_method(IfaceName, Method, Args, Options, From, State) ->
     MethodName = Method#method.name,
     Signature = Method#method.in_sig,
     Types = Method#method.in_types,
-    error_logger:info_msg("Call ~p: ~p ~p~n", [?MODULE, From, Signature]),
+%%     error_logger:info_msg("Call ~p: ~p ~p~n", [?MODULE, From, Signature]),
     Service = State#state.service,
     Path = State#state.path,
     Conn = State#state.conn,
