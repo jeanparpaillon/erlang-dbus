@@ -34,7 +34,6 @@
 	  hello_ref,
 	  id,
 	  dbus_object,
-	  objects,
 	  services=[]				% Exported services
 	 }).
 
@@ -61,8 +60,9 @@ export_service(Bus, ServiceName) ->
 %% gen_server callbacks
 %%
 init([DbusHost, DbusPort]) ->
-    {ok, Conn} = connection:start_link(DbusHost, DbusPort, [list, {packet, 0}]),
-    {ok, #state{conn=Conn}}.
+%%     process_flag(trap_exit),
+    self() ! {setup, DbusHost, DbusPort},
+    {ok, #state{}}.
 
 
 code_change(_OldVsn, State, _Extra) ->
@@ -92,6 +92,11 @@ handle_call({export_service, ServiceName}, _From, State) ->
 	    {ok, ServiceSup} = service_sup:start_link(ServiceName),
 	    ServiceChild = {service,{dberl.service,start_link,[self(),ServiceName]}, permanent, 10000, worker, [service]},
 	    {ok, Service} = supervisor:start_child(ServiceSup, ServiceChild),
+
+%% 	    ServiceSupSpec = {service,{dberl.service_sup,start_link,[ServiceName]}, permanent, 10000, worker, [service_sup]},
+%% 	    {ok, ServiceSup} = supervisor:start_child(dberl.sup, ServiceSupSpec),
+%% 	    ServiceSpec = {service,{dberl.service,start_link,[self(),ServiceName]}, permanent, 10000, worker, [service]},
+%% 	    {ok, Service} = supervisor:start_child(ServiceSup, ServiceSpec),
 	    Services1 = [{ServiceName, Service} | Services],
 	    {reply, {ok, Service}, State#state{services=Services1}}
     end;
@@ -144,6 +149,12 @@ handle_cast(Request, State) ->
     error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
+
+handle_info({setup, DbusHost, DbusPort}, State) ->
+    {ok, Conn} = connection:start_link(DbusHost, DbusPort, [list, {packet, 0}]),
+%%     ConnSpec = {{conn, DbusHost, DbusPort},{dberl.connection,start_link,[DbusHost, DbusPort, [list, {packet, 0}], self()]}, permanent, 10000, worker, [connection]},
+%%     {ok, Conn} = supervisor:start_child(dberl.sup, ConnSpec),
+    {noreply, State#state{conn=Conn}};
 
 handle_info({auth_ok, Conn}, #state{conn=Conn}=State) ->
     
@@ -206,9 +217,12 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 
     {noreply, State};
 
-handle_info({dbus_signal, Header, Conn}, #state{conn=Conn}=State) ->
-    io:format("Ignore signal ~p~n", [Header]),
+handle_info({dbus_signal, _Header, Conn}, #state{conn=Conn}=State) ->
+    io:format("Ignore signal~n", []),
     {noreply, State};
+
+%% handle_info({'EXIT', Pid, Reason}, State) ->
+%%     case lists:keysearch(Pid, 2, Services)
 
 handle_info(Info, State) ->
     error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
