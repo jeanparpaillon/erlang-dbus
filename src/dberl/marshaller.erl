@@ -41,7 +41,7 @@ unmarshal_data(Data, Res) ->
 	{ok, Header, Data1} ->
 	    unmarshal_data(Data1, Res ++ [Header]);
 	{'EXIT', Reason} ->
-	    error_logger:info_msg("unmarshal_data: ~p~n", [Data]),
+%% 	    error_logger:info_msg("unmarshal_data: ~p~n", [Data]),
 	    {ok, Res, Data}
     end.
 
@@ -164,7 +164,7 @@ marshal({array, SubType}, Value, Pos) when is_list(Value) ->
     Pos1 = Pos0 + 4,
     Pad1 = padding(SubType, Pos1),
     Pos1b = Pos1 + Pad1 div 8,
-    io:format("Array ~p ~p ~p~n", [Pad1, Pos1, Pos1b]),
+%%     io:format("Array ~p ~p ~p~n", [Pad1, Pos1, Pos1b]),
     {ok, Value2, Pos2} = marshal_array(SubType, Value, Pos1b),
     Length = Pos2 - Pos1b,
     {ok, Value1, Pos1} = marshal(uint32, Length, Pos0),
