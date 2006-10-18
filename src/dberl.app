@@ -18,7 +18,7 @@
 	     dberl.tcp_conn,
 	     dberl.transport
 	    ]},
-  {registered, []},
+  {registered, [dberl.bus_reg, dbus]},
   {mod, {dberl, []}},
   {env, []},
   {applications, [
