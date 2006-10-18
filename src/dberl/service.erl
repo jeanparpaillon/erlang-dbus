@@ -95,6 +95,23 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
     end,
     {noreply, State};
 
+handle_info({'EXIT', Pid, Reason}, State) ->
+    Objects = State#state.objects,
+    case lists:keysearch(Pid, 2, Objects) of
+	{value, _} ->
+	    error_logger:info_msg("~p ~p Terminated ~p~n", [?MODULE, Pid, Reason]),
+	    Objects1 =
+		lists:keydelete(Pid, 2, Objects),
+		    {noreply, State#state{objects=Objects1}};
+	false ->
+	    if
+		Reason /= normal ->
+		    {stop, Reason};
+		true ->
+		    {noreply, State}
+	    end
+    end;
+
 handle_info(Info, State) ->
     error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
