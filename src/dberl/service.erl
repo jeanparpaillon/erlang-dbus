@@ -98,11 +98,17 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 handle_info({'EXIT', Pid, Reason}, State) ->
     Objects = State#state.objects,
     case lists:keysearch(Pid, 2, Objects) of
-	{value, _} ->
-	    error_logger:info_msg("~p ~p Terminated ~p~n", [?MODULE, Pid, Reason]),
+	{value, {Path, _}} ->
+	    error_logger:info_msg("~p: Object terminated ~p ~p ~p~n", [?MODULE, Pid, Reason, Path]),
 	    Objects1 =
 		lists:keydelete(Pid, 2, Objects),
-		    {noreply, State#state{objects=Objects1}};
+	    if
+		Objects1 == [] ->
+		    error_logger:info_msg("~p: No more objects stopping ~p service~n", [?MODULE, State#state.name]),
+		    {stop, normal, State};
+		true ->
+		    {noreply, State#state{objects=Objects1}}
+	    end;
 	false ->
 	    if
 		Reason /= normal ->
