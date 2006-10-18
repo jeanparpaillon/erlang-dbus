@@ -138,9 +138,8 @@ handle_info({setup, Host, Port}, State) ->
     ok = bus:wait_ready(Bus),
     io:format("Ready~n"),
 
-    {ok, Service} = dberl.service_reg:export_service('org.za.hem.DBus'),
-%%     true = link(Service),
-    {ok, Local_object} = hello:start_link(Service, '/Root'),
+%%     {ok, Service} = dberl.service_reg:export_service('org.za.hem.DBus'),
+%%     {ok, Local_object} = hello:start_link(Service, '/Root'),
 
     {ok, BusObj} = bus:get_object(Bus, 'org.freedesktop.DBus', '/'),
     true = link(BusObj),

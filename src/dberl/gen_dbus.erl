@@ -48,8 +48,8 @@ behaviour_info(callbacks) ->
 	  pending=[]
 	 }).
 
-start_link(Service, Path, Module, Args, Options) ->
-    gen_server:start_link(?MODULE, [Service, Path, Module, Args], Options).
+start_link(ServiceName, Path, Module, Args, Options) when is_atom(ServiceName) ->
+    gen_server:start_link(?MODULE, [ServiceName, Path, Module, Args], Options).
 
 reply({Self, From}, Reply) ->
     gen_server:cast(Self, {reply, From, Reply}).
@@ -57,13 +57,14 @@ reply({Self, From}, Reply) ->
 %%
 %% gen_server callbacks
 %%
-init([Service, Path, Module, Args]) ->
+init([ServiceName, Path, Module, Args]) ->
     case Module:init(Args) of
 	{stop, Reason} ->
 	    {stop, Reason};
 	ignore ->
 	    ignore;
 	{ok, DBus_config, SubState} ->
+	    {ok, Service} = dberl.service_reg:export_service(ServiceName),
 	    ok = service:register_object(Service, Path, self()),
 	    State = #state{service=Service,
 			   path=Path,
@@ -137,7 +138,7 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
     MemberStr = MemberVar#variant.value,
     Member = list_to_atom(MemberStr),
 
-    io:format("Handle call ~p ~p~n", [Header, Member]),
+%%     io:format("Handle call ~p ~p~n", [Header, Member]),
     case Member of
 %% 	'Introspect' ->
 %% 	    ReplyBody = "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\" \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\"><node><interface name=\"org.designfu.SampleInterface\"><method name=\"HelloWorld\"><arg direction=\"in\" type=\"i\" /><arg direction=\"in\" type=\"s\" /></method></interface></node>",
@@ -154,21 +155,21 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 		    ErrorName = "org.freedesktop.DBus.Error.UnknownMethod",
 		    ErrorText = "Erlang: Function not found: " ++ MemberStr,
 		    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
-		    io:format("Reply ~p~n", [Reply]),
+%% 		    io:format("Reply ~p~n", [Reply]),
 		    ok = connection:cast(Conn, Reply),
 		    {noreply, State};
-		{'EXIT', Reason} ->
-		    io:format("Error ~p~n", [Reason]),
+		{'EXIT', _Reason} ->
+%% 		    io:format("Error ~p~n", [Reason]),
 		    ErrorName = "org.freedesktop.DBus.Error.InvalidParameters",
 		    ErrorText = "Erlang: Invalid parameters.",
 		    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
-		    io:format("Reply ~p~n", [Reply]),
+%% 		    io:format("Reply ~p~n", [Reply]),
 		    ok = connection:cast(Conn, Reply),
 		    {noreply, State};
 		{ok, Sub1} ->
 		    {noreply, State#state{sub=Sub1}};
 		{pending, From, Sub1} ->
-		    io:format("Pending ~p~n", [From]),
+%% 		    io:format("Pending ~p~n", [From]),
 		    Pending = [{From, Header, Conn}, State#state.pending],
 		    {noreply, State#state{sub=Sub1, pending=Pending}}
 	    end
@@ -206,13 +207,13 @@ do_method_call(Module, Member, Header, Conn, Sub) ->
 	    {ok, Sub1};
 	{{noreply, Sub1}, none} ->
 	    {ok, Sub1};
-	{{reply, ReplyBody, Sub1}, none} ->
-	    io:format("Ignore reply ~p~n", [ReplyBody]),
+	{{reply, _ReplyBody, Sub1}, none} ->
+%% 	    io:format("Ignore reply ~p~n", [ReplyBody]),
 	    {ok, Sub1};
 	{{reply, ReplyBody, Sub1}, _} ->
-	    io:format("Reply ~p~n", [ReplyBody]),
+%% 	    io:format("Reply ~p~n", [ReplyBody]),
 	    {ok, Reply} = message:build_method_return(Header, [variant], [ReplyBody]),
-	    io:format("Reply ~p~n", [Reply]),
+%% 	    io:format("Reply ~p~n", [Reply]),
 	    ok = connection:cast(Conn, Reply),
 	    {ok, Sub1};
 	{{noreply, Sub1}, _} ->

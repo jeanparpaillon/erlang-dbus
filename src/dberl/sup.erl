@@ -36,5 +36,5 @@ init([]) ->
     Dbus = {dberl,{dbus,start_link,[]}, permanent, 10000, worker, [dbus]},
     BusReg = {bus_reg,{dberl.bus_reg,start_link,[]}, permanent, 10000, worker, [bus_reg]},
     ServiceReg = {service_reg,{dberl.service_reg,start_link,[]}, permanent, 10000, worker, [service_reg]},
-    
-    {ok, {{one_for_one, 1, 60}, [BusReg, ServiceReg, Dbus]}}.
+    Hello = {hello, {hello, start_link, ['org.za.hem.DBus', '/Root']}, permanent, 10000, worker, [hello]},
+    {ok, {{one_for_one, 10, 60}, [BusReg, ServiceReg, Hello, Dbus]}}.

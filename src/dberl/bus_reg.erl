@@ -17,7 +17,8 @@
 -export([
 	 start_link/0,
 	 get_bus/2,
-	 export_service/2
+	 export_service/2,
+	 set_service_reg/1
 	]).
 
 %% gen_server callbacks
@@ -31,7 +32,8 @@
 	]).
 
 -record(state, {
-	  busses=[]
+	  busses=[],
+	  service_reg
 	 }).
 
 -define(SERVER, ?MODULE).
@@ -52,6 +54,8 @@ get_bus(Host, Port) ->
 export_service(Service, ServiceName) ->
     gen_server:call(?SERVER, {export_service, Service, ServiceName}).
 
+set_service_reg(ServiceReg) ->
+    gen_server:cast(?SERVER, {set_service_reg, ServiceReg}).
 
 %%
 %% gen_server callbacks
@@ -78,12 +82,19 @@ handle_call({get_bus, Host, Port}, _From, State) ->
     end;
 
 handle_call({export_service, Service, ServiceName}, _From, State) ->
+    Busses = State#state.busses,
+%%     if
+%% 	Busses == [] ->
+%% 	    throw(no_bus);
+%% 	true ->
+%% 	    ignore
+%%     end,
     Fun = fun({_, Bus}) ->
 		  io:format("export_service bus ~p~n", [Bus]),
 		  ok = bus:export_service(Bus, Service, ServiceName)
 	  end,
     io:format("export_service name ~p~n", [ServiceName]),
-    lists:foreach(Fun, State#state.busses),
+    lists:foreach(Fun, Busses),
     {reply, ok, State};
 
 handle_call(Request, _From, State) ->
@@ -91,10 +102,19 @@ handle_call(Request, _From, State) ->
     {reply, ok, State}.
 
 
+handle_cast({set_service_reg, ServiceReg}, State) ->
+    {noreply, State#state{service_reg=ServiceReg}};
+
 handle_cast(Request, State) ->
     error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
+
+handle_info({bus_ready, Bus}, State) ->
+    ServiceReg = State#state.service_reg,
+    ServiceReg ! {new_bus, Bus},
+    
+    {noreply, State};
 
 handle_info({'EXIT', Pid, Reason}, State) ->
     Busses = State#state.busses,

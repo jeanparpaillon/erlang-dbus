@@ -46,6 +46,7 @@ export_service(ServiceName) ->
 %%
 init([]) ->
     process_flag(trap_exit, true),
+    bus_reg:set_service_reg(self()),
     {ok, #state{}}.
 
 
@@ -92,6 +93,13 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 	    io:format("Reply ~p~n", [Reply]),
 	    ok = connection:reply(Conn, Reply)
     end,
+    {noreply, State};
+
+handle_info({new_bus, _Bus}, State) ->
+    Fun = fun({ServiceName, Service}) ->
+		  ok = bus_reg:export_service(Service, ServiceName)
+	  end,
+    lists:foreach(Fun, State#state.services),
     {noreply, State};
 
 handle_info({'EXIT', Pid, Reason}, State) ->

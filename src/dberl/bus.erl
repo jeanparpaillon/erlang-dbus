@@ -33,11 +33,12 @@
 	  waiting=[],
 	  hello_ref,
 	  id,
-	  dbus_object
+	  dbus_object,
+	  owner
 	 }).
 
 connect(Host, Port) ->
-    gen_server:start_link(?MODULE, [Host, Port], []).
+    gen_server:start_link(?MODULE, [Host, Port, self()], []).
 
 stop(Bus) ->
     gen_server:cast(Bus, stop).
@@ -58,10 +59,10 @@ export_service(Bus, Service, ServiceName) ->
 %%
 %% gen_server callbacks
 %%
-init([DbusHost, DbusPort]) ->
+init([DbusHost, DbusPort, Owner]) ->
 %%     process_flag(trap_exit),
     self() ! {setup, DbusHost, DbusPort},
-    {ok, #state{}}.
+    {ok, #state{owner=Owner}}.
 
 
 code_change(_OldVsn, State, _Extra) ->
@@ -153,6 +154,9 @@ handle_info({auth_ok, Conn}, #state{conn=Conn}=State) ->
     ok = proxy:call(DBusIfaceObj, 'Hello', [], [{reply, self(), hello}]),
     io:format("Call returned~n"),
 
+    Owner = State#state.owner,
+    Owner ! {bus_ready, self()},
+
     {noreply, State#state{state=up,
 			  dbus_object=DBusObj
 			 }};
@@ -212,7 +216,7 @@ reply_waiting(Reply, State) ->
 		    gen_server:reply(From, Reply)
 	    end,
 
-    lists:map(Fun, State#state.waiting).
+    lists:foreach(Fun, State#state.waiting).
 
 
 default_dbus_node() ->
