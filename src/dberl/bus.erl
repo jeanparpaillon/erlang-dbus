@@ -16,7 +16,8 @@
 -export([get_object/3,
 	 wait_ready/1,
 	 add_match/2,
-	 export_service/3
+	 export_service/2,
+	 unexport_service/2
 	]).
 
 %% gen_server callbacks
@@ -53,8 +54,11 @@ wait_ready(Bus) ->
 add_match(Bus, Match) ->
     gen_server:cast(Bus, {add_match, Match}).
 
-export_service(Bus, Service, ServiceName) ->
-    gen_server:call(Bus, {export_service, Service, ServiceName}).
+export_service(Bus, ServiceName) ->
+    gen_server:call(Bus, {export_service, ServiceName}).
+
+unexport_service(Bus, ServiceName) ->
+    gen_server:call(Bus, {unexport_service, ServiceName}).
 
 %%
 %% gen_server callbacks
@@ -83,11 +87,18 @@ handle_call(wait_ready, From, State) ->
     io:format("wait_ready received ~p~n", [Waiting]),
     {noreply, State#state{waiting=Waiting}};
 
-handle_call({export_service, Service, ServiceName}, _From, State) when is_pid(Service) ->
+handle_call({export_service, ServiceName}, _From, State) ->
     BusObj = State#state.dbus_object,
 
     {ok, BusIface} = proxy:interface(BusObj, 'org.freedesktop.DBus'),
     {ok, _Header1} = proxy:call(BusIface, 'RequestName', [ServiceName, 0]),
+    {reply, ok, State};
+
+handle_call({unexport_service, ServiceName}, _From, State) ->
+    BusObj = State#state.dbus_object,
+
+    {ok, BusIface} = proxy:interface(BusObj, 'org.freedesktop.DBus'),
+    {ok, _Header1} = proxy:call(BusIface, 'ReleaseName', [ServiceName]),
     {reply, ok, State};
 
 handle_call(Request, _From, State) ->
@@ -223,7 +234,8 @@ default_dbus_node() ->
     HelloMethod = #method{name='Hello', args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
     AddMatch = #method{name='AddMatch', args=[#arg{direction=in, type="s"}], in_sig="s", in_types=[string]},
     RequestName = #method{name='RequestName', args=[#arg{direction=in, type="s"}, #arg{direction=in, type="u"}, #arg{direction=out, type="u"}], in_sig="su", in_types=[string,uint32]},
-    DBusIface = #interface{name='org.freedesktop.DBus', methods=[HelloMethod, AddMatch, RequestName]},
+    ReleaseName = #method{name='ReleaseName', args=[#arg{direction=in, type="s"}, #arg{direction=out, type="u"}], in_sig="s", in_types=[string]},
+    DBusIface = #interface{name='org.freedesktop.DBus', methods=[HelloMethod, AddMatch, RequestName, ReleaseName]},
 
     IntrospectMethod = #method{name='Introspect', args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
     DBusIntrospectableIface = #interface{name='org.freedesktop.DBus.Introspectable', methods=[IntrospectMethod]},
