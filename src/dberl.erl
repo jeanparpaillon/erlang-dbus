@@ -15,7 +15,8 @@
 
 %% application callbacks
 start(normal, []) ->
-    start().
+    error_logger:logfile({open, "dberl.log"}),
+    dberl.sup:start_link().
 
 stop(_State) ->
     ok.
@@ -27,5 +28,4 @@ stop(_State) ->
 %% @end
 %%--------------------------------------------------------------------
 start() ->
-    error_logger:logfile({open, "dberl.log"}),
-    dberl.sup:start_link().
+    application:start(dberl).
