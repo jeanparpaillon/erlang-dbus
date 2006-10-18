@@ -2,6 +2,7 @@
 
 -import(dberl.proxy).
 -import(dberl.bus).
+-import(dberl.bus_reg).
 
 -behaviour(gen_server).
 
@@ -61,6 +62,8 @@ make() ->
     Modules2 = [
 	       "auth",
 	       "bus",
+	       "bus_reg",
+	       "bus_sup",
 	       "call",
  	       "connection",
 	       "gen_dbus",
@@ -69,6 +72,7 @@ make() ->
 	       "message",
 	       "proxy",
 	       "service",
+	       "service_reg",
 	       "service_sup",
 	       "sup",
 	       "tcp_conn",
@@ -103,19 +107,8 @@ run_test(Pid) ->
 %% gen_server callbacks
 %%
 init([Host, Port]) ->
-    {ok, Bus} = bus:connect(Host, Port),
-    ok = bus:wait_ready(Bus),
-    io:format("Ready~n"),
-
-    {ok, Service} = bus:export_service(Bus, 'org.za.hem.DBus'),
-    {ok, Local_object} = hello:start_link(Service, '/Root'),
-
-    {ok, BusObj} = bus:get_object(Bus, 'org.freedesktop.DBus', '/'),
-    io:format("BusObj: ~p~n", [BusObj]),
-
-    {ok, #state{bus=Bus,
-		bus_obj=BusObj
-	       }}.
+    self() ! {setup, Host, Port},
+    {ok, #state{}}.
 
 
 code_change(_OldVsn, State, _Extra) ->
@@ -136,6 +129,28 @@ handle_cast(Request, State) ->
     {noreply, State}.
 
 
+handle_info({setup, Host, Port}, State) ->
+%%     BusSpec = {{bus, Host, Port}, {dberl.bus,connect,[Host,Port]}, permanent, 10000, worker, [dberl.bus]},
+    
+%%     {ok, Bus} = supervisor:start_child(dberl.sup, BusSpec),
+    {ok, Bus} = bus_reg:get_bus(Host, Port),
+    true = link(Bus),
+    ok = bus:wait_ready(Bus),
+    io:format("Ready~n"),
+
+    {ok, Service} = dberl.service_reg:export_service('org.za.hem.DBus'),
+%%     true = link(Service),
+    {ok, Local_object} = hello:start_link(Service, '/Root'),
+
+    {ok, BusObj} = bus:get_object(Bus, 'org.freedesktop.DBus', '/'),
+    true = link(BusObj),
+    io:format("BusObj: ~p~n", [BusObj]),
+
+%%     BusObj = undefined,
+
+    {noreply, State#state{bus=Bus,
+			  bus_obj=BusObj
+			 }};
 handle_info(Info, State) ->
     error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.

@@ -12,7 +12,7 @@
 
 %% api
 -export([
-	 start_link/2,
+	 start_link/1,
 	 register_object/3
 	]).
 
@@ -28,13 +28,11 @@
 
 -record(state, {
 	  name,
-	  bus,
-	  conn,
 	  objects=[]
 	 }).
 
-start_link(Bus, ServiceName) ->
-    gen_server:start_link(?MODULE, [Bus, ServiceName], []).
+start_link(ServiceName) ->
+    gen_server:start_link(?MODULE, [ServiceName], []).
 
 register_object(Service, Path, Object) ->
     gen_server:call(Service, {register_object, Path, Object}).
@@ -42,9 +40,9 @@ register_object(Service, Path, Object) ->
 %%
 %% gen_server callbacks
 %%
-init([Bus, ServiceName]) ->
-    State = #state{bus=Bus,
-		   name=ServiceName},
+init([ServiceName]) ->
+    process_flag(trap_exit, true),
+    State = #state{name=ServiceName},
     self() ! setup,
     {ok, State}.
 
@@ -59,6 +57,7 @@ handle_call({register_object, Path, Object}, _From, State) ->
 	{value, _} ->
 	    {reply, {already_registered, Path}, State};
 	false ->
+	    true = link(Object),
 	    Objects1 = [{Path, Object} | Objects],
 	    {reply, ok, State#state{objects=Objects1}}
     end;
@@ -76,13 +75,6 @@ handle_cast(Request, State) ->
 
 
 handle_info(setup, State) ->
-    Bus = State#state.bus,
-    ServiceName = State#state.name,
-    {ok, BusObj} = bus:get_object(Bus, 'org.freedesktop.DBus', '/'),
-    io:format("BusObj: ~p~n", [BusObj]),
-
-    {ok, BusIface} = proxy:interface(BusObj, 'org.freedesktop.DBus'),
-    {ok, _Header1} = proxy:call(BusIface, 'RequestName', [ServiceName, 0]),
     {noreply, State};
 
 handle_info({dbus_method_call, Header, Conn}, State) ->

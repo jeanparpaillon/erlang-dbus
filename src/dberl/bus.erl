@@ -16,7 +16,7 @@
 -export([get_object/3,
 	 wait_ready/1,
 	 add_match/2,
-	 export_service/2
+	 export_service/3
 	]).
 
 %% gen_server callbacks
@@ -33,8 +33,7 @@
 	  waiting=[],
 	  hello_ref,
 	  id,
-	  dbus_object,
-	  services=[]				% Exported services
+	  dbus_object
 	 }).
 
 connect(Host, Port) ->
@@ -53,8 +52,8 @@ wait_ready(Bus) ->
 add_match(Bus, Match) ->
     gen_server:cast(Bus, {add_match, Match}).
 
-export_service(Bus, ServiceName) ->
-    gen_server:call(Bus, {export_service, ServiceName}).
+export_service(Bus, Service, ServiceName) ->
+    gen_server:call(Bus, {export_service, Service, ServiceName}).
 
 %%
 %% gen_server callbacks
@@ -83,23 +82,12 @@ handle_call(wait_ready, From, State) ->
     io:format("wait_ready received ~p~n", [Waiting]),
     {noreply, State#state{waiting=Waiting}};
 
-handle_call({export_service, ServiceName}, _From, State) ->
-    Services = State#state.services,
-    case lists:keysearch(ServiceName, 1, Services) of
-	{value, _} ->
-	    {reply, {already_exported, ServiceName}, State};
-	false ->
-	    {ok, ServiceSup} = service_sup:start_link(ServiceName),
-	    ServiceChild = {service,{dberl.service,start_link,[self(),ServiceName]}, permanent, 10000, worker, [service]},
-	    {ok, Service} = supervisor:start_child(ServiceSup, ServiceChild),
+handle_call({export_service, Service, ServiceName}, _From, State) when is_pid(Service) ->
+    BusObj = State#state.dbus_object,
 
-%% 	    ServiceSupSpec = {service,{dberl.service_sup,start_link,[ServiceName]}, permanent, 10000, worker, [service_sup]},
-%% 	    {ok, ServiceSup} = supervisor:start_child(dberl.sup, ServiceSupSpec),
-%% 	    ServiceSpec = {service,{dberl.service,start_link,[self(),ServiceName]}, permanent, 10000, worker, [service]},
-%% 	    {ok, Service} = supervisor:start_child(ServiceSup, ServiceSpec),
-	    Services1 = [{ServiceName, Service} | Services],
-	    {reply, {ok, Service}, State#state{services=Services1}}
-    end;
+    {ok, BusIface} = proxy:interface(BusObj, 'org.freedesktop.DBus'),
+    {ok, _Header1} = proxy:call(BusIface, 'RequestName', [ServiceName, 0]),
+    {reply, ok, State};
 
 handle_call(Request, _From, State) ->
     error_logger:error_msg("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
@@ -199,22 +187,7 @@ handle_info({reply, add_match, {ok, _Header}}, State) ->
     {noreply, State};
 
 handle_info({dbus_method_call, Header, Conn}, State) ->
-    {_, ServiceNameVar} = message:header_fetch(?HEADER_DESTINATION, Header),
-    ServiceName = list_to_atom(ServiceNameVar#variant.value),
-
-    io:format("Handle call ~p ~p~n", [Header, ServiceName]),
-    case lists:keysearch(ServiceName, 1, State#state.services) of
-	{value, {ServiceName, Service}} ->
-	    Service ! {dbus_method_call, Header, Conn};
-
-	_ ->
-	    ErrorName = "org.freedesktop.DBus.Error.ServiceUnknown",
-	    ErrorText = "Erlang: Service not found.",
-	    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
-	    io:format("Reply ~p~n", [Reply]),
-	    ok = connection:reply(Conn, Reply)
-    end,
-
+    dberl.service_reg ! {dbus_method_call, Header, Conn},
     {noreply, State};
 
 handle_info({dbus_signal, _Header, Conn}, #state{conn=Conn}=State) ->
@@ -245,7 +218,8 @@ reply_waiting(Reply, State) ->
 default_dbus_node() ->
     HelloMethod = #method{name='Hello', args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
     AddMatch = #method{name='AddMatch', args=[#arg{direction=in, type="s"}], in_sig="s", in_types=[string]},
-    DBusIface = #interface{name='org.freedesktop.DBus', methods=[HelloMethod, AddMatch]},
+    RequestName = #method{name='RequestName', args=[#arg{direction=in, type="s"}, #arg{direction=in, type="u"}, #arg{direction=out, type="u"}], in_sig="su", in_types=[string,uint32]},
+    DBusIface = #interface{name='org.freedesktop.DBus', methods=[HelloMethod, AddMatch, RequestName]},
 
     IntrospectMethod = #method{name='Introspect', args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
     DBusIntrospectableIface = #interface{name='org.freedesktop.DBus.Introspectable', methods=[IntrospectMethod]},

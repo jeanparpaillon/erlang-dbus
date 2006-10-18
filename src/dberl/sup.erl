@@ -32,6 +32,9 @@ start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 
-init(_Args) ->
+init([]) ->
     Dbus = {dberl,{dbus,start_link,[]}, permanent, 10000, worker, [dbus]},
-    {ok, {{one_for_one, 10, 60}, [Dbus]}}.
+    BusReg = {bus_reg,{dberl.bus_reg,start_link,[]}, permanent, 10000, worker, [bus_reg]},
+    ServiceReg = {service_reg,{dberl.service_reg,start_link,[]}, permanent, 10000, worker, [service_reg]},
+    
+    {ok, {{one_for_one, 1, 60}, [BusReg, ServiceReg, Dbus]}}.
