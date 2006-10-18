@@ -105,8 +105,9 @@ handle_info({new_bus, _Bus}, State) ->
 handle_info({'EXIT', Pid, Reason}, State) ->
     Services = State#state.services,
     case lists:keysearch(Pid, 2, Services) of
-	{value, _} ->
+	{value, {ServiceName, _}} ->
 	    error_logger:info_msg("~p ~p Terminated ~p~n", [?MODULE, Pid, Reason]),
+	    ok = bus_reg:unexport_service(Pid, ServiceName),
 	    Services1 =
 		lists:keydelete(Pid, 2, Services),
 		    {noreply, State#state{services=Services1}};
