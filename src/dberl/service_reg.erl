@@ -56,8 +56,8 @@ code_change(_OldVsn, State, _Extra) ->
 handle_call({export_service, ServiceName}, _From, State) ->
     Services = State#state.services,
     case lists:keysearch(ServiceName, 1, Services) of
-	{value, _} ->
-	    {reply, {error, already_present}, State};
+	{value, {_, Service}} ->
+	    {reply, {ok, Service}, State};
 	_ ->
 	    io:format("~p: export_service name ~p~n", [?MODULE, ServiceName]),
 	    {ok, Service} = service:start_link(ServiceName),
@@ -80,7 +80,7 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
     {_, ServiceNameVar} = message:header_fetch(?HEADER_DESTINATION, Header),
     ServiceName = list_to_atom(ServiceNameVar#variant.value),
 
-    io:format("Handle call ~p ~p~n", [Header, ServiceName]),
+%%     io:format("Handle call ~p ~p~n", [Header, ServiceName]),
     case lists:keysearch(ServiceName, 1, State#state.services) of
 	{value, {ServiceName, Service}} ->
 	    Service ! {dbus_method_call, Header, Conn};
@@ -98,6 +98,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     Services = State#state.services,
     case lists:keysearch(Pid, 2, Services) of
 	{value, _} ->
+	    error_logger:info_msg("~p ~p Terminated ~p~n", [?MODULE, Pid, Reason]),
 	    Services1 =
 		lists:keydelete(Pid, 2, Services),
 		    {noreply, State#state{services=Services1}};
