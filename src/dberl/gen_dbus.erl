@@ -16,7 +16,8 @@
 
 %% api
 -export([
-	 start_link/5,
+	 start_link/3,
+	 start_link/4,
 	 reply/2
 	]).
 
@@ -48,8 +49,11 @@ behaviour_info(callbacks) ->
 	  pending=[]
 	 }).
 
-start_link(ServiceName, Path, Module, Args, Options) when is_atom(ServiceName) ->
-    gen_server:start_link(?MODULE, [ServiceName, Path, Module, Args], Options).
+start_link(Module, Args, Options) ->
+    gen_server:start_link(?MODULE, [Module, Args], Options).
+
+start_link(ServerName, Module, Args, Options) ->
+    gen_server:start_link(ServerName, ?MODULE, [Module, Args], Options).
 
 reply({Self, From}, Reply) ->
     gen_server:cast(Self, {reply, From, Reply}).
@@ -57,13 +61,13 @@ reply({Self, From}, Reply) ->
 %%
 %% gen_server callbacks
 %%
-init([ServiceName, Path, Module, Args]) ->
+init([Module, Args]) ->
     case Module:init(Args) of
 	{stop, Reason} ->
 	    {stop, Reason};
 	ignore ->
 	    ignore;
-	{ok, DBus_config, SubState} ->
+	{ok, {ServiceName, Path, DBus_config}, SubState} ->
 	    {ok, Service} = dberl.service_reg:export_service(ServiceName),
 	    ok = service:register_object(Service, Path, self()),
 	    State = #state{service=Service,

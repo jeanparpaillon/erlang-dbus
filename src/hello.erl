@@ -33,15 +33,15 @@
 	 }).
 
 start_link(Service, Path) ->
-    gen_dbus:start_link(Service, Path, ?MODULE, [], []).
+    gen_dbus:start_link({local, hello}, ?MODULE, [Service, Path], []).
 
 
-init([]) ->
+init([Service, Path]) ->
     State = #state{},
-    {ok, [{interface, 'org.designfu.SampleInterface'},
-	  {members, [hello_world, get_tuple, get_dict]}],
-     State}.
-
+    {ok, {Service, Path, [
+			  {interface, 'org.designfu.SampleInterface'},
+			  {members, [hello_world, get_tuple, get_dict]}
+			 ]}, State}.
 
 hello_world(dbus_info) ->
     [{type, method},

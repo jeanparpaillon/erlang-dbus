@@ -63,7 +63,6 @@ make() ->
 	       "auth",
 	       "bus",
 	       "bus_reg",
-	       "bus_sup",
 	       "call",
  	       "connection",
 	       "gen_dbus",
@@ -73,7 +72,6 @@ make() ->
 	       "proxy",
 	       "service",
 	       "service_reg",
-	       "service_sup",
 	       "sup",
 	       "tcp_conn",
 	       "transport"
