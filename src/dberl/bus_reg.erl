@@ -98,10 +98,10 @@ handle_call({export_service, _Service, ServiceName}, _From, State) ->
 handle_call({unexport_service, _Service, ServiceName}, _From, State) ->
     Busses = State#state.busses,
     Fun = fun({_, Bus}) ->
-		  io:format("export_service bus ~p~n", [Bus]),
+		  io:format("~p unexport_service bus ~p~n", [?MODULE, Bus]),
 		  ok = bus:unexport_service(Bus, ServiceName)
 	  end,
-    io:format("unexport_service name ~p~n", [ServiceName]),
+    io:format("~p unexport_service name ~p~n", [?MODULE, ServiceName]),
     lists:foreach(Fun, Busses),
     {reply, ok, State};
 
