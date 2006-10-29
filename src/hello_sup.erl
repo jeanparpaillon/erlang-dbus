@@ -43,7 +43,7 @@ init([]) ->
     Hello = {hello, {hello, start_link, ['org.za.hem.DBus', '/Root']},
 	     permanent, 10000, worker, [hello]},
     Dbus = {dberl,{dbus,start_link,[]}, permanent, 10000, worker, [dbus]},
-    {ok,{{one_for_all,10,60}, [Hello, Dbus]}}.
+    {ok,{{one_for_one,10,60}, [Hello, Dbus]}}.
 
 %%====================================================================
 %% Internal functions
