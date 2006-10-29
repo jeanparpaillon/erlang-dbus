@@ -13,7 +13,8 @@
 %% api
 -export([
 	 start_link/1,
-	 register_object/3
+	 register_object/3,
+	 unregister_object/2
 	]).
 
 %% gen_server callback2
@@ -36,6 +37,9 @@ start_link(ServiceName) ->
 
 register_object(Service, Path, Object) ->
     gen_server:call(Service, {register_object, Path, Object}).
+
+unregister_object(Service, Object) ->
+    gen_server:call(Service, {unregister_object, Object}).
 
 %%
 %% gen_server callbacks
@@ -60,6 +64,16 @@ handle_call({register_object, Path, Object}, _From, State) ->
 	    true = link(Object),
 	    Objects1 = [{Path, Object} | Objects],
 	    {reply, ok, State#state{objects=Objects1}}
+    end;
+
+handle_call({unregister_object, Object}, _From, State) ->
+    case handle_unregister_object(Object, State) of
+	{ok, State1} ->
+	    {reply, ok, State1};
+	{error, Reason, State1} ->
+	    {reply, Reason, State1};
+	{stop, State1} ->
+	    {stop, normal, State1}
     end;
 
 handle_call(Request, _From, State) ->
@@ -96,25 +110,17 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
     {noreply, State};
 
 handle_info({'EXIT', Pid, Reason}, State) ->
-    Objects = State#state.objects,
-    case lists:keysearch(Pid, 2, Objects) of
-	{value, {Path, _}} ->
-	    error_logger:info_msg("~p: Object terminated ~p ~p ~p~n", [?MODULE, Pid, Reason, Path]),
-	    Objects1 =
-		lists:keydelete(Pid, 2, Objects),
-	    if
-		Objects1 == [] ->
-		    error_logger:info_msg("~p: No more objects stopping ~p service~n", [?MODULE, State#state.name]),
-		    {stop, normal, State};
-		true ->
-		    {noreply, State#state{objects=Objects1}}
-	    end;
-	false ->
+    case handle_unregister_object(Pid, State) of
+	{ok, State1} ->
+	    {noreply, State1};
+	{stop, State1} ->
+	    {stop, normal, State1};
+	{error, not_registered, State1} ->
 	    if
 		Reason /= normal ->
-		    {stop, Reason};
+		    {stop, Reason, State1};
 		true ->
-		    {noreply, State}
+		    {noreply, State1}
 	    end
     end;
 
@@ -125,3 +131,24 @@ handle_info(Info, State) ->
 
 terminate(_Reason, _State) ->
     terminated.
+
+%%
+%% Return {ok, State}|{error, Reason, State}|{stop, State}
+%%
+handle_unregister_object(Object, State) ->
+    Objects = State#state.objects,
+    case lists:keysearch(Object, 2, Objects) of
+	{value, {Path, _}} ->
+	    true = unlink(Object),
+	    error_logger:info_msg("~p: Object terminated ~p ~p~n", [?MODULE, Object, Path]),
+	    Objects1 = lists:keydelete(Object, 2, Objects),
+	    if
+		Objects1 == [] ->
+		    error_logger:info_msg("~p: No more objects stopping ~p service~n", [?MODULE, State#state.name]),
+		    {stop, State};
+		true ->
+		    {ok, State#state{objects=Objects1}}
+	    end;
+	false ->
+	    {error, not_registered, State}
+    end.
