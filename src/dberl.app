@@ -2,9 +2,7 @@
  [{description, "D-BUS application"},
   {vsn,"0.0"},
   {modules, [
-	     dbus,
-	     hello,
-
+	     dberl,
 	     dberl.auth,
 	     dberl.bus,
 	     dberl.call,
@@ -18,7 +16,7 @@
 	     dberl.tcp_conn,
 	     dberl.transport
 	    ]},
-  {registered, [dberl.bus_reg, dbus]},
+  {registered, [dberl.bus_reg]},
   {mod, {dberl, []}},
   {env, []},
   {applications, [

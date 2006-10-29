@@ -1,5 +1,5 @@
 %%%
-%%% @doc       D-BUS applictation module
+%%% @doc       D-BUS application module
 %%% @author    Mikael Magnusson <mikma@users.sourceforge.net>
 %%% @copyright 2006 Mikael Magnusson
 %%%

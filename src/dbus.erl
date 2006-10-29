@@ -53,7 +53,9 @@ make() ->
     Modules = [
 	       "dberl",
 	       "dbus",
-	       "hello"
+	       "hello",
+	       "hello_app",
+	       "hello_sup"
 	      ],
 
     Prefix = "/home/mikael/svn/dberl/src/",
