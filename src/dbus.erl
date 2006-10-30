@@ -32,7 +32,7 @@
 	  bus_obj
 	 }).
 
--export([make/0, test/0]).
+-export([make/0, test/0, run_test/1]).
 
 make() ->
     Modules = [
