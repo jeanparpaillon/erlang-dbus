@@ -20,8 +20,8 @@
 
 %% api
 -export([
-	 start_link/0,
-	 stop/0]).
+	 start_link/0
+	]).
 
 -define(SERVER, ?MODULE).
 -define(HOST, "localhost").
@@ -32,22 +32,7 @@
 	  bus_obj
 	 }).
 
--export([make/0, test/0, get_object/3, call/2, call/3, wait_ready/1]).
-
-stop() ->
-    gen_server:cast(todo, stop).
-
-get_object(Bus, Service, Path) ->
-    bus:get_object(Bus, Service, Path).
-
-call(Bus, Header) ->
-    bus:call(Bus, Header).
-
-call(Bus, Header, From) ->
-    bus:call(Bus, Header, From).
-
-wait_ready(Bus) ->
-    bus:wait_ready(Bus).
+-export([make/0, test/0]).
 
 make() ->
     Modules = [
@@ -130,22 +115,14 @@ handle_cast(Request, State) ->
 
 
 handle_info({setup, Host, Port}, State) ->
-%%     BusSpec = {{bus, Host, Port}, {dberl.bus,connect,[Host,Port]}, permanent, 10000, worker, [dberl.bus]},
-    
-%%     {ok, Bus} = supervisor:start_child(dberl.sup, BusSpec),
     {ok, Bus} = bus_reg:get_bus(Host, Port),
     true = link(Bus),
     ok = bus:wait_ready(Bus),
     io:format("Ready~n"),
 
-%%     {ok, Service} = dberl.service_reg:export_service('org.za.hem.DBus'),
-%%     {ok, Local_object} = hello:start_link(Service, '/Root'),
-
     {ok, BusObj} = bus:get_object(Bus, 'org.freedesktop.DBus', '/'),
     true = link(BusObj),
     io:format("BusObj: ~p~n", [BusObj]),
-
-%%     BusObj = undefined,
 
     {noreply, State#state{bus=Bus,
 			  bus_obj=BusObj
@@ -161,12 +138,6 @@ terminate(_Reason, _State) ->
 
 do_test(State) ->
     Bus = State#state.bus,
-
-%%     ok = proxy:stop(BusObj),
-%%     io:format("RequestName: ~p~n", [Header1]),
-
-    {ok, Service} = bus:export_service(Bus, 'org.za.hem.DBus'),
-    {ok, Local_object} = hello:start_link(Service, '/Root'),
 
     {ok, Remote_object} = bus:get_object(Bus, 'org.designfu.SampleService', '/SomeObject'),
     io:format("Remote_object: ~p~n", [Remote_object]),
