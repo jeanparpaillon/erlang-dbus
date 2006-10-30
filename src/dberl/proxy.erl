@@ -32,8 +32,8 @@
 	 terminate/2]).
 
 -record(state, {
-	  service,
-	  path,
+	  service,				% atom() | string()
+	  path,					% atom() | string()
 	  node,					% #node()
 	  bus,					% bus connection
 	  conn,
