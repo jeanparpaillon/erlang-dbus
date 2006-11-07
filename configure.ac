@@ -50,6 +50,7 @@ AC_CONFIG_FILES([
 		 Makefile
 		 src/Makefile
 		 src/dberl/Makefile
+		 example/Makefile
 		])
 
 AC_OUTPUT

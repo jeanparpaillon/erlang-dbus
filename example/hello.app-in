@@ -2,8 +2,9 @@
  [{description, "D-BUS Hello example"},
   {vsn,"0.0"},
   {modules, [
-	     dbus,
-	     hello
+	     hello,
+	     hello_app,
+	     hello_sup
 	    ]},
   {registered, [dbus]},
   {mod, {hello_app, []}},

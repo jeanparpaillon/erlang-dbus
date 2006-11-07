@@ -1,8 +1,0 @@
-%% Erlang OTP R11B-1 library versions
-{release, {"D-BUS Hello example","0.0"}, {erts, "5.2"},
- [{kernel,"2.11.1"},
-  {stdlib,"1.14.1"},
-  {sasl,"2.1.3"},
-  {crypto, "1.5"},
-  {dberl, "0.0"},
-  {hello, "0.0"}]}.
