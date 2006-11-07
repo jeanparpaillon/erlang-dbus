@@ -26,7 +26,6 @@
 %% top supervisor of the tree.
 %%--------------------------------------------------------------------
 start(_Type, StartArgs) ->
-    appmon:start(),
     case hello_sup:start_link(StartArgs) of
 	{ok, Pid} -> 
 	    {ok, Pid};
