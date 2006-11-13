@@ -11,7 +11,7 @@
 -export([start/2, stop/1]).
 
 %% api:s
--export([start/0]).
+-export([start/0, make/0]).
 
 %% application callbacks
 start(normal, []) ->
@@ -33,14 +33,10 @@ start() ->
 
 make() ->
     Modules = [
-	       "dberl",
-	       "dbus",
-	       "hello",
-	       "hello_app",
-	       "hello_sup"
+	       "dberl"
 	      ],
 
-    Prefix = "/home/mikael/svn/dberl/src/",
+    Prefix = "src/",
     make_modules(Prefix, Modules),
 
     Modules2 = [
@@ -60,18 +56,21 @@ make() ->
 	       "tcp_conn",
 	       "transport"
 	       ],
-    Prefix2 = "/home/mikael/svn/dberl/src/dberl/",
+    Prefix2 = "src/dberl/",
     make_modules(Prefix2, Modules2).
 
 
 make_modules(Prefix, Modules) ->
-    Files = lists:map(fun(File) -> Prefix ++ File end, Modules),
+    Srcdir = "/home/mikael/svn/dberl/" ++ Prefix,
+    Builddir = "/home/mikael/svn/dberl/build_linux/" ++ Prefix,
+    Files = lists:map(fun(File) -> Srcdir ++ File end, Modules),
 
     make:files(Files,
 	       [
 		load,
+		{i, "/home/mikael/svn/dberl/src"},
 		{i, "/usr/lib/erlang/lib/xmerl-1.0.5/include"},
-		{outdir, Prefix}
+		{outdir, Builddir}
 	       ]).
 
 

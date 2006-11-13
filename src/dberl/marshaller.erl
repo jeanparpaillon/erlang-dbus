@@ -27,7 +27,7 @@ test() ->
 
 read_test() ->
     {ok, File} = file:open("/tmp/bytes", [binary, read]),
-    {ok, Data} = file:read(File, 1024),
+    {ok, Data} = file:read(File, 10000),
     ok = file:close(File),
     Data.
     
@@ -41,7 +41,7 @@ unmarshal_data(Data, Res) ->
 	{ok, Header, Data1} ->
 	    unmarshal_data(Data1, Res ++ [Header]);
 	{'EXIT', _Reason} ->
-%% 	    error_logger:info_msg("unmarshal_data: ~p~n", [Data]),
+%% 	    error_logger:info_msg("unmarshal_data: ~p~n", [Reason]),
 	    {ok, Res, Data}
     end.
 
@@ -372,11 +372,20 @@ marshal_struct_signature([SubType|R], Res) ->
 
 %% unmarshal(Type, Binary) ->
 
-unmarshal(_Type, <<>>, _Pos) ->
-    error;
+unmarshal(Type, <<>>, Pos) ->
+    throw({error, Type});
 unmarshal(byte, Data, Pos) ->
     << Value:8, Data1/binary >> = Data,
     {ok, Value, Data1, Pos + 1};
+
+unmarshal(boolean, Data, Pos) ->
+    {ok, Int, Data1, Pos1} = unmarshal(uint32, Data, Pos),
+    Bool =
+	case Int of
+	    1 -> true;
+	    0 -> false
+	end,
+    {ok, Bool, Data1, Pos1};
 
 unmarshal(uint16, Data, Pos) ->
     unmarshal_uint(2, Data, Pos);
@@ -395,6 +404,12 @@ unmarshal(int32, Data, Pos) ->
 
 unmarshal(int64, Data, Pos) ->
     unmarshal_int(8, Data, Pos);
+
+unmarshal(double, Data, Pos) ->
+    Pad = padding(8, Pos),
+    << 0:Pad, Value:64/native-float, Data1/binary >> = Data,
+    Pos1 = Pos + Pad div 8 + 8,
+    {ok, Value, Data1, Pos1};
 
 unmarshal(signature, Data, Pos) ->
     unmarshal_string(byte, Data, Pos);
@@ -425,7 +440,9 @@ unmarshal({dict, KeyType, ValueType}, Data, Pos) ->
 unmarshal(variant, Data, Pos) ->
     {ok, Signature, Data1, Pos1} = unmarshal(signature, Data, Pos),
     [Type] = unmarshal_signature(Signature),
+%%    io:format("Variant: ~p~n", [Type]),
     {ok, Value, Data2, Pos2} = unmarshal(Type, Data1, Pos1),
+%%    io:format("Value: ~p~n", [Value]),
     {ok, #variant{type=Type, value=Value}, Data2, Pos2}.
 
 
@@ -535,7 +552,12 @@ unmarshal_struct([SubType|S], Data, Res, Pos) ->
     unmarshal_struct(S, Data1, Res ++ [Value], Pos1).
 
 unmarshal_array(SubType, Length, Data, Pos) ->
-    unmarshal_array(SubType, Length, Data, [], Pos).
+    Pad = padding(padding(SubType), Pos),
+    << 0:Pad, Data1/binary >> = Data,
+    Pos1 = Pos + Pad div 8,
+%%    io:format("array padding ~p~n", [[Pad, Pos1, Length]]),
+%%    io:format("unmarshal_array ~p ~p ~p~n", [SubType, Pos1, Length]),
+    unmarshal_array(SubType, Length, Data1, [], Pos1).
 
 unmarshal_array(_SubType, 0, Data, Res, Pos) ->
     {ok, Res, Data, Pos};
@@ -543,6 +565,7 @@ unmarshal_array(SubType, Length, Data, Res, Pos) when is_integer(Length), Length
 %%     io:format("unmarshal_array ~p~n", [[SubType, Length, Data, Res, Pos]]),
     {ok, Value, Data1, Pos1} = unmarshal(SubType, Data, Pos),
     Size = Pos1 - Pos,
+%%    io:format("unmarshal_array ~p~n", [[Length, Pos, Pos1, Size]]),
     unmarshal_array(SubType, Length - Size, Data1, Res ++ [Value], Pos1).
 
 unmarshal_list(Types, Data) when is_list(Types), is_binary(Data) ->
@@ -564,6 +587,7 @@ unmarshal_string(LenType, Data, Pos) ->
 %%     io:format("unmarshal_string ~p ~p ~p~n", [LenType, Length, Data1]),
     << String:Length/binary, 0, Data2/binary >> = Data1,
     Pos2 = Pos1 + Length + 1,
+%%    io:format("String: ~p~n", [binary_to_list(String)]),
     {ok, binary_to_list(String), Data2, Pos2}.
 
 padding(byte) ->
