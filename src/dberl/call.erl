@@ -75,5 +75,5 @@ handle_info(Info, State) ->
     {noreply, State}.
 
 
-terminate(_Reason, State) ->
+terminate(_Reason, _State) ->
     terminated.

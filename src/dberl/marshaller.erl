@@ -40,7 +40,7 @@ unmarshal_data(Data, Res) ->
     case catch unmarshal_message(Data) of
 	{ok, Header, Data1} ->
 	    unmarshal_data(Data1, Res ++ [Header]);
-	{'EXIT', Reason} ->
+	{'EXIT', _Reason} ->
 %% 	    error_logger:info_msg("unmarshal_data: ~p~n", [Data]),
 	    {ok, Res, Data}
     end.

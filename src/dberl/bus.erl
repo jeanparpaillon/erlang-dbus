@@ -242,7 +242,3 @@ default_dbus_node() ->
 
     DBusRootNode = #node{elements=[], interfaces=[DBusIface, DBusIntrospectableIface]},
     DBusRootNode.
-
-'HelloWorld'(Id, Msg) ->
-    io:format("HelloWorld ~p ~p~n", [Id, Msg]),
-    "Hello from Erland ;)".
