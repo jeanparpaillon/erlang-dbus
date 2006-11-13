@@ -36,36 +36,14 @@
 
 make() ->
     Modules = [
-	       "dberl",
 	       "dbus",
 	       "hello",
 	       "hello_app",
 	       "hello_sup"
 	      ],
 
-    Prefix = "/home/mikael/svn/dberl/src/",
-    make_modules(Prefix, Modules),
-
-    Modules2 = [
-	       "auth",
-	       "bus",
-	       "bus_reg",
-	       "call",
- 	       "connection",
-	       "gen_dbus",
-	       "introspect",
-	       "marshaller",
-	       "message",
-	       "proxy",
-	       "service",
-	       "service_reg",
-	       "sup",
-	       "tcp_conn",
-	       "transport"
-	       ],
-    Prefix2 = "/home/mikael/svn/dberl/src/dberl/",
-    make_modules(Prefix2, Modules2).
-
+    Prefix = "/home/mikael/svn/dberl/example/",
+    make_modules(Prefix, Modules).
 
 make_modules(Prefix, Modules) ->
     Files = lists:map(fun(File) -> Prefix ++ File end, Modules),
@@ -73,6 +51,7 @@ make_modules(Prefix, Modules) ->
     make:files(Files,
 	       [
 		load,
+		{i, "/home/mikael/svn/dberl/src"},
 		{i, "/usr/lib/erlang/lib/xmerl-1.0.5/include"},
 		{outdir, Prefix}
 	       ]).
@@ -138,6 +117,17 @@ terminate(_Reason, _State) ->
 
 do_test(State) ->
     Bus = State#state.bus,
+
+    {ok, RbShellObj} = bus:get_object(Bus, 'org.gnome.Rhythmbox', '/org/gnome/Rhythmbox/Shell'),
+    {ok, RbShell} = proxy:interface(RbShellObj, 'org.gnome.Rhythmbox.Shell'),
+    {ok, RbPlayerObj} = bus:get_object(Bus, 'org.gnome.Rhythmbox', '/org/gnome/Rhythmbox/Player'),
+    {ok, RbPlayer} = proxy:interface(RbPlayerObj, 'org.gnome.Rhythmbox.Player'),
+    {ok, Uri} = proxy:call(RbPlayer, 'getPlayingUri'),
+    {ok, Song} = proxy:call(RbShell, 'getSongProperties', [Uri]),
+    io:format("Song: ~p~n~p~n", [Uri, Song]),
+
+%%     io:format("manager: ~p~n", [proxy:call(RbShell, 'getPlaylistManager')]),
+%%     io:format("player: ~p~n", [proxy:call(RbShell, 'getPlayer')]),
 
     {ok, Remote_object} = bus:get_object(Bus, 'org.designfu.SampleService', '/SomeObject'),
     io:format("Remote_object: ~p~n", [Remote_object]),
