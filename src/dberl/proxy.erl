@@ -12,7 +12,6 @@
 
 %% api
 -export([
-	 start_link/4,
 	 start_link/5,
 	 stop/1,
 	 interface/2,
@@ -37,22 +36,27 @@
 	  node,					% #node()
 	  bus,					% bus connection
 	  conn,
-	  waiting=[]
+	  waiting=[],
+	  tag,
+	  owner
 	 }).
-
-start_link(Bus, Conn, Service, Path) ->
-    {ok, Pid} = gen_server:start_link(?MODULE, [Bus, Conn, Service, Path], []),
-    case gen_server:call(Pid, proxy_ready) of
-	ok ->
-	    {ok, Pid};
-	{error, Reason} ->
-	    throw(Reason)
-    end.
 
 start_link(Bus, Conn, Service, Path, Node) when is_record(Node, node),
 						is_pid(Conn),
 						is_pid(Bus) ->
-    gen_server:start_link(?MODULE, [Bus, Conn, Service, Path, Node], []).
+    gen_server:start_link(?MODULE, [Bus, Conn, Service, Path, Node], []);
+
+start_link(Bus, Conn, Service, Path, Tag) when is_pid(Conn),
+					       is_pid(Bus) ->
+    gen_server:start_link(?MODULE, [Bus, Conn, Service, Path,Tag,self()], []).
+%%     {ok, Pid} = gen_server:start_link(?MODULE, [Bus, Conn, Service, Path], []),
+%%     case gen_server:call(Pid, proxy_ready) of
+%% 	ok ->
+%% 	    {ok, Pid};
+%% 	{error, Reason} ->
+%% 	    throw(Reason)
+%%     end.
+
 
 stop(Proxy) ->
     gen_server:cast(Proxy, stop).
@@ -95,11 +99,12 @@ init([Bus, Conn, Service, Path, Node]) ->
 %%     io:format("~p ~p: init~n", [?MODULE, ?LINE]),
     {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path, node=Node}};
 
-init([Bus, Conn, Service, Path]) ->
+init([Bus, Conn, Service, Path, Tag, Owner]) ->
 %%     io:format("~p ~p: init ~p ~p~n", [?MODULE, ?LINE, Service, Path]),
     Header = introspect:build_introspect(Service, Path),
     ok = connection:call(Conn, Header, introspect),
-    {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path}}.
+    {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path,
+		tag=Tag, owner=Owner}}.
 
 
 code_change(_OldVsn, State, _Extra) ->
@@ -164,6 +169,9 @@ handle_info({reply, Header, introspect}, State) ->
     Node = introspect:from_xml_string(XmlBody),
 %%    error_logger:info_msg("introspect ~p: ~p~n", [?MODULE, Node]),
 
+    Owner = State#state.owner,
+    Owner ! {proxy, ok, State#state.tag, self()},
+
     Fun =
 	fun(From) ->
 		gen_server:reply(From, ok)
@@ -178,6 +186,10 @@ handle_info({error, Header, introspect}, State) ->
 
     {_Type1, ErrorName} = message:header_fetch(?HEADER_ERROR_NAME, Header),
     ErrorName1 = list_to_atom(ErrorName#variant.value),
+
+    Owner = State#state.owner,
+    Owner ! {proxy, {error, {ErrorName1, Header#header.body}},
+	     State#state.tag, self()},
 
     Fun =
 	fun(From) ->

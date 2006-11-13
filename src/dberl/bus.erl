@@ -73,12 +73,14 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
-handle_call({get_object, Service, Path}, _From, State) ->
-    %% FIX async
-    {ok, Obj} = proxy:start_link(self(), State#state.conn, Service, Path),
+handle_call({get_object, Service, Path}, From, State) ->
+    case proxy:start_link(self(), State#state.conn, Service, Path, From) of
+	{ok, Obj} ->
+	    {noreply, State};
+	E ->
+	    {reply, E, State}
+    end;
     
-    {reply, {ok, Obj}, State};
-
 handle_call(wait_ready, _From, #state{state=up}=State) ->
     {reply, ok, State};
 
@@ -211,6 +213,14 @@ handle_info({dbus_signal, _Header, Conn}, #state{conn=Conn}=State) ->
 
 %% handle_info({'EXIT', Pid, Reason}, State) ->
 %%     case lists:keysearch(Pid, 2, Services)
+
+handle_info({proxy, ok, From, Obj}, State) ->
+    gen_server:reply(From, {ok, Obj}),
+    {noreply, State};
+
+handle_info({proxy, Result, From, Obj}, State) ->
+    gen_server:reply(From, Result),
+    {noreply, State};
 
 handle_info(Info, State) ->
     error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
