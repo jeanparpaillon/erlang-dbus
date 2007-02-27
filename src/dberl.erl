@@ -50,6 +50,7 @@ make() ->
 	       "marshaller",
 	       "message",
 	       "proxy",
+	       "remote_service",
 	       "service",
 	       "service_reg",
 	       "sup",

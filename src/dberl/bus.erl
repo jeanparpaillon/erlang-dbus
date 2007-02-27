@@ -13,11 +13,13 @@
 %% api
 -export([connect/2, stop/1]).
 
--export([get_object/3,
+-export([
+%% 	 get_object/3,
 	 wait_ready/1,
 	 add_match/2,
 	 export_service/2,
-	 unexport_service/2
+	 unexport_service/2,
+	 get_service/2
 	]).
 
 %% gen_server callbacks
@@ -35,7 +37,8 @@
 	  hello_ref,
 	  id,
 	  dbus_object,
-	  owner
+	  owner,
+	  services=[]
 	 }).
 
 connect(Host, Port) ->
@@ -44,9 +47,8 @@ connect(Host, Port) ->
 stop(Bus) ->
     gen_server:cast(Bus, stop).
 
-get_object(Bus, Service, Path) ->
-    gen_server:call(Bus, {get_object, Service, Path}).
-%%     proxy:start_link(Bus, Service, Path).
+%% get_object(Bus, Service, Path) ->
+%%     gen_server:call(Bus, {get_object, Service, Path}).
 
 wait_ready(Bus) ->
     gen_server:call(Bus, wait_ready).
@@ -60,11 +62,14 @@ export_service(Bus, ServiceName) ->
 unexport_service(Bus, ServiceName) ->
     gen_server:call(Bus, {unexport_service, ServiceName}).
 
+get_service(Bus, ServiceName) ->
+    gen_server:call(Bus, {get_service, ServiceName}).
+
 %%
 %% gen_server callbacks
 %%
 init([DbusHost, DbusPort, Owner]) ->
-%%     process_flag(trap_exit),
+    process_flag(trap_exit, true),
     self() ! {setup, DbusHost, DbusPort},
     {ok, #state{owner=Owner}}.
 
@@ -73,13 +78,13 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
-handle_call({get_object, Service, Path}, From, State) ->
-    case proxy:start_link(self(), State#state.conn, Service, Path, From) of
-	{ok, Obj} ->
-	    {noreply, State};
-	E ->
-	    {reply, E, State}
-    end;
+%% handle_call({get_object, Service, Path}, From, State) ->
+%%     case proxy:start_link(self(), State#state.conn, Service, Path, From) of
+%% 	{ok, Obj} ->
+%% 	    {noreply, State};
+%% 	E ->
+%% 	    {reply, E, State}
+%%     end;
     
 handle_call(wait_ready, _From, #state{state=up}=State) ->
     {reply, ok, State};
@@ -102,6 +107,23 @@ handle_call({unexport_service, ServiceName}, _From, State) ->
     {ok, BusIface} = proxy:interface(BusObj, 'org.freedesktop.DBus'),
     {ok, _Header1} = proxy:call(BusIface, 'ReleaseName', [ServiceName]),
     {reply, ok, State};
+
+handle_call({get_service, ServiceName, Pid}, _From, State) ->
+    Services = State#state.services,
+    case lists:keysearch(ServiceName, 1, Services) of
+	{value, {ServiceName, Service, Pids}} ->
+	    true = link(Pid),
+	    Pids1 = [Pid | Pids],
+	    Value = {ServiceName, Service, Pids1},
+	    Services1 = lists:keyreplace(Service, 2, Value, Services),
+	    {reply, {ok, Service}, State#state{services=Services1}};
+	false ->
+	    {ok, Service} = remote_service:start_link(self(), State#state.conn,
+						      ServiceName),
+	    true = link(Pid),
+	    Services1 = [{ServiceName, Service, [Pid]} | Services],
+	    {reply, {ok, Service}, State#state{services=Services1}}
+    end;
 
 handle_call(Request, _From, State) ->
     error_logger:error_msg("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
@@ -207,8 +229,8 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
     dberl.service_reg ! {dbus_method_call, Header, Conn},
     {noreply, State};
 
-handle_info({dbus_signal, _Header, Conn}, #state{conn=Conn}=State) ->
-    io:format("Ignore signal~n", []),
+handle_info({dbus_signal, Header, Conn}, #state{conn=Conn}=State) ->
+    io:format("Ignore signal ~p~n", [Header]),
     {noreply, State};
 
 %% handle_info({'EXIT', Pid, Reason}, State) ->
@@ -218,9 +240,24 @@ handle_info({proxy, ok, From, Obj}, State) ->
     gen_server:reply(From, {ok, Obj}),
     {noreply, State};
 
-handle_info({proxy, Result, From, Obj}, State) ->
+handle_info({proxy, Result, From, _Obj}, State) ->
     gen_server:reply(From, Result),
     {noreply, State};
+
+handle_info({'EXIT', Pid, Reason}, State) ->
+    case handle_release_all_services(Pid, State) of
+	{ok, State1} ->
+	    {noreply, State1};
+	{stop, State1} ->
+	    {stop, normal, State1};
+	{error, not_registered, State1} ->
+	    if
+		Reason /= normal ->
+		    {stop, Reason, State1};
+		true ->
+		    {noreply, State1}
+	    end
+    end;
 
 handle_info(Info, State) ->
     error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
@@ -252,3 +289,24 @@ default_dbus_node() ->
 
     DBusRootNode = #node{elements=[], interfaces=[DBusIface, DBusIntrospectableIface]},
     DBusRootNode.
+
+
+handle_release_all_services(_Pid, _State) ->
+    throw(unimplemented).
+
+%%     Services = State#state.services,
+%%     case lists:keysearch(Service, 2, Services) of
+%% 	{value, {Path, _}} ->
+%% 	    true = unlink(Service),
+%% 	    error_logger:info_msg("~p: Service terminated ~p ~p~n", [?MODULE, Service, Path]),
+%% 	    Services1 = lists:keydelete(Service, 2, Services),
+%% 	    if
+%% 		Services1 == [] ->
+%% 		    error_logger:info_msg("~p: No more services stopping ~p service~n", [?MODULE, State#state.name]),
+%% 		    {stop, State};
+%% 		true ->
+%% 		    {ok, State#state{services=Services1}}
+%% 	    end;
+%% 	false ->
+%% 	    {error, not_registered, State}
+%%     end.

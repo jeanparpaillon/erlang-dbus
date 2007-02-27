@@ -3,6 +3,7 @@
 -import(dberl.proxy).
 -import(dberl.bus).
 -import(dberl.bus_reg).
+-import(dberl.remote_service).
 
 -behaviour(gen_server).
 
@@ -99,7 +100,9 @@ handle_info({setup, Host, Port}, State) ->
     ok = bus:wait_ready(Bus),
     io:format("Ready~n"),
 
-    {ok, BusObj} = bus:get_object(Bus, 'org.freedesktop.DBus', '/'),
+    {ok, Service} = bus:get_service(Bus, 'org.freedesktop.DBus'),
+
+    {ok, BusObj} = remote_service:get_object(Service, '/'),
     true = link(BusObj),
     io:format("BusObj: ~p~n", [BusObj]),
 
@@ -118,18 +121,27 @@ terminate(_Reason, _State) ->
 do_test(State) ->
     Bus = State#state.bus,
 
-    {ok, RbShellObj} = bus:get_object(Bus, 'org.gnome.Rhythmbox', '/org/gnome/Rhythmbox/Shell'),
-    {ok, RbShell} = proxy:interface(RbShellObj, 'org.gnome.Rhythmbox.Shell'),
-    {ok, RbPlayerObj} = bus:get_object(Bus, 'org.gnome.Rhythmbox', '/org/gnome/Rhythmbox/Player'),
-    {ok, RbPlayer} = proxy:interface(RbPlayerObj, 'org.gnome.Rhythmbox.Player'),
-    {ok, Uri} = proxy:call(RbPlayer, 'getPlayingUri'),
-    {ok, Song} = proxy:call(RbShell, 'getSongProperties', [Uri]),
-    io:format("Song: ~p~n~p~n", [Uri, Song]),
+%%     {ok, Rb} = bus:get_service(Bus, 'org.gnome.Rhythmbox'),
 
-%%     io:format("manager: ~p~n", [proxy:call(RbShell, 'getPlaylistManager')]),
-%%     io:format("player: ~p~n", [proxy:call(RbShell, 'getPlayer')]),
+%% %%     {ok, RbShellObj} = bus:get_object(Bus, 'org.gnome.Rhythmbox', '/org/gnome/Rhythmbox/Shell'),
+%%     {ok, RbShellObj} = remote_service:get_object(Rb, '/org/gnome/Rhythmbox/Shell'),
+%%     {ok, RbShell} = proxy:interface(RbShellObj, 'org.gnome.Rhythmbox.Shell'),
+%%     {ok, RbPlayerObj} = bus:get_object(Bus, 'org.gnome.Rhythmbox', '/org/gnome/Rhythmbox/Player'),
+%%     {ok, RbPlayer} = proxy:interface(RbPlayerObj, 'org.gnome.Rhythmbox.Player'),
+%% %%    ok = proxy:connect_signal(RbPlayer, 'elapsedChanged', mytag),
+%% %%    ok = proxy:connect_signal(RbPlayer, 'playingUriChanged', mytag),
 
-    {ok, Remote_object} = bus:get_object(Bus, 'org.designfu.SampleService', '/SomeObject'),
+%%     {ok, Uri} = proxy:call(RbPlayer, 'getPlayingUri'),
+%%     {ok, Song} = proxy:call(RbShell, 'getSongProperties', [Uri]),
+%%     io:format("Song: ~p~n~p~n", [Uri, Song]),
+
+%% %%     io:format("manager: ~p~n", [proxy:call(RbShell, 'getPlaylistManager')]),
+%% %%     io:format("player: ~p~n", [proxy:call(RbShell, 'getPlayer')]),
+
+    {ok, Service} = bus:get_service(Bus, 'org.designfu.SampleService'),
+
+%%     {ok, Remote_object} = bus:get_object(Bus, 'org.designfu.SampleService', '/SomeObject'),
+    {ok, Remote_object} = remote_service:get_object(Service, '/SomeObject'),
     io:format("Remote_object: ~p~n", [Remote_object]),
     {ok, Iface} = proxy:interface(Remote_object, 'org.designfu.SampleInterface'),
     ok = proxy:connect_signal(Iface, 'OnClick', mytag),
