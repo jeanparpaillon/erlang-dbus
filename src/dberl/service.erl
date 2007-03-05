@@ -1,3 +1,9 @@
+%%
+%% @copyright 2006-2007 Mikael Magnusson
+%% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @doc Exported D-BUS service gen_server
+%%
+
 -module(dberl.service).
 
 -import(error_logger).

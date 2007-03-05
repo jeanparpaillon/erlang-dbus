@@ -1,3 +1,9 @@
+%%
+%% @copyright 2006-2007 Mikael Magnusson
+%% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @doc introspect support module
+%%
+
 -module(dberl.introspect).
 
 -import(lists).

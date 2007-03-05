@@ -1,6 +1,11 @@
-%%% Messages
-%%% {received, Pid, Data}
-%%% {closed, Pid}
+%%
+%% @copyright 2006-2007 Mikael Magnusson
+%% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @doc tcp connection gen_server
+%%
+%% Messages
+%% {received, Pid, Data}
+%% {closed, Pid}
 
 -module(dberl.tcp_conn).
 

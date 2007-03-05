@@ -1,3 +1,9 @@
+%%
+%% @copyright 2006-2007 Mikael Magnusson
+%% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @doc Bus gen_server
+%%
+
 -module(dberl.bus).
 
 -import(error_logger).

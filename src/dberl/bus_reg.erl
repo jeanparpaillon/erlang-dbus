@@ -1,4 +1,8 @@
-%%%
+%%
+%% @copyright 2006-2007 Mikael Magnusson
+%% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @doc Bus registry
+%%
 
 -module(dberl.bus_reg).
 
@@ -13,7 +17,7 @@
 
 -include("dbus.hrl").
 
-%% api
+% api
 -export([
 	 start_link/0,
 	 get_bus/2,

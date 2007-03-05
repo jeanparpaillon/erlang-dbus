@@ -1,3 +1,9 @@
+%%
+%% @copyright 2006-2007 Mikael Magnusson
+%% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @doc message module. Builds error and result messages
+%%
+
 -module(dberl.message).
 
 -import(call).

@@ -1,3 +1,9 @@
+%%
+%% @copyright 2006-2007 Mikael Magnusson
+%% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @doc call gen_server
+%%
+
 -module(dberl.call).
 
 -import(gen_server).

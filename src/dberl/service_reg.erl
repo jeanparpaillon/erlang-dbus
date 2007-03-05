@@ -1,4 +1,8 @@
-%%%
+%%
+%% @copyright 2006-2007 Mikael Magnusson
+%% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @doc Register of exported D-BUS services gen_server
+%%
 
 -module(dberl.service_reg).
 

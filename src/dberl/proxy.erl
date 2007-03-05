@@ -1,3 +1,9 @@
+%%
+%% @copyright 2006-2007 Mikael Magnusson
+%% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @doc proxy gen server representing a remote D-BUS object
+%%
+
 -module(dberl.proxy).
 
 -import(dbus).

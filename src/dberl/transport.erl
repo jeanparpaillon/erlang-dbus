@@ -1,10 +1,14 @@
-%%%
-%%% Glue module to tcp_conn transport module
-%%%
-%%% Messages imlemented by transport modules
-%%%
-%%% {received, Conn, Data}
-%%% {closed, Conn}
+%%
+%% @copyright 2006-2007 Mikael Magnusson
+%% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @doc transport gen_server
+%%
+%% Glue module to tcp_conn transport module
+%%
+%% Messages imlemented by transport modules
+%%
+%% {received, Conn, Data}
+%% {closed, Conn}
 
 -module(dberl.transport).
 

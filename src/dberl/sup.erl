@@ -1,8 +1,8 @@
-%%%
-%%% @doc       Top supervisor
-%%% @author    Mikael Magnusson <mikma@users.sourceforge.net>
-%%% @copyright 2006 Mikael Magnusson
-%%%
+%%
+%% @copyright 2006 Mikael Magnusson
+%% @author    Mikael Magnusson <mikma@users.sourceforge.net>
+%% @doc       Top supervisor
+%%
 -module(dberl.sup).
 
 -import(dbus).

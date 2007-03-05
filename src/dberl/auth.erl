@@ -1,10 +1,14 @@
-%%%
-%%% D-Bus outgoing transport authenticator
-%%%
-%%% Messages
-%%%
-%%% {auth_ok, Pid, Sock}
-%%% Sent after successfull authentication
+%%
+%% @copyright 2006-2007 Mikael Magnusson
+%% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @doc authentication gen_server
+%%
+%% D-Bus outgoing transport authenticator
+%%
+%% Messages
+%%
+%% {auth_ok, Pid, Sock}
+%% Sent after successfull authentication
 
 -module(dberl.auth).
 
