@@ -55,7 +55,8 @@ make() ->
 	       "service_reg",
 	       "sup",
 	       "tcp_conn",
-	       "transport"
+	       "transport",
+	       "unix_conn"
 	       ],
     Prefix2 = "src/dberl/",
     make_modules(Prefix2, Modules2).

@@ -20,7 +20,7 @@
 % api
 -export([
 	 start_link/0,
-	 get_bus/2,
+	 get_bus/1,
 	 export_service/2,
 	 unexport_service/2,
 	 set_service_reg/1
@@ -46,8 +46,8 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
-get_bus(Host, Port) ->
-    gen_server:call(?SERVER, {get_bus, Host, Port}).
+get_bus(BusId) when is_record(BusId, bus_id) ->
+    gen_server:call(?SERVER, {get_bus, BusId}).
 %%     case R of
 %% 	{ok, Pid} ->
 %% 	    link(Pid);
@@ -77,15 +77,14 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
-handle_call({get_bus, Host, Port}, _From, State) ->
-    Id = {bus, Host, Port},
+handle_call({get_bus, BusId}, _From, State) when is_record(BusId, bus_id) ->
     Busses = State#state.busses,
-    case lists:keysearch(Id, 1, Busses) of
+    case lists:keysearch(BusId, 1, Busses) of
 	{value, {_, Bus}} ->
 	    {reply, {ok, Bus}, State};
 	false ->
-	    {ok, Bus} = bus:connect(Host, Port),
-	    Busses1 = [{Id, Bus} | Busses],
+	    {ok, Bus} = bus:connect(BusId),
+	    Busses1 = [{BusId, Bus} | Busses],
 	    {reply, {ok, Bus}, State#state{busses=Busses1}}
     end;
 

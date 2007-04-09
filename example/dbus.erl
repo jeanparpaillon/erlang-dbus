@@ -1,3 +1,9 @@
+%%
+%% @copyright 2006-2007 Mikael Magnusson
+%% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @doc
+%%
+
 -module(dbus).
 
 -import(dberl.proxy).
@@ -95,7 +101,10 @@ handle_cast(Request, State) ->
 
 
 handle_info({setup, Host, Port}, State) ->
-    {ok, Bus} = bus_reg:get_bus(Host, Port),
+     {ok, Bus} = bus_reg:get_bus(#bus_id{scheme=tcp,
+					 options=[{host, Host},
+						  {port, Port}]}),
+%%     {ok, Bus} = bus_reg:get_bus(Host, Port),
     true = link(Bus),
     ok = bus:wait_ready(Bus),
     io:format("Ready~n"),

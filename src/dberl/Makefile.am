@@ -18,6 +18,7 @@ marshaller.erl \
 message.erl \
 proxy.erl \
 remote_service.erl \
+unix_conn.erl \
 service.erl \
 service_reg.erl \
 sup.erl \

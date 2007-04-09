@@ -24,9 +24,9 @@
 
 %% api
 -export([
+	 start_link/1,
 	 start_link/2,
 	 start_link/3,
-	 start_link/4,
 	 close/1,
 	 call/2,
 	 call/3,
@@ -55,14 +55,14 @@
 	 }).
 
 
-start_link(Host, Port) ->
-    start_link(Host, Port, []).
+start_link(BusId) ->
+    start_link(BusId, []).
 
-start_link(Host, Port, Options) ->
-    start_link(Host, Port, Options, self()).
+start_link(BusId, Options) ->
+    start_link(BusId, Options, self()).
 
-start_link(Host, Port, Options, Owner) ->
-    gen_server:start_link(?MODULE, [Host, Port, Options, Owner], []).
+start_link(BusId, Options, Owner) ->
+    gen_server:start_link(?MODULE, [BusId, Options, Owner], []).
 
 close(Conn) ->
     gen_server:cast(Conn, close).
@@ -82,9 +82,33 @@ reply(Conn, Header) ->
 %%
 %% gen_server callbacks
 %%
-init([Host, Port, Options, Owner]) ->
+init([#bus_id{scheme=tcp,options=BusOptions}, Options, Owner]) ->
     true = link(Owner),
+    {Host, Port} = case {lists:keysearch(host, 1, BusOptions),
+			 lists:keysearch(port, 1, BusOptions)} of
+		       {{value, Host1}, {value, Port1}} ->
+			   {Host1, Port1};
+		       _ ->
+			   throw(no_host_or_port)
+		   end,
+
     {ok, Sock} = tcp_conn:connect(Host, Port, Options),
+%%     {ok, Auth} = auth:start_link(DbusHost, DbusPort),
+    {ok, Auth} = auth:start_link(Sock),
+    {ok, #state{sock=Sock,
+		auth=Auth,
+		owner=Owner}};
+
+init([#bus_id{scheme=unix, options=BusOptions}, Options, Owner]) ->
+    true = link(Owner),
+    Path = case lists:keysearch(path, 1, BusOptions) of
+	       {value, {_, Path1}} ->
+		   Path1;
+	       _ ->
+		   throw(no_path)
+	   end,
+
+    {ok, Sock} = unix_conn:connect(Path, Options),
 %%     {ok, Auth} = auth:start_link(DbusHost, DbusPort),
     {ok, Auth} = auth:start_link(Sock),
     {ok, #state{sock=Sock,

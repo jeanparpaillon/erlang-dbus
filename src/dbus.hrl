@@ -29,6 +29,11 @@
 -define(DBUS_REQUEST_NAME_REPLY_EXISTS, 3).
 -define(DBUS_REQUEST_NAME_REPLY_ALREADY_OWNER, 4).
 
+-record(bus_id, {
+	  scheme,				% tcp or unix
+	  options				% tcp: address, port
+						% unix: path
+	 }).
 
 -record(message, {
 	  header,

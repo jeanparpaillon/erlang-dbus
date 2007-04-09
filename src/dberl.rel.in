@@ -1,4 +1,4 @@
-%% Erlang OTP R11B-1 library versions
+%% Erlang OTP library versions
 {release, {"D-BUS application","0.0"}, {erts, "5.2"},
  [{kernel,"@ERLANG_LIB_VER_kernel@"},
   {stdlib,"@ERLANG_LIB_VER_stdlib@"},

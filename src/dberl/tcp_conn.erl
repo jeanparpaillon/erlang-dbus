@@ -18,7 +18,10 @@
 
 
 %% api
--export([connect/3]).
+-export([
+	 connect/2,
+	 connect/3
+	]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -34,12 +37,20 @@
 	 }).
 
 
+connect(Fd, Options) when is_integer(Fd) ->
+    gen_server:start_link(?MODULE, [Fd, Options, self()], []).
+
 connect(Host, Port, Options) ->
     gen_server:start_link(?MODULE, [Host, Port, Options, self()], []).
 
 %%
 %% gen_server callbacks
 %%
+init([Fd, Options, Owner]) when is_integer(Fd), is_pid(Owner) ->
+    true = link(Owner),
+    {ok, Sock} = gen_tcp:fdopen(Fd, Options),
+    {ok, #state{sock=Sock,
+		owner=Owner}};
 init([Host, Port, Options, Owner]) ->
     true = link(Owner),
     {ok, Sock} = gen_tcp:connect(Host, Port, Options),

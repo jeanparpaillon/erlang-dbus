@@ -17,7 +17,10 @@
 -behaviour(gen_server).
 
 %% api
--export([connect/2, stop/1]).
+-export([
+	 connect/1,
+	 stop/1
+	]).
 
 -export([
 %% 	 get_object/3,
@@ -47,8 +50,8 @@
 	  services=[]
 	 }).
 
-connect(Host, Port) ->
-    gen_server:start_link(?MODULE, [Host, Port, self()], []).
+connect(BusId) when is_record(BusId, bus_id) ->
+    gen_server:start_link(?MODULE, [BusId, self()], []).
 
 stop(Bus) ->
     gen_server:cast(Bus, stop).
@@ -74,9 +77,9 @@ get_service(Bus, ServiceName) ->
 %%
 %% gen_server callbacks
 %%
-init([DbusHost, DbusPort, Owner]) ->
+init([BusId, Owner]) ->
     process_flag(trap_exit, true),
-    self() ! {setup, DbusHost, DbusPort},
+    self() ! {setup, BusId},
     {ok, #state{owner=Owner}}.
 
 
@@ -180,8 +183,8 @@ handle_cast(Request, State) ->
     {noreply, State}.
 
 
-handle_info({setup, DbusHost, DbusPort}, State) ->
-    {ok, Conn} = connection:start_link(DbusHost, DbusPort, [list, {packet, 0}]),
+handle_info({setup, BusId}, State) ->
+    {ok, Conn} = connection:start_link(BusId, [list, {packet, 0}]),
 %%     ConnSpec = {{conn, DbusHost, DbusPort},{dberl.connection,start_link,[DbusHost, DbusPort, [list, {packet, 0}], self()]}, permanent, 10000, worker, [connection]},
 %%     {ok, Conn} = supervisor:start_child(dberl.sup, ConnSpec),
     {noreply, State#state{conn=Conn}};

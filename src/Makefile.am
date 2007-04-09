@@ -12,6 +12,7 @@ dberl.erl
 dberl_HDRS = dbus.hrl
 
 AM_ERLCFLAGS = -I$(srcdir) -I/usr/lib/erlang/lib/xmerl-1.0.5/include
+AM_ERL_FLAGS = -pa /home/mikael/tmp/cvs/jungerl/lib/unixdom_drv/ebin
 
 run:
 	$(ERL) $(AM_ERL_FLAGS) -name eryate -boot dberl
