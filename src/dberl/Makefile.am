@@ -27,7 +27,7 @@ transport.erl
 
 noinst_HDRS = dbus.hrl
 
-AM_ERLCFLAGS = -I$(srcdir)/.. -I/usr/lib/erlang/lib/xmerl-1.0.5/include
+AM_ERLCFLAGS = -I$(srcdir)/.. -I$(ERLANG_LIB_DIR_xmerl)/include
 
 beam_FILES = $(noinst_SRCS:.erl=.beam)
 ebin_DATA = $(beam_FILES)

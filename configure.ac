@@ -26,6 +26,7 @@ AC_ERLANG_CHECK_LIB(kernel)
 AC_ERLANG_CHECK_LIB(stdlib)
 AC_ERLANG_CHECK_LIB(sasl)
 AC_ERLANG_CHECK_LIB(crypto)
+AC_ERLANG_CHECK_LIB(xmerl)
 
 AC_DEFUN([AC_ERLANG_LIB_VER],
 [AC_CACHE_CHECK([Erlang/OTP '$1' library version], [erlang_cv_lib_ver_$1],

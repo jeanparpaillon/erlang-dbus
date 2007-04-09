@@ -11,7 +11,8 @@ hello_app.erl \
 hello_sup.erl
 
 AM_ERLCFLAGS = -I$(top_srcdir)/src
-AM_ERL_FLAGS = -pz $(top_builddir)/src -pz /usr/lib/yxa/ebin
+AM_ERL_FLAGS = -pz $(top_builddir)/src
+
 
 run:
-	$(ERL) $(AM_ERL_FLAGS) -boot hello
+	$(ERL) $(AM_ERL_FLAGS) $(ERL_FLAGS) -boot hello
