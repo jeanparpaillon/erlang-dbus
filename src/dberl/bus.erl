@@ -72,7 +72,7 @@ unexport_service(Bus, ServiceName) ->
     gen_server:call(Bus, {unexport_service, ServiceName}).
 
 get_service(Bus, ServiceName) ->
-    gen_server:call(Bus, {get_service, ServiceName}).
+    gen_server:call(Bus, {get_service, ServiceName, self()}).
 
 %%
 %% gen_server callbacks
@@ -183,7 +183,7 @@ handle_cast(Request, State) ->
     {noreply, State}.
 
 
-handle_info({setup, BusId}, State) ->
+handle_info({setup, BusId}, State) when is_record(BusId, bus_id) ->
     {ok, Conn} = connection:start_link(BusId, [list, {packet, 0}]),
 %%     ConnSpec = {{conn, DbusHost, DbusPort},{dberl.connection,start_link,[DbusHost, DbusPort, [list, {packet, 0}], self()]}, permanent, 10000, worker, [connection]},
 %%     {ok, Conn} = supervisor:start_child(dberl.sup, ConnSpec),

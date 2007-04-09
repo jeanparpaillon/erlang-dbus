@@ -164,8 +164,8 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 %% 		    io:format("Reply ~p~n", [Reply]),
 		    ok = connection:cast(Conn, Reply),
 		    {noreply, State};
-		{'EXIT', _Reason} ->
-%% 		    io:format("Error ~p~n", [Reason]),
+		{'EXIT', Reason} ->
+ 		    io:format("Error ~p~n", [Reason]),
 		    ErrorName = "org.freedesktop.DBus.Error.InvalidParameters",
 		    ErrorText = "Erlang: Invalid parameters.",
 		    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),

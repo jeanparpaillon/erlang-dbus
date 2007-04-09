@@ -61,7 +61,9 @@ start_link(BusId) ->
 start_link(BusId, Options) ->
     start_link(BusId, Options, self()).
 
-start_link(BusId, Options, Owner) ->
+start_link(BusId, Options, Owner) when is_record(BusId, bus_id),
+				       is_list(Options),
+				       is_pid(Owner) ->
     gen_server:start_link(?MODULE, [BusId, Options, Owner], []).
 
 close(Conn) ->
@@ -86,7 +88,7 @@ init([#bus_id{scheme=tcp,options=BusOptions}, Options, Owner]) ->
     true = link(Owner),
     {Host, Port} = case {lists:keysearch(host, 1, BusOptions),
 			 lists:keysearch(port, 1, BusOptions)} of
-		       {{value, Host1}, {value, Port1}} ->
+		       {{value, {host, Host1}}, {value, {port,Port1}}} ->
 			   {Host1, Port1};
 		       _ ->
 			   throw(no_host_or_port)
@@ -113,7 +115,9 @@ init([#bus_id{scheme=unix, options=BusOptions}, Options, Owner]) ->
     {ok, Auth} = auth:start_link(Sock),
     {ok, #state{sock=Sock,
 		auth=Auth,
-		owner=Owner}}.
+		owner=Owner}};
+init(Args) ->
+    throw({bad_init_args}).
 
 
 code_change(_OldVsn, State, _Extra) ->
