@@ -16,7 +16,7 @@
 -import(error_logger).
 -import(file).
 -import(gen_server).
--import(hex).
+%%-import(hex).
 -import(io).
 -import(lists).
 -import(os).

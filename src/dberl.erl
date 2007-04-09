@@ -47,6 +47,7 @@ make() ->
 	       "bus_reg",
 	       "call",
  	       "connection",
+	       "hex",
 	       "gen_dbus",
 	       "introspect",
 	       "marshaller",

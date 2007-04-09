@@ -13,6 +13,7 @@ bus_reg.erl \
 call.erl \
 connection.erl \
 gen_dbus.erl \
+hex.erl \
 introspect.erl \
 marshaller.erl \
 message.erl \
