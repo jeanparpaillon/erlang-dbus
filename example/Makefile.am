@@ -10,7 +10,7 @@ hello.erl \
 hello_app.erl \
 hello_sup.erl
 
-AM_ERLCFLAGS = -I$(top_srcdir)/src
+AM_ERLCFLAGS = -I$(top_builddir)/include -I$(top_srcdir)/src
 AM_ERL_FLAGS = -pz $(top_builddir)/src
 
 

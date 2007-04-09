@@ -13,6 +13,8 @@
 %% api:s
 -export([start/0, make/0]).
 
+-include("config.hrl").
+
 %% application callbacks
 start(normal, []) ->
     error_logger:logfile({open, "dberl.log"}),
@@ -63,15 +65,15 @@ make() ->
 
 
 make_modules(Prefix, Modules) ->
-    Srcdir = "/home/mikael/svn/dberl/" ++ Prefix,
-    Builddir = "/home/mikael/svn/dberl/build_linux/" ++ Prefix,
+    Srcdir = ?TOP_SRCDIR ++ "/" ++ Prefix,
+    Builddir = ?TOP_BUILDDIR ++ "/" ++ Prefix,
     Files = lists:map(fun(File) -> Srcdir ++ File end, Modules),
 
     make:files(Files,
 	       [
 		load,
-		{i, "/home/mikael/svn/dberl/src"},
-		{i, "/usr/lib/erlang/lib/xmerl-1.0.5/include"},
+		{i, ?TOP_SRCDIR ++ "/src"},
+		{i, ?ERLANG_LIB_DIR_XMERL ++ "/include"},
 		{outdir, Builddir}
 	       ]).
 

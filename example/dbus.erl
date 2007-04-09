@@ -14,6 +14,7 @@
 -behaviour(gen_server).
 
 -include("dbus.hrl").
+-include("config.hrl").
 
 %% gen_server callbacks
 -export([
@@ -49,7 +50,7 @@ make() ->
 	       "hello_sup"
 	      ],
 
-    Prefix = "/home/mikael/svn/dberl/example/",
+    Prefix = ?TOP_SRCDIR ++ "/example/",
     make_modules(Prefix, Modules).
 
 make_modules(Prefix, Modules) ->
@@ -58,8 +59,8 @@ make_modules(Prefix, Modules) ->
     make:files(Files,
 	       [
 		load,
-		{i, "/home/mikael/svn/dberl/src"},
-		{i, "/usr/lib/erlang/lib/xmerl-1.0.5/include"},
+		{i, ?TOP_SRCDIR ++ "/src"},
+		{i, ?ERLANG_LIB_DIR_XMERL ++ "/include"},
 		{outdir, Prefix}
 	       ]).
 

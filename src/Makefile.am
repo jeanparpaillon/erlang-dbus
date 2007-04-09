@@ -11,7 +11,8 @@ dberl.erl
 
 dberl_HDRS = dbus.hrl
 
-AM_ERLCFLAGS = -I$(srcdir) -I$(ERLANG_LIB_DIR_xmerl)/include
+AM_ERLCFLAGS = -I$(top_builddir)/include -I$(srcdir)	\
+-I$(ERLANG_LIB_DIR_xmerl)/include
 AM_ERL_FLAGS =
 
 run:
