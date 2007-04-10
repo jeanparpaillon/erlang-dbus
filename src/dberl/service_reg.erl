@@ -34,7 +34,9 @@
 	]).
 
 -record(state, {
-	  services=[]
+	  service,
+	  services=[],				% {Service_name}
+	  connections=[]			% {Name, Conn}
 	 }).
 
 -define(SERVER, ?MODULE).
@@ -51,7 +53,8 @@ export_service(ServiceName) ->
 init([]) ->
     process_flag(trap_exit, true),
     bus_reg:set_service_reg(self()),
-    {ok, #state{}}.
+    {ok, Service} = service:start_link(dummy),
+    {ok, #state{service=Service}}.
 
 
 code_change(_OldVsn, State, _Extra) ->
@@ -65,8 +68,8 @@ handle_call({export_service, ServiceName}, _From, State) ->
 	    {reply, {ok, Service}, State};
 	_ ->
 	    io:format("~p: export_service name ~p~n", [?MODULE, ServiceName]),
-	    {ok, Service} = service:start_link(ServiceName),
-	    ok = bus_reg:export_service(Service, ServiceName),
+	    Service = State#state.service,
+	    ok = bus_reg:export_service(undefined, ServiceName),
 	    Services1 = [{ServiceName, Service}|Services],
 	    {reply, {ok, Service}, State#state{services=Services1}}
     end;
@@ -82,21 +85,22 @@ handle_cast(Request, State) ->
 
 
 handle_info({dbus_method_call, Header, Conn}, State) ->
-    {_, ServiceNameVar} = message:header_fetch(?HEADER_DESTINATION, Header),
-    ServiceName = list_to_atom(ServiceNameVar#variant.value),
+%%     {_, ServiceNameVar} = message:header_fetch(?HEADER_DESTINATION, Header),
+%%     ServiceName = list_to_atom(ServiceNameVar#variant.value),
+    Service = State#state.service,
 
 %%     io:format("Handle call ~p ~p~n", [Header, ServiceName]),
-    case lists:keysearch(ServiceName, 1, State#state.services) of
-	{value, {ServiceName, Service}} ->
-	    Service ! {dbus_method_call, Header, Conn};
+%%     case lists:keysearch(ServiceName, 1, State#state.services) of
+%% 	{value, {ServiceName, Service}} ->
+    Service ! {dbus_method_call, Header, Conn},
 
-	_ ->
-	    ErrorName = "org.freedesktop.DBus.Error.ServiceUnknown",
-	    ErrorText = "Erlang: Service not found.",
-	    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
-	    io:format("Reply ~p~n", [Reply]),
-	    ok = connection:reply(Conn, Reply)
-    end,
+%% 	_ ->
+%% 	    ErrorName = "org.freedesktop.DBus.Error.ServiceUnknown",
+%% 	    ErrorText = "Erlang: Service '" ++ [atom_to_list(ServiceName)] ++ "' not found.",
+%% 	    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
+%% 	    io:format("Reply ~p~n", [Reply]),
+%% 	    ok = connection:reply(Conn, Reply)
+%%     end,
     {noreply, State};
 
 handle_info({new_bus, _Bus}, State) ->

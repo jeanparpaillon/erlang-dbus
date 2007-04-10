@@ -20,7 +20,9 @@
 -export([
 	 start_link/3,
 	 start_link/4,
-	 reply/2
+	 reply/2,
+	 signal/2,
+	 signal/3
 	]).
 
 %% behaviour callback
@@ -48,7 +50,8 @@ behaviour_info(callbacks) ->
 	  sub,
 	  default_iface,
 	  path,
-	  pending=[]
+	  pending=[],
+	  node
 	 }).
 
 start_link(Module, Args, Options) ->
@@ -59,6 +62,12 @@ start_link(ServerName, Module, Args, Options) ->
 
 reply({Self, From}, Reply) ->
     gen_server:cast(Self, {reply, From, Reply}).
+
+signal(Signal, Args) ->
+    signal(Signal, Args, []).
+
+signal(Signal, Args, Options) ->
+    gen_server:cast(self(), {signal, Signal, Args, Options}).
 
 %%
 %% gen_server callbacks
@@ -72,10 +81,18 @@ init([Module, Args]) ->
 	{ok, {ServiceName, Path, DBus_config}, SubState} ->
 	    {ok, Service} = dberl.service_reg:export_service(ServiceName),
 	    ok = service:register_object(Service, Path, self()),
+	    Signal = #signal{name = 'OnClick',
+			     out_sig="ss",
+			     out_types=[string,string]},
+	    Interface = #interface{name = 'org.designfu.SampleInterface',
+				   signals = [Signal]},
+	    Node = #node{interfaces = [Interface]},
+
 	    State = #state{service=Service,
 			   path=Path,
 			   module=Module,
-			   sub=SubState},
+			   sub=SubState,
+			   node=Node},
 	    setup(DBus_config, State)
     end.
 
@@ -84,6 +101,8 @@ setup(DBus_config, State) ->
 		  case E of
 		      {interface, IFace} ->
 			  State2#state{default_iface = IFace};
+		      {members, Members} ->
+			  State2#state{node = build_introspect(Members, State2)};
 		      _ ->
 			  io:format("Ignore config param ~p~n", [E]),
 			  State2
@@ -133,6 +152,37 @@ handle_cast({reply, From, Reply}, State) ->
     Pending1 = lists:keydelete(From, 1, Pending),
     {noreply, State#state{pending=Pending1}};
 
+handle_cast({signal, Signal_name, Args, Options}, State) ->
+    io:format("in gen_server signal ~p~n", [Signal_name]),
+
+    Iface_name =
+	case lists:keysearch(interface, 1, Options) of
+	    {value, {interface, Name}} ->
+		Name;
+	    _ ->
+		State#state.default_iface
+	end,
+
+    Signal =
+	case introspect:find_interface(Iface_name, State#state.node) of
+	    {ok, Iface} ->
+		case introspect:find_signal(Signal_name, Iface) of
+		    {ok, Signal1} ->
+			Signal1;
+		    error ->
+			{error, {'org.freedesktop.DBus.UnknownSignal',  [Signal_name], Iface_name, State#state.node}}
+		end;
+	    error ->
+		{error, {'org.freedesktop.DBus.UnknownInterface',  [Iface_name]}}
+	end,
+
+    case Signal of
+	{error, _}=Error ->
+	    {reply, Error, State}; 
+	_ ->
+	    do_signal(Iface_name, Signal, Args, Options, State)
+    end;
+
 handle_cast(Request, State) ->
     error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
@@ -146,11 +196,12 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 
 %%     io:format("Handle call ~p ~p~n", [Header, Member]),
     case Member of
-%% 	'Introspect' ->
-%% 	    ReplyBody = "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\" \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\"><node><interface name=\"org.designfu.SampleInterface\"><method name=\"HelloWorld\"><arg direction=\"in\" type=\"i\" /><arg direction=\"in\" type=\"s\" /></method></interface></node>",
-%% 	    {ok, Reply} = message:build_method_return(Header, [string], [ReplyBody]),
-%% 	    io:format("Reply ~p~n", [Reply]),
-%% 	    ok = connection:cast(Conn, Reply);
+	'Introspect' ->
+	    %% Empty introspect xml
+	    ReplyBody = "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\" \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\"><node></node>",
+	    {ok, Reply} = message:build_method_return(Header, [string], [ReplyBody]),
+	    ok = connection:cast(Conn, Reply),
+	    {noreply, State};
 
 	_ ->
 	    Sub = State#state.sub,
@@ -196,6 +247,12 @@ handle_info(Info, State) ->
 terminate(_Reason, _State) ->
     terminated.
 
+do_signal(Iface_name, Signal, Args, Options, State) ->
+    Path = State#state.path,
+    {ok, Header} = message:build_signal(Path, Iface_name, Signal, Args),
+    bus_reg:cast(Header),
+    error_logger:error_msg("~p: signal ~p~n", [?MODULE, Header]),
+    {noreply, State}.
 
 do_method_call(Module, Member, Header, Conn, Sub) ->
     From =
@@ -225,3 +282,23 @@ do_method_call(Module, Member, Header, Conn, Sub) ->
 	{{noreply, Sub1}, _} ->
 	    {pending, From, Sub1}
     end.
+
+build_introspect(Members, State) when is_list(Members),
+				      is_record(State, state) ->
+    #node{interfaces = [#interface{name = 'org.designfu.SampleInterface',
+				   signals = [#signal{name = 'OnClick',
+						      out_sig="ss",
+						      out_types=[string,string]}]}]}.
+
+%%     lists:map(fun(Member) -> member_build_introspect(Member) end, Members).
+
+%% member_build_introspect(Member, State) when is_atom(Member),
+%% 					    is_record(State, state) ->
+%%     Module = State#state.module,
+%%     Info = Module:Member(dbus_info),
+%%     Signature = case lists:keysearch(signature, 1, Info) of
+%% 		    {value, {signature, Result, Args}} ->
+%% 			todo;
+%% 		    _ ->
+			
+%% 		end.

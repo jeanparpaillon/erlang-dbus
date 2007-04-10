@@ -20,7 +20,8 @@
 	 header_find/2,
 	 header_fetch/2,
 	 build_error/3,
-	 build_method_return/3
+	 build_method_return/3,
+	 build_signal/4
 	]).
 
 %% send_hello(State) ->
@@ -236,6 +237,30 @@ build_method_return(Header, Types, Body) ->
 			  body=BinBody},
     {ok, ReplyHeader}.
 
+build_signal(Path, Iface_name, Signal, Args) when is_atom(Path),
+						  is_atom(Iface_name),
+						  is_record(Signal, signal),
+						  is_list(Args) ->
+    Signal_name = Signal#signal.name,
+    Signature = Signal#signal.out_sig,
+    Types = Signal#signal.out_types,
+
+    Signature = marshaller:marshal_signature(Types),
+
+    {ok, Body, _Pos} = 
+	marshaller:marshal_list(Types, Args),
+    Headers = [
+	       {?HEADER_PATH, #variant{type=object_path, value=Path}},
+	       {?HEADER_INTERFACE, #variant{type=string, value=Iface_name}},
+	       {?HEADER_MEMBER, #variant{type=string, value=Signal_name}},
+	       {?HEADER_SIGNATURE, #variant{type=signature, value=Signature}}
+	      ],
+
+    Header = #header{type=?TYPE_SIGNAL,
+		     headers=Headers,
+		     body=Body},
+    {ok, Header}.
+
 header_fetch(Code, Header) ->
     {ok, Field} = header_find(Code, Header),
     Field.
@@ -249,3 +274,4 @@ header_find(Code, Header) ->
 	_ ->
 	    error
     end.
+

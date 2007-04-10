@@ -54,21 +54,21 @@
 
 -record(node, {
 	  name,					% atom()
-	  elements,				% [node()]
-	  interfaces				% [#interface()] | unknown
+	  elements = [],			% [node()]
+	  interfaces = []			% [#interface()] | unknown
 	 }).
 
 -record(interface, {
 	  name,					% atom
-	  methods,				% [#member]
-	  signals,				% [#member]
-	  properties				% [#propery]
+	  methods = [],				% [#member]
+	  signals = [],				% [#member]
+	  properties = []			% [#propery]
 	  }).
 
 -record(method, {
 	  name,					% atom
 	  args,					% [#arg]
-	  result,				% #arg | none
+	  result,				% #arg | none | undefined
 	  in_sig,				% string()
 	  in_types
 	 }).

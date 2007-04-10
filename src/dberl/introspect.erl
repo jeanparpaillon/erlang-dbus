@@ -6,7 +6,9 @@
 
 -module(dberl.introspect).
 
+-import(io).
 -import(lists).
+-import(xmerl).
 -import(xmerl_scan).
 
 -include("xmerl.hrl").
@@ -15,11 +17,78 @@
 -export([
 	 build_introspect/2,
 	 from_xml/1,
-	 from_xml_string/1
+	 from_xml_string/1,
+	 to_xmerl/1,
+	 fetch_interface/2,
+	 find_interface/2,
+	 fetch_method/2,
+	 find_method/2,
+	 fetch_signal/2,
+	 find_signal/2,
+	 test/0
 	]).
 
 %% api
 
+to_xmerl(List) when is_list(List) ->
+    lists:map(fun(Elem) -> to_xmerl(Elem) end, List);
+
+to_xmerl(Elem) when is_record(Elem, node) ->
+    io:format("node~n"),
+    {node,
+     case Elem#node.name of
+	 undefined ->
+	     [];
+	 Name ->
+	     [{name, Name}]
+     end,
+     to_xmerl(Elem#node.elements) ++
+     to_xmerl(Elem#node.interfaces)
+    };
+
+to_xmerl(Elem) when is_record(Elem, interface) ->
+    io:format("interface ~p~n", [Elem]),
+    {interface,
+     [{name, Elem#interface.name}],
+     to_xmerl(Elem#interface.methods) ++
+     to_xmerl(Elem#interface.signals) ++
+     to_xmerl(Elem#interface.properties)};
+
+to_xmerl(Elem) when is_record(Elem, method) ->
+    io:format("method ~p~n", [Elem]),
+    Result =
+	case Elem#method.result of
+	    none ->
+		[];
+	    undefined ->
+		[];
+	    Arg ->
+		[to_xmerl(Arg)]
+	end,
+%%     Fun = fun(Arg) ->
+%% 		  {arg, [{direction, Arg#
+
+    {method,
+     case Elem#method.name of
+	 undefined ->
+	     [];
+	 Name ->
+	     [{name, Name}]
+     end,
+     to_xmerl(Elem#method.args) ++ 
+     Result};
+
+to_xmerl(Elem) when is_record(Elem, arg) ->
+    io:format("arg ~p~n", [Elem]),
+    {arg, 
+     case Elem#arg.name of
+	 undefined ->
+	     [];
+	 Name ->
+	     [{name, Name}]
+     end ++
+     [{direction, Elem#arg.direction},
+      {type, Elem#arg.type}], []}.
 
 build_introspect(Service, Path) ->
     Headers = [
@@ -189,3 +258,78 @@ filter_content(Name, Content) ->
 		  is_record(E, Name)
 	  end,
     lists:filter(Fun, Content).
+
+fetch_interface(IfaceName, Node) when is_record(Node, node) ->
+    {ok, Iface} = find_interface(IfaceName, Node),
+    Iface.
+
+find_interface(IfaceName, Node) when is_record(Node, node) ->
+    Fun = fun(E) ->
+		  case E of
+		      #interface{name=IfaceName} -> true;
+		      _ -> false
+		  end
+	  end,
+    case lists:filter(Fun, Node#node.interfaces) of
+	[Iface|_] ->
+	    {ok, Iface};
+	[] ->
+	    error
+    end.
+
+fetch_method(MethodName, Node) when is_record(Node, interface) ->
+    {ok, Method} = find_method(MethodName, Node),
+    Method.
+
+find_method(MethodName, Iface) when is_record(Iface, interface) ->
+    Fun = fun(E) ->
+		  case E of
+		      #method{name=MethodName} -> true;
+		      _ -> false
+		  end
+	  end,
+    case lists:filter(Fun, Iface#interface.methods) of
+	[Method|_] ->
+	    {ok, Method};
+	[] ->
+	    error
+    end.
+
+fetch_signal(Signal_name, Node) when is_record(Node, interface) ->
+    {ok, Signal} = find_signal(Signal_name, Node),
+    Signal.
+
+find_signal(Signal_name, Iface) when is_record(Iface, interface) ->
+    Fun = fun(E) ->
+		  case E of
+		      #signal{name=Signal_name} -> true;
+		      _ -> false
+		  end
+	  end,
+    case lists:filter(Fun, Iface#interface.signals) of
+	[Signal|_] ->
+	    {ok, Signal};
+	[] ->
+	    error
+    end.
+
+%% Tests
+test() ->
+    Data = default_dbus_node(),
+    Data1 = Data,
+    io:format("Data ~p~n", [Data1]),
+    lists:flatten(xmerl:export_simple([to_xmerl(Data1)], xmerl_xml)).
+
+default_dbus_node() ->
+    HelloMethod = #method{name='Hello', args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
+    AddMatch = #method{name='AddMatch', args=[#arg{direction=in, type="s"}], in_sig="s", in_types=[string]},
+    RequestName = #method{name='RequestName', args=[#arg{direction=in, type="s"}, #arg{direction=in, type="u"}, #arg{direction=out, type="u"}], in_sig="su", in_types=[string,uint32]},
+    ReleaseName = #method{name='ReleaseName', args=[#arg{direction=in, type="s"}, #arg{direction=out, type="u"}], in_sig="s", in_types=[string]},
+    DBusIface = #interface{name='org.freedesktop.DBus', methods=[HelloMethod, AddMatch, RequestName, ReleaseName]},
+
+    IntrospectMethod = #method{name='Introspect', args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
+    DBusIntrospectableIface = #interface{name='org.freedesktop.DBus.Introspectable', methods=[IntrospectMethod]},
+
+    DBusRootNode = #node{elements=[], interfaces=[DBusIface, DBusIntrospectableIface]},
+    DBusRootNode.
+

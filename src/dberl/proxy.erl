@@ -121,9 +121,9 @@ handle_call({method, IfaceName, MethodName, Args, Options}, From, State) ->
     io:format("in gen_server call ~p~n", [MethodName]),
 
     Method =
-	case find_interface(IfaceName, State#state.node) of
+	case introspect:find_interface(IfaceName, State#state.node) of
 	    {ok, Iface} ->
-		case find_method(MethodName, Iface) of
+		case introspect:find_method(MethodName, Iface) of
 		    {ok, Method1} ->
 			Method1;
 		    error ->
@@ -276,38 +276,3 @@ do_method(IfaceName, Method, Args, Options, From, State) ->
     end.
 
 
-fetch_interface(IfaceName, Node) ->
-    {ok, Iface} = find_interface(IfaceName, Node),
-    Iface.
-
-find_interface(IfaceName, Node) ->
-    Fun = fun(E) ->
-		  case E of
-		      #interface{name=IfaceName} -> true;
-		      _ -> false
-		  end
-	  end,
-    case lists:filter(Fun, Node#node.interfaces) of
-	[Iface|_] ->
-	    {ok, Iface};
-	[] ->
-	    error
-    end.
-
-fetch_method(MethodName, Node) ->
-    {ok, Method} = find_method(MethodName, Node),
-    Method.
-
-find_method(MethodName, Iface) ->
-    Fun = fun(E) ->
-		  case E of
-		      #method{name=MethodName} -> true;
-		      _ -> false
-		  end
-	  end,
-    case lists:filter(Fun, Iface#interface.methods) of
-	[Method|_] ->
-	    {ok, Method};
-	[] ->
-	    error
-    end.

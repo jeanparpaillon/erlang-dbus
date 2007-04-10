@@ -28,7 +28,8 @@
 	 add_match/2,
 	 export_service/2,
 	 unexport_service/2,
-	 get_service/2
+	 get_service/2,
+	 cast/2
 	]).
 
 %% gen_server callbacks
@@ -73,6 +74,9 @@ unexport_service(Bus, ServiceName) ->
 
 get_service(Bus, ServiceName) ->
     gen_server:call(Bus, {get_service, ServiceName, self()}).
+
+cast(Bus, Header) ->
+    gen_server:cast(Bus, {cast, Header}).
 
 %%
 %% gen_server callbacks
@@ -178,6 +182,12 @@ handle_cast({add_match, Match}, State) ->
 
 handle_cast(stop, State) ->
     {stop, normal, State};
+
+handle_cast({cast, Header}, State) ->
+    Conn = State#state.conn,
+    connection:cast(Conn, Header),
+    {noreply, State};
+
 handle_cast(Request, State) ->
     error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.

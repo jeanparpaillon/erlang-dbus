@@ -23,7 +23,8 @@
 	 get_bus/1,
 	 export_service/2,
 	 unexport_service/2,
-	 set_service_reg/1
+	 set_service_reg/1,
+	 cast/1
 	]).
 
 %% gen_server callbacks
@@ -64,6 +65,10 @@ unexport_service(Service, ServiceName) ->
 
 set_service_reg(ServiceReg) ->
     gen_server:cast(?SERVER, {set_service_reg, ServiceReg}).
+
+cast(Header) ->
+    gen_server:cast(?SERVER, {cast, Header}).
+    
 
 %%
 %% gen_server callbacks
@@ -115,6 +120,14 @@ handle_call(Request, _From, State) ->
 
 handle_cast({set_service_reg, ServiceReg}, State) ->
     {noreply, State#state{service_reg=ServiceReg}};
+
+handle_cast({cast, Header}, State) ->
+    Fun = fun({_, Bus}) ->
+		  bus:cast(Bus, Header)
+	  end,
+    lists:foreach(Fun, State#state.busses),
+    
+    {noreply, State};
 
 handle_cast(Request, State) ->
     error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
