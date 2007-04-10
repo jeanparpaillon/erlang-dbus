@@ -154,14 +154,14 @@ handle_call(Request, _From, State) ->
 
 handle_cast(stop, State) ->
     {stop, normal, State};
-handle_cast({connect_signal, IfaceName, SignalName, _Tag, _Pid}, State) ->
+handle_cast({connect_signal, IfaceName, SignalName, Tag, Pid}, State) ->
     Match = [{type, signal},
 	     {sender, State#state.service},
 	     {interface, IfaceName},
 	     {member, SignalName},
 	     {path, State#state.path}],
 
-    bus:add_match(State#state.bus, Match),
+    bus:add_match(State#state.bus, Match, Tag, Pid),
 
     {noreply, State};
 handle_cast(Request, State) ->

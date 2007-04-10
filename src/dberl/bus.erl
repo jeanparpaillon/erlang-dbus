@@ -25,7 +25,7 @@
 -export([
 %% 	 get_object/3,
 	 wait_ready/1,
-	 add_match/2,
+	 add_match/4,
 	 export_service/2,
 	 unexport_service/2,
 	 get_service/2,
@@ -48,7 +48,8 @@
 	  id,
 	  dbus_object,
 	  owner,
-	  services=[]
+	  services=[],
+	  signal_handlers=[]
 	 }).
 
 connect(BusId) when is_record(BusId, bus_id) ->
@@ -63,8 +64,8 @@ stop(Bus) ->
 wait_ready(Bus) ->
     gen_server:call(Bus, wait_ready).
 
-add_match(Bus, Match) ->
-    gen_server:cast(Bus, {add_match, Match}).
+add_match(Bus, Match, Tag, Pid) ->
+    gen_server:cast(Bus, {add_match, Match, Tag, Pid}).
 
 export_service(Bus, ServiceName) ->
     gen_server:call(Bus, {export_service, ServiceName}).
@@ -143,7 +144,7 @@ handle_call(Request, _From, State) ->
     {reply, ok, State}.
 
 
-handle_cast({add_match, Match}, State) ->
+handle_cast({add_match, Match, Tag, Pid}, State) ->
     DBusObj = State#state.dbus_object,
     Fold = fun({Key, Value}, Str) ->
 		   Prefix =
@@ -178,7 +179,8 @@ handle_cast({add_match, Match}, State) ->
     {ok, DBusIFace} = proxy:interface(DBusObj, 'org.freedesktop.DBus'),
     ok = proxy:call(DBusIFace, 'AddMatch', [MatchStr], [{reply, self(), add_match}]),
 
-    {noreply, State};
+    Signal_handlers = State#state.signal_handlers,
+    {noreply, State#state{signal_handlers=[{Match, Tag, Pid}|Signal_handlers]}};
 
 handle_cast(stop, State) ->
     {stop, normal, State};
@@ -250,6 +252,12 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 
 handle_info({dbus_signal, Header, Conn}, #state{conn=Conn}=State) ->
     io:format("Ignore signal ~p~n", [Header]),
+    
+    Signal_handlers = State#state.signal_handlers,
+    Fun = fun({Match, Tag, Pid}) ->
+		  Pid ! {dbus_signal, Header, Tag}
+	  end,
+    lists:foreach(Fun, Signal_handlers),
     {noreply, State};
 
 %% handle_info({'EXIT', Pid, Reason}, State) ->
