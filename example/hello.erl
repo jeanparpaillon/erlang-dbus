@@ -47,20 +47,15 @@ init([Service, Path]) ->
 'OnClick'(dbus_info) ->
     [{signature, [string, string], []}].
 
+
 'HelloWorld'(dbus_info) ->
     [{interface, 'org.designfu.SampleInterface'},
      {signature, [string], [{array, string}]}].
 
-
 'HelloWorld'([Id, Hello_message], From, State) when is_integer(Id) ->
-%%     {dbus_error, 'org.freedesktop.DBus.Error.InvalidArgs', "Invalid args", State}.
-
     self() ! {hello, [Id, Hello_message], From},
     {noreply, State}.
 
-%%     io:format("HelloWorld: ~p, ~p~n", [Id, Hello_message]),
-%% %%     on_click(17, 123),
-%%     {reply, ["Hello", " from Erlang service.erl"], State}.
 
 'GetTuple'(dbus_info) ->
     [{signature, [], [{struct, [string, string]}]}].
@@ -78,14 +73,7 @@ init([Service, Path]) ->
     Dict = dict:from_list(List),
 
     {reply, #variant{type={dict, byte, string}, value=Dict}, State}.
-%%     {reply, #variant{type={dict, string, string},value=List}, State}.
-%%      {reply, #variant{type={array, {struct, [string, string]}},value=List}, State}.
 
-%% on_click([], State) ->
-
-%%     @dbus.service.signal("org.designfu.SampleInterface")
-%%     def OnClick(self, x, y):
-%%         pass
 
 handle_info({hello, [Id, Hello_message], From}, State) ->
     io:format("HelloWorld: callback ~p, ~p~n", [Id, Hello_message]),
