@@ -50,18 +50,22 @@ make() ->
 	       "hello_sup"
 	      ],
 
-    Prefix = ?TOP_SRCDIR ++ "/example/",
+    Prefix = "example/",
     make_modules(Prefix, Modules).
 
 make_modules(Prefix, Modules) ->
-    Files = lists:map(fun(File) -> Prefix ++ File end, Modules),
+    Srcdir = ?TOP_SRCDIR ++ "/" ++ Prefix,
+    Builddir = ?TOP_BUILDDIR ++ "/" ++ Prefix,
+
+    Files = lists:map(fun(File) -> Srcdir ++ File end, Modules),
 
     make:files(Files,
 	       [
 		load,
+		{i, ?TOP_BUILDDIR ++ "/include"},
 		{i, ?TOP_SRCDIR ++ "/src"},
 		{i, ?ERLANG_LIB_DIR_XMERL ++ "/include"},
-		{outdir, Prefix}
+		{outdir, Builddir}
 	       ]).
 
 

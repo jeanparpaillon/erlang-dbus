@@ -73,6 +73,7 @@ make_modules(Prefix, Modules) ->
     make:files(Files,
 	       [
 		load,
+		{i, ?TOP_BUILDDIR ++ "/include"},
 		{i, ?TOP_SRCDIR ++ "/src"},
 		{i, ?ERLANG_LIB_DIR_XMERL ++ "/include"},
 		{outdir, Builddir}
