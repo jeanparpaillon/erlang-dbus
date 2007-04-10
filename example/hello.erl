@@ -16,13 +16,13 @@
 
 %% dbus object callbacks
 -export([
+	 'HelloWorld'/1,
 	 'HelloWorld'/3,
-	 hello_world/1,
-	 hello_world/2,
-	 get_tuple/1,
+	 'GetTuple'/1,
 	 'GetTuple'/3,
-	 get_dict/1,
-	 'GetDict'/3
+	 'GetDict'/1,
+	 'GetDict'/3,
+	 'OnClick'/1
 	]).
 
 %% gen_dbus callbacks
@@ -40,14 +40,17 @@ init([Service, Path]) ->
     State = #state{},
     {ok, {Service, Path, [
 			  {interface, 'org.designfu.SampleInterface'},
-			  {members, [hello_world, get_tuple, get_dict]}
+			  {methods, ['HelloWorld', 'GetTuple', 'GetDict']},
+			  {signals, ['OnClick']}
 			 ]}, State}.
 
-hello_world(dbus_info) ->
-    [{type, method},
-     {interface, 'org.designfu.SampleInterface'},
+'OnClick'(dbus_info) ->
+    [{signature, [string, string], []}].
+
+'HelloWorld'(dbus_info) ->
+    [{interface, 'org.designfu.SampleInterface'},
      {signature, [string], [{array, string}]}].
-    
+
 
 'HelloWorld'([Id, Hello_message], From, State) when is_integer(Id) ->
 %%     {dbus_error, 'org.freedesktop.DBus.Error.InvalidArgs', "Invalid args", State}.
@@ -59,20 +62,14 @@ hello_world(dbus_info) ->
 %% %%     on_click(17, 123),
 %%     {reply, ["Hello", " from Erlang service.erl"], State}.
 
-hello_world([Hello_message], State) ->
-    io:format("~p~n", [Hello_message]),
-%%     on_click(17, 123),
-    {reply, ["Hello", " from Erlang service.erl"], State}.
-
-
-get_tuple(dbus_info) ->
+'GetTuple'(dbus_info) ->
     [{signature, [], [{struct, [string, string]}]}].
 
 'GetTuple'([], _From, State) ->
     {reply, {"Hello Tuple", " from Erlang service.erl"}, State}.
 
 
-get_dict(dbus_info) ->
+'GetDict'(dbus_info) ->
     [{interface, 'org.designfu.SampleInterface'}].
 
 'GetDict'([], _From, State) ->
@@ -92,7 +89,7 @@ get_dict(dbus_info) ->
 
 handle_info({hello, [Id, Hello_message], From}, State) ->
     io:format("HelloWorld: callback ~p, ~p~n", [Id, Hello_message]),
-    %%     on_click(17, 123),
+    gen_dbus:signal('OnClick', ["x", "y"]),
     gen_dbus:reply(From, {ok, ["Hello callback", " from Erlang service.erl"]}),
 %%     gen_dbus:reply(From, {dbus_error, 'org.freedesktop.DBus.Error.Timeout', "Error from Erlang service.erl"}),
     {noreply, State};
