@@ -1,2 +1,2 @@
-SUBDIRS = include src example
+SUBDIRS = include c_src src example
 

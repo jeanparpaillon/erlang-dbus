@@ -19,6 +19,8 @@ AC_PROG_CC
 AC_PROG_AWK
 dnl AC_PROG_INSTALL
 AC_PROG_LN_S
+AC_PROG_RANLIB
+AC_PROG_LIBTOOL
 AC_ERLANG_NEED_ERLC
 AC_ERLANG_PATH_ERL
 AC_ERLANG_SUBST_INSTALL_LIB_DIR
@@ -50,6 +52,7 @@ AC_SUBST(ERL_FLAGS)
 AC_CONFIG_FILES([
 		 Makefile
 		 include/Makefile
+		 c_src/Makefile
 		 src/Makefile
 		 src/dberl/Makefile
 		 example/Makefile
