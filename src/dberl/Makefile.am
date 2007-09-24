@@ -1,4 +1,4 @@
-include $(top_srcdir)/rules.mk
+include $(top_srcdir)/rules/rules.mk
 
 OPT_APP = dberl
 dberl_VSN = 0.1

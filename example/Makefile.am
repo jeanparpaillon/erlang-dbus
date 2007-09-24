@@ -1,4 +1,4 @@
-include $(top_srcdir)/app.mk
+include $(top_srcdir)/rules/app.mk
 
 OPT_APP = hello
 
