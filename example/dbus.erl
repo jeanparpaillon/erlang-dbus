@@ -70,7 +70,10 @@ make_modules(Prefix, Modules) ->
 
 
 test() ->
-    {ok, Pid} = start_link(),
+    Pid = case start_link() of
+	      {ok, Pid1} -> Pid1;
+	      {error, {already_started, Pid1}} -> Pid1
+	  end,
     run_test(Pid).
 
 start_link() ->
