@@ -46,7 +46,6 @@ AC_SUBST(ERL_FLAGS)
 AC_CONFIG_FILES([
 		 Makefile
 		 include/Makefile
-		 c_src/Makefile
 		 src/Makefile
 		 src/dberl/Makefile
 		 example/Makefile
