@@ -1,6 +1,6 @@
 include $(top_srcdir)/rules/app.mk
 
-OPT_APP = hello
+OTP_APP = hello
 
 hello_VSN = 0.1
 

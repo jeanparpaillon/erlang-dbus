@@ -2,7 +2,7 @@ include $(top_srcdir)/rules/app.mk
 
 SUBDIRS = dberl
 
-OPT_APP = dberl
+OTP_APP = dberl
 
 dberl_VSN = 0.1
 
