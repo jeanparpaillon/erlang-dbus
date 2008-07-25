@@ -1,3 +1,3 @@
-SUBDIRS = include src example
+SUBDIRS = dberl example
 
 ACLOCAL_AMFLAGS = -I m4
