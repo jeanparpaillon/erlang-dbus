@@ -40,9 +40,11 @@ start_link([]) ->
 %% specifications.
 %%--------------------------------------------------------------------
 init([]) ->
-    Hello = {dbus_demo, {dbus_demo, start_link, ['org.za.hem.DBus', '/Root']},
-	     permanent, 10000, worker, [dbus_demo]},
-    Dbus = {dbus,{dbus,start_link,[]}, permanent, 10000, worker, [dbus]},
+    Hello = {dbus_demo_hello, {dbus_demo_hello, start_link,
+			       ['org.za.hem.DBus', '/Root']},
+	     permanent, 10000, worker, [dbus_demo_hello]},
+    Dbus = {dbus_demo,{dbus_demo,start_link,[]},
+	    permanent, 10000, worker, [dbus_demo]},
     {ok,{{one_for_one,10,60}, [Hello, Dbus]}}.
 
 %%====================================================================

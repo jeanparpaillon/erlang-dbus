@@ -1,0 +1,83 @@
+-module(dbus_demo_hello).
+
+-include("dbus.hrl").
+
+-behaviour(gen_dbus).
+
+%% api
+-export([
+	 start_link/2,
+	 handle_info/2
+	]).
+
+%% dbus object callbacks
+-export([
+	 'HelloWorld'/1,
+	 'HelloWorld'/3,
+	 'GetTuple'/1,
+	 'GetTuple'/3,
+	 'GetDict'/1,
+	 'GetDict'/3,
+	 'OnClick'/1
+	]).
+
+%% gen_dbus callbacks
+-export([init/1]).
+
+
+-record(state, {
+	 }).
+
+start_link(Service, Path) ->
+    gen_dbus:start_link({local, ?MODULE}, ?MODULE, [Service, Path], []).
+
+
+init([Service, Path]) ->
+    State = #state{},
+    {ok, {Service, Path, [
+			  {interface, 'org.designfu.SampleInterface'},
+			  {methods, ['HelloWorld', 'GetTuple', 'GetDict']},
+			  {signals, ['OnClick']}
+			 ]}, State}.
+
+'OnClick'(dbus_info) ->
+    [{signature, [string, string], []}].
+
+
+'HelloWorld'(dbus_info) ->
+    [{interface, 'org.designfu.SampleInterface'},
+     {signature, [string], [{array, string}]}].
+
+'HelloWorld'([Id, Hello_message], From, State) when is_integer(Id) ->
+    self() ! {hello, [Id, Hello_message], From},
+    {noreply, State}.
+
+
+'GetTuple'(dbus_info) ->
+    [{signature, [], [{struct, [string, string]}]}].
+
+'GetTuple'([], _From, State) ->
+    {reply, {"Hello Tuple", " from Erlang service.erl"}, State}.
+
+
+'GetDict'(dbus_info) ->
+    [{interface, 'org.designfu.SampleInterface'}].
+
+'GetDict'([], _From, State) ->
+    List = [{1, "Hello"},
+	    {2, " from Erlang service.erl"}],
+    Dict = dict:from_list(List),
+
+    {reply, #variant{type={dict, byte, string}, value=Dict}, State}.
+
+
+handle_info({hello, [Id, Hello_message], From}, State) ->
+    io:format("HelloWorld: callback ~p, ~p~n", [Id, Hello_message]),
+    gen_dbus:signal('OnClick', ["x", "y"]),
+    gen_dbus:reply(From, {ok, ["Hello callback", " from Erlang service.erl"]}),
+%%     gen_dbus:reply(From, {dbus_error, 'org.freedesktop.DBus.Error.Timeout', "Error from Erlang service.erl"}),
+    {noreply, State};
+
+handle_info(Info, State) ->
+    error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
+    {noreply, State}.
