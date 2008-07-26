@@ -191,8 +191,8 @@ handle_cast(Request, State) ->
 
 handle_info({setup, BusId}, State) when is_record(BusId, bus_id) ->
     {ok, Conn} = connection:start_link(BusId, [list, {packet, 0}]),
-%%     ConnSpec = {{conn, DbusHost, DbusPort},{dberl.connection,start_link,[DbusHost, DbusPort, [list, {packet, 0}], self()]}, permanent, 10000, worker, [connection]},
-%%     {ok, Conn} = supervisor:start_child(dberl.sup, ConnSpec),
+%%     ConnSpec = {{conn, DbusHost, DbusPort},{dbus_connection,start_link,[DbusHost, DbusPort, [list, {packet, 0}], self()]}, permanent, 10000, worker, [connection]},
+%%     {ok, Conn} = supervisor:start_child(dbus_sup, ConnSpec),
     {noreply, State#state{conn=Conn}};
 
 handle_info({auth_ok, Conn}, #state{conn=Conn}=State) ->
@@ -241,7 +241,7 @@ handle_info({reply, add_match, {ok, _Header}}, State) ->
     {noreply, State};
 
 handle_info({dbus_method_call, Header, Conn}, State) ->
-    dberl.service_reg ! {dbus_method_call, Header, Conn},
+    dbus_service_reg ! {dbus_method_call, Header, Conn},
     {noreply, State};
 
 handle_info({dbus_signal, Header, Conn}, #state{conn=Conn}=State) ->
