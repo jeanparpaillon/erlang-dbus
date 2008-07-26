@@ -1,3 +1,0 @@
--define(TOP_BUILDDIR, "@abs_top_builddir@").
--define(TOP_SRCDIR, "@abs_top_srcdir@").
--define(ERLANG_LIB_DIR_XMERL, "@ERLANG_LIB_DIR_xmerl@").

@@ -1,7 +1,0 @@
-#!/bin/bash
-
-amver=${AMVER:-1.9}
-
-aclocal-${amver} -I m4
-automake-${amver} -a -c
-autoconf
