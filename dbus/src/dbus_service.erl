@@ -92,7 +92,7 @@ handle_info(setup, State) ->
     {noreply, State};
 
 handle_info({dbus_method_call, Header, Conn}, State) ->
-    {_, PathVar} = message:header_fetch(?HEADER_PATH, Header),
+    {_, PathVar} = dbus_message:header_fetch(?HEADER_PATH, Header),
     PathStr = PathVar#variant.value,
     Path = list_to_atom(PathStr),
 
@@ -103,9 +103,9 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 	_ ->
 	    ErrorName = "org.freedesktop.DBus.Error.UnknownObject",
 	    ErrorText = "Erlang: Object not found: " ++ PathStr,
-	    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
+	    {ok, Reply} = dbus_message:build_error(Header, ErrorName, ErrorText),
 	    io:format("Reply ~p~n", [Reply]),
-	    ok = connection:cast(Conn, Reply)
+	    ok = dbus_connection:cast(Conn, Reply)
     end,
     {noreply, State};
 

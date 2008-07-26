@@ -45,8 +45,8 @@ export_service(ServiceName) ->
 %%
 init([]) ->
     process_flag(trap_exit, true),
-    bus_reg:set_service_reg(self()),
-    {ok, Service} = service:start_link(dummy),
+    dbus_bus_reg:set_service_reg(self()),
+    {ok, Service} = dbus_service:start_link(dummy),
     {ok, #state{service=Service}}.
 
 
@@ -62,7 +62,7 @@ handle_call({export_service, ServiceName}, _From, State) ->
 	_ ->
 	    io:format("~p: export_service name ~p~n", [?MODULE, ServiceName]),
 	    Service = State#state.service,
-	    ok = bus_reg:export_service(undefined, ServiceName),
+	    ok = dbus_bus_reg:export_service(undefined, ServiceName),
 	    Services1 = [{ServiceName, Service}|Services],
 	    {reply, {ok, Service}, State#state{services=Services1}}
     end;
@@ -78,7 +78,7 @@ handle_cast(Request, State) ->
 
 
 handle_info({dbus_method_call, Header, Conn}, State) ->
-%%     {_, ServiceNameVar} = message:header_fetch(?HEADER_DESTINATION, Header),
+%%     {_, ServiceNameVar} = dbus_message:header_fetch(?HEADER_DESTINATION, Header),
 %%     ServiceName = list_to_atom(ServiceNameVar#variant.value),
     Service = State#state.service,
 
@@ -90,15 +90,15 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 %% 	_ ->
 %% 	    ErrorName = "org.freedesktop.DBus.Error.ServiceUnknown",
 %% 	    ErrorText = "Erlang: Service '" ++ [atom_to_list(ServiceName)] ++ "' not found.",
-%% 	    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
+%% 	    {ok, Reply} = dbus_message:build_error(Header, ErrorName, ErrorText),
 %% 	    io:format("Reply ~p~n", [Reply]),
-%% 	    ok = connection:reply(Conn, Reply)
+%% 	    ok = dbus_connection:reply(Conn, Reply)
 %%     end,
     {noreply, State};
 
 handle_info({new_bus, _Bus}, State) ->
     Fun = fun({ServiceName, Service}) ->
-		  ok = bus_reg:export_service(Service, ServiceName)
+		  ok = dbus_bus_reg:export_service(Service, ServiceName)
 	  end,
     lists:foreach(Fun, State#state.services),
     {noreply, State};
@@ -108,7 +108,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     case lists:keysearch(Pid, 2, Services) of
 	{value, {ServiceName, _}} ->
 	    error_logger:info_msg("~p ~p Terminated ~p~n", [?MODULE, Pid, Reason]),
-	    ok = bus_reg:unexport_service(Pid, ServiceName),
+	    ok = dbus_bus_reg:unexport_service(Pid, ServiceName),
 	    Services1 =
 		lists:keydelete(Pid, 2, Services),
 		    {noreply, State#state{services=Services1}};

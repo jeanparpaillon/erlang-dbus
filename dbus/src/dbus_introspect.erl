@@ -155,7 +155,7 @@ xml(#xmlElement{name=method}=Element) ->
 	       end,
 
     Signature = lists:foldr(BuildSig, "", OutArgs),
-    Types = marshaller:unmarshal_signature(Signature),
+    Types = dbus_marshaller:unmarshal_signature(Signature),
 
     #method{name=list_to_atom(Name#xmlAttribute.value),
 	    args=Args,
@@ -180,7 +180,7 @@ xml(#xmlElement{name=signal}=Element) ->
 	       end,
 
     Signature = lists:foldr(BuildSig, "", OutArgs),
-    Types = marshaller:unmarshal_signature(Signature),
+    Types = dbus_marshaller:unmarshal_signature(Signature),
 
     #signal{name=list_to_atom(Name#xmlAttribute.value),
 	    args=Args,

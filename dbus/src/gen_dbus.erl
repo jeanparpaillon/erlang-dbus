@@ -73,8 +73,8 @@ init([Module, Args]) ->
 	ignore ->
 	    ignore;
 	{ok, {ServiceName, Path, DBus_config}, SubState} ->
-	    {ok, Service} = dberl.service_reg:export_service(ServiceName),
-	    ok = service:register_object(Service, Path, self()),
+	    {ok, Service} = dbus_service_reg:export_service(ServiceName),
+	    ok = dbus_service:register_object(Service, Path, self()),
 	    Signal = #signal{name = 'OnClick',
 			     out_sig="ss",
 			     out_types=[string,string]},
@@ -127,18 +127,18 @@ handle_cast({reply, From, Reply}, State) ->
 		case Reply of
 		    {ok, ReplyBody} ->
 			%% Send method return
-			{ok, ReplyMsg1} = message:build_method_return(Header, [string], [ReplyBody]),
+			{ok, ReplyMsg1} = dbus_message:build_method_return(Header, [string], [ReplyBody]),
 			ReplyMsg1;
 		    {dbus_error, Iface, Text} ->
 			%% Send error
-			{ok, ReplyMsg1} = message:build_error(Header, Iface, Text),
+			{ok, ReplyMsg1} = dbus_message:build_error(Header, Iface, Text),
 			ReplyMsg1;
 		    _ ->
 			error_logger:info_msg("Illegal reply ~p~n", [Reply]),
-			{ok, ReplyMsg1} = message:build_error(Header, 'org.freedesktop.DBus.Error.Failed', "Failed"),
+			{ok, ReplyMsg1} = dbus_message:build_error(Header, 'org.freedesktop.DBus.Error.Failed', "Failed"),
 			ReplyMsg1
 		end,
-	    ok = connection:cast(Conn, ReplyMsg);
+	    ok = dbus_connection:cast(Conn, ReplyMsg);
 	false ->
 	    error_logger:info_msg("Pending not found ~p: ~p ~p~n", [?MODULE, From, Pending]),
 	    ignore
@@ -158,9 +158,9 @@ handle_cast({signal, Signal_name, Args, Options}, State) ->
 	end,
 
     Signal =
-	case introspect:find_interface(Iface_name, State#state.node) of
+	case dbus_introspect:find_interface(Iface_name, State#state.node) of
 	    {ok, Iface} ->
-		case introspect:find_signal(Signal_name, Iface) of
+		case dbus_introspect:find_signal(Signal_name, Iface) of
 		    {ok, Signal1} ->
 			Signal1;
 		    error ->
@@ -184,7 +184,7 @@ handle_cast(Request, State) ->
 handle_info({dbus_method_call, Header, Conn}, State) ->
     Module = State#state.module,
     %%Service = State#state.service,
-    {_, MemberVar} = message:header_fetch(?HEADER_MEMBER, Header),
+    {_, MemberVar} = dbus_message:header_fetch(?HEADER_MEMBER, Header),
     MemberStr = MemberVar#variant.value,
     Member = list_to_atom(MemberStr),
 
@@ -193,8 +193,8 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 	'Introspect' ->
 	    %% Empty introspect xml
 	    ReplyBody = "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\" \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\"><node></node>",
-	    {ok, Reply} = message:build_method_return(Header, [string], [ReplyBody]),
-	    ok = connection:cast(Conn, Reply),
+	    {ok, Reply} = dbus_message:build_method_return(Header, [string], [ReplyBody]),
+	    ok = dbus_connection:cast(Conn, Reply),
 	    {noreply, State};
 
 	_ ->
@@ -205,17 +205,17 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 		    io:format("undef method ~p~n", [Reason]),
 		    ErrorName = "org.freedesktop.DBus.Error.UnknownMethod",
 		    ErrorText = "Erlang: Function not found: " ++ MemberStr,
-		    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
+		    {ok, Reply} = dbus_message:build_error(Header, ErrorName, ErrorText),
 %% 		    io:format("Reply ~p~n", [Reply]),
-		    ok = connection:cast(Conn, Reply),
+		    ok = dbus_connection:cast(Conn, Reply),
 		    {noreply, State};
 		{'EXIT', Reason} ->
  		    io:format("Error ~p~n", [Reason]),
 		    ErrorName = "org.freedesktop.DBus.Error.InvalidParameters",
 		    ErrorText = "Erlang: Invalid parameters.",
-		    {ok, Reply} = message:build_error(Header, ErrorName, ErrorText),
+		    {ok, Reply} = dbus_message:build_error(Header, ErrorName, ErrorText),
  		    io:format("InvalidParameters ~p~n", [Reply]),
-		    ok = connection:cast(Conn, Reply),
+		    ok = dbus_connection:cast(Conn, Reply),
 		    {noreply, State};
 		{ok, Sub1} ->
 		    {noreply, State#state{sub=Sub1}};
@@ -243,7 +243,7 @@ terminate(_Reason, _State) ->
 
 do_signal(Iface_name, Signal, Args, Options, State) ->
     Path = State#state.path,
-    {ok, Header} = message:build_signal(Path, Iface_name, Signal, Args),
+    {ok, Header} = dbus_message:build_signal(Path, Iface_name, Signal, Args),
     bus_reg:cast(Header),
     error_logger:error_msg("~p: signal ~p~n", [?MODULE, Header]),
     {noreply, State}.
@@ -259,8 +259,8 @@ do_method_call(Module, Member, Header, Conn, Sub) ->
 
     case {Module:Member(Header#header.body, {self(), From}, Sub), From} of
 	{{dbus_error, Iface, Msg, Sub1}, _} ->
-	    {ok, Reply} = message:build_error(Header, Iface, Msg),
-	    ok = connection:cast(Conn, Reply),
+	    {ok, Reply} = dbus_message:build_error(Header, Iface, Msg),
+	    ok = dbus_connection:cast(Conn, Reply),
 	    {ok, Sub1};
 	{{noreply, Sub1}, none} ->
 	    {ok, Sub1};
@@ -269,9 +269,9 @@ do_method_call(Module, Member, Header, Conn, Sub) ->
 	    {ok, Sub1};
 	{{reply, ReplyBody, Sub1}, _} ->
 %% 	    io:format("Reply ~p~n", [ReplyBody]),
-	    {ok, Reply} = message:build_method_return(Header, [variant], [ReplyBody]),
+	    {ok, Reply} = dbus_message:build_method_return(Header, [variant], [ReplyBody]),
 %% 	    io:format("Reply ~p~n", [Reply]),
-	    ok = connection:cast(Conn, Reply),
+	    ok = dbus_connection:cast(Conn, Reply),
 	    {ok, Sub1};
 	{{noreply, Sub1}, _} ->
 	    {pending, From, Sub1}

@@ -101,8 +101,8 @@ init([Bus, Conn, Service, Path, Node]) ->
 
 init([Bus, Conn, Service, Path, Tag, Owner]) ->
 %%     io:format("~p ~p: init ~p ~p~n", [?MODULE, ?LINE, Service, Path]),
-    Header = introspect:build_introspect(Service, Path),
-    ok = connection:call(Conn, Header, introspect),
+    Header = dbus_introspect:build_introspect(Service, Path),
+    ok = dbus_connection:call(Conn, Header, introspect),
     {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path,
 		tag=Tag, owner=Owner}}.
 
@@ -115,9 +115,9 @@ handle_call({method, IfaceName, MethodName, Args, Options}, From, State) ->
     io:format("in gen_server call ~p~n", [MethodName]),
 
     Method =
-	case introspect:find_interface(IfaceName, State#state.node) of
+	case dbus_introspect:find_interface(IfaceName, State#state.node) of
 	    {ok, Iface} ->
-		case introspect:find_method(MethodName, Iface) of
+		case dbus_introspect:find_method(MethodName, Iface) of
 		    {ok, Method1} ->
 			Method1;
 		    error ->
@@ -166,7 +166,7 @@ handle_cast(Request, State) ->
 handle_info({reply, Header, introspect}, State) ->
     Body = Header#header.body,
     [XmlBody] = Body,
-    Node = introspect:from_xml_string(XmlBody),
+    Node = dbus_introspect:from_xml_string(XmlBody),
 %%    error_logger:info_msg("introspect ~p: ~p~n", [?MODULE, Node]),
 
     Owner = State#state.owner,
@@ -184,7 +184,7 @@ handle_info({error, Header, introspect}, State) ->
 %%     Body = Header#header.body,
     error_logger:info_msg("Error in introspect ~p: ~n", [?MODULE]),
 
-    {_Type1, ErrorName} = message:header_fetch(?HEADER_ERROR_NAME, Header),
+    {_Type1, ErrorName} = dbus_message:header_fetch(?HEADER_ERROR_NAME, Header),
     ErrorName1 = list_to_atom(ErrorName#variant.value),
 
     Owner = State#state.owner,
@@ -207,7 +207,7 @@ handle_info({reply, Header, {tag, From, Options}}, State) ->
 handle_info({error, Header, {tag, From, Options}}, State) ->
 %%     error_logger:info_msg("Error ~p: ~p~n", [?MODULE, From]),
 
-    {_Type1, ErrorName} = message:header_fetch(?HEADER_ERROR_NAME, Header),
+    {_Type1, ErrorName} = dbus_message:header_fetch(?HEADER_ERROR_NAME, Header),
     ErrorName1 = list_to_atom(ErrorName#variant.value),
 
     reply(From, {error, {ErrorName1, Header#header.body}}, Options),
@@ -248,14 +248,14 @@ do_method(IfaceName, Method, Args, Options, From, State) ->
 	      ],
 
 %%     io:format("before marshal~n"),
-    case catch marshaller:marshal_list(Types, Args) of
+    case catch dbus_marshaller:marshal_list(Types, Args) of
 	{ok, Body, _Pos} ->
 	    Header = #header{type=?TYPE_METHOD_CALL,
 			     headers=Headers,
 			     body=Body},
 
 %% 	    io:format("before call~n"),
-	    ok = connection:call(Conn, Header, {tag, From, Options}),
+	    ok = dbus_connection:call(Conn, Header, {tag, From, Options}),
 %% 	    io:format("after call~n"),
 	    case lists:keysearch(reply, 1, Options) of
 		{value, {reply, _Pid, _Ref}} ->

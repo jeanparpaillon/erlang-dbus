@@ -30,7 +30,7 @@ start_link() ->
 
 init([]) ->
 %%     Dbus = {dbus,{dbus,start_link,[]}, permanent, 10000, worker, [dbus]},
-    BusReg = {bus_reg,{dbus_bus_reg,start_link,[]}, permanent, 10000, worker, [bus_reg]},
-    ServiceReg = {service_reg,{dbus_service_reg,start_link,[]}, permanent, 10000, worker, [service_reg]},
+    BusReg = {dbus_bus_reg,{dbus_bus_reg,start_link,[]}, permanent, 10000, worker, [dbus_bus_reg]},
+    ServiceReg = {dbus_service_reg,{dbus_service_reg,start_link,[]}, permanent, 10000, worker, [dbus_service_reg]},
 %%     Hello = {hello, {hello, start_link, ['org.za.hem.DBus', '/Root']}, permanent, 10000, worker, [hello]},
     {ok, {{one_for_one, 10, 60}, [BusReg, ServiceReg]}}.

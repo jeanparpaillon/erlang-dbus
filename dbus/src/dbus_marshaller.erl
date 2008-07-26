@@ -59,7 +59,7 @@ marshal_message(Header) when is_record(Header, header) ->
 		Body
 	end,
 	    
-%%     HeaderList = message:to_list(Header),
+%%     HeaderList = dbus_message:to_list(Header),
     HeaderList = [$l,
 		  Header#header.type,
 		  Header#header.flags,
@@ -87,7 +87,7 @@ marshal_header(Header) when is_list(Header) ->
 unmarshal_message(Data) ->
     {ok, Header, BinBody, Data1} = unmarshal_header(Data),
     Signature =
-	case message:header_find(?HEADER_SIGNATURE, Header) of
+	case dbus_message:header_find(?HEADER_SIGNATURE, Header) of
 	    {ok, {?HEADER_SIGNATURE, #variant{type=signature, value=Signature1}}} ->
 		Signature1;
 	    error ->

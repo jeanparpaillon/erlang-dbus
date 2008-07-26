@@ -87,9 +87,9 @@ init([#bus_id{scheme=tcp,options=BusOptions}, Options, Owner]) ->
 			   throw(no_host_or_port)
 		   end,
 
-    {ok, Sock} = tcp_conn:connect(Host, Port, Options),
+    {ok, Sock} = dbus_tcp_conn:connect(Host, Port, Options),
 %%     {ok, Auth} = auth:start_link(DbusHost, DbusPort),
-    {ok, Auth} = auth:start_link(Sock),
+    {ok, Auth} = dbus_auth:start_link(Sock),
     {ok, #state{sock=Sock,
 		auth=Auth,
 		owner=Owner}};
@@ -105,7 +105,7 @@ init([#bus_id{scheme=unix, options=BusOptions}, Options, Owner]) ->
 
     {ok, Sock} = unix_conn:connect(Path, Options),
 %%     {ok, Auth} = auth:start_link(DbusHost, DbusPort),
-    {ok, Auth} = auth:start_link(Sock),
+    {ok, Auth} = dbus_auth:start_link(Sock),
     {ok, #state{sock=Sock,
 		auth=Auth,
 		owner=Owner}};
@@ -133,19 +133,19 @@ handle_cast({call, Header, From, Pid}, State) ->
 handle_cast({cast, Header}, State) ->
     Serial = State#state.serial+1,
     Header1 = Header#header{serial=Serial},
-    {ok, Data} = marshaller:marshal_message(Header1),
-    ok = transport:send(State#state.sock, Data),
+    {ok, Data} = dbus_marshaller:marshal_message(Header1),
+    ok = dbus_transport:send(State#state.sock, Data),
     {noreply, State#state{serial=Serial}};
 
 handle_cast({dbus_reply, Header}, State) ->
     Serial = State#state.serial+1,
     Header1 = Header#header{serial=Serial},
-    {ok, Data} = marshaller:marshal_message(Header1),
-    ok = transport:send(State#state.sock, Data),
+    {ok, Data} = dbus_marshaller:marshal_message(Header1),
+    ok = dbus_transport:send(State#state.sock, Data),
     {noreply, State#state{serial=Serial}};
 
 handle_cast(close, State) ->
-    ok = transport:close(State#state.sock),
+    ok = dbus_transport:close(State#state.sock),
     {stop, normal, State#state{sock=undefined}};
 handle_cast(Request, State) ->
     error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
@@ -158,7 +158,7 @@ handle_info({received, Sock, Data}, #state{sock=Sock}=State) ->
     {noreply, State1};
 
 handle_info({auth_ok, Auth, Sock}, #state{auth=Auth}=State) ->
-    ok = transport:change_owner(Sock, Auth, self()),
+    ok = dbus_transport:change_owner(Sock, Auth, self()),
 
     Owner = State#state.owner,
     Owner ! {auth_ok, self()},
@@ -181,13 +181,13 @@ terminate(_Reason, State) ->
     Sock = State#state.sock,
     case Sock of
 	undefined -> ignore;
-	_ -> connection:close(Sock)
+	_ -> dbus_connection:close(Sock)
     end,
     terminated.
 
 
 handle_data(Data, State) ->
-    {ok, Messages, Data1} = marshaller:unmarshal_data(Data),
+    {ok, Messages, Data1} = dbus_marshaller:unmarshal_data(Data),
 
 %%     io:format("handle_data ~p ~p~n", [Messages, size(Data1)]),
 
@@ -201,11 +201,11 @@ handle_method_call(Header, Tag, Pid, State) ->
     Serial = State#state.serial + 1,
 %%     io:format("handle call ~p ~p ~p~n", [Header, Tag, Pid]),
 
-    {ok, Call} = call:start_link(self(), Tag, Pid),
+    {ok, Call} = dbus_call:start_link(self(), Tag, Pid),
     Pending = [{Serial, Call} | State#state.pending],
 
-    {ok, Data} = marshaller:marshal_message(Header#header{serial=Serial}),
-    ok = transport:send(Sock, Data),
+    {ok, Data} = dbus_marshaller:marshal_message(Header#header{serial=Serial}),
+    ok = dbus_transport:send(Sock, Data),
 
 %%     io:format("sent call ~p ~p~n", [Sock, Data]),
 
@@ -219,13 +219,13 @@ handle_messages([Header|R], State) ->
 
 handle_message(?TYPE_METHOD_RETURN, Header, State) ->
 %%     io:format("Return ~p~n", [Header]),
-    {_, SerialHdr} = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
+    {_, SerialHdr} = dbus_message:header_fetch(?HEADER_REPLY_SERIAL, Header),
     Pending = State#state.pending,
     Serial = SerialHdr#variant.value,
     State1 =
 	case lists:keysearch(Serial, 1, Pending) of
 	    {value, {Serial, Pid}} ->
-		ok = call:reply(Pid, Header),
+		ok = dbus_call:reply(Pid, Header),
 		State#state{pending=lists:keydelete(Serial, 1, Pending)};
 	    _ ->
 		io:format("Ignore reply ~p~n", [Serial]),
@@ -234,13 +234,13 @@ handle_message(?TYPE_METHOD_RETURN, Header, State) ->
     {ok, State1};
 handle_message(?TYPE_ERROR, Header, State) ->
 %%     io:format("Error ~p~n", [Header]),
-    {_, SerialHdr} = message:header_fetch(?HEADER_REPLY_SERIAL, Header),
+    {_, SerialHdr} = dbus_message:header_fetch(?HEADER_REPLY_SERIAL, Header),
     Pending = State#state.pending,
     Serial = SerialHdr#variant.value,
     State1 =
 	case lists:keysearch(Serial, 1, Pending) of
 	    {value, {Serial, Pid}} ->
-		ok = call:error(Pid, Header),
+		ok = dbus_call:error(Pid, Header),
 		State#state{pending=lists:keydelete(Serial, 1, Pending)};
 	    _ ->
 		io:format("Ignore error ~p~n", [Serial]),

@@ -20,4 +20,4 @@ connect(Path, Options) ->
     {ok, ClntSockFd} = ?DRV:getfd(Port, ClntSock),
     {ok, Tcpsockfd} = ?DRV:receivefd(Port, ClntSockFd),
     ?DRV:shutdown(Port),
-    tcp_conn:connect(Tcpsockfd, Options).
+    dbus_tcp_conn:connect(Tcpsockfd, Options).

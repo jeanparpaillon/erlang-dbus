@@ -81,7 +81,7 @@ handle_call({get_bus, BusId}, _From, State) when is_record(BusId, bus_id) ->
 	{value, {_, Bus}} ->
 	    {reply, {ok, Bus}, State};
 	false ->
-	    {ok, Bus} = bus:connect(BusId),
+	    {ok, Bus} = dbus_bus:connect(BusId),
 	    Busses1 = [{BusId, Bus} | Busses],
 	    {reply, {ok, Bus}, State#state{busses=Busses1}}
     end;
@@ -90,7 +90,7 @@ handle_call({export_service, _Service, ServiceName}, _From, State) ->
     Busses = State#state.busses,
     Fun = fun({_, Bus}) ->
 		  io:format("export_service bus ~p~n", [Bus]),
-		  ok = bus:export_service(Bus, ServiceName)
+		  ok = dbus_bus:export_service(Bus, ServiceName)
 	  end,
     io:format("export_service name ~p~n", [ServiceName]),
     lists:foreach(Fun, Busses),
@@ -100,7 +100,7 @@ handle_call({unexport_service, _Service, ServiceName}, _From, State) ->
     Busses = State#state.busses,
     Fun = fun({_, Bus}) ->
 		  io:format("~p unexport_service bus ~p~n", [?MODULE, Bus]),
-		  ok = bus:unexport_service(Bus, ServiceName)
+		  ok = dbus_bus:unexport_service(Bus, ServiceName)
 	  end,
     io:format("~p unexport_service name ~p~n", [?MODULE, ServiceName]),
     lists:foreach(Fun, Busses),
@@ -116,7 +116,7 @@ handle_cast({set_service_reg, ServiceReg}, State) ->
 
 handle_cast({cast, Header}, State) ->
     Fun = fun({_, Bus}) ->
-		  bus:cast(Bus, Header)
+		  dbus_bus:cast(Bus, Header)
 	  end,
     lists:foreach(Fun, State#state.busses),
     

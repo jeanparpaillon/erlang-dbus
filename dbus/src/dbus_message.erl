@@ -21,27 +21,27 @@
 %% send_hello(State) ->
 %%     Serial = State#state.serial + 1,
 %%     Hello = build_hello(Serial),
-%%     {ok, Data} = marshaller:marshal_message(Hello),
+%%     {ok, Data} = dbus_marshaller:marshal_message(Hello),
 %% %%     io:format("send_hello ~p~n", [Hello]),
-%%     ok = connection:send(State#state.sock, Data),
+%%     ok = dbus_connection:send(State#state.sock, Data),
 %%     {ok, State#state{serial=Serial}}.
 
 %% send_list_names(State) ->
 %%     Serial = State#state.serial + 1,
 %%     Msg = build_list_names(Serial),
-%%     {ok, Data} = marshaller:marshal_message(Msg),
-%%     ok = connection:send(State#state.sock, Data),
+%%     {ok, Data} = dbus_marshaller:marshal_message(Msg),
+%%     ok = dbus_connection:send(State#state.sock, Data),
 %%     {ok, State#state{serial=Serial}}.
 
 %% send_introspect(State) ->
 %%     Serial = State#state.serial + 1,
-%%     Msg = introspect:build_introspect("org.freedesktop.DBus", "/"),
-%%     {ok, Data} = marshaller:marshal_message(Msg#header{serial=Serial}),
-%%     ok = connection:send(State#state.sock, Data),
+%%     Msg = dbus_introspect:build_introspect("org.freedesktop.DBus", "/"),
+%%     {ok, Data} = dbus_marshaller:marshal_message(Msg#header{serial=Serial}),
+%%     ok = dbus_connection:send(State#state.sock, Data),
 %%     {ok, State#state{serial=Serial}}.
 
 %% handle_data(Data, State) ->
-%%     {ok, Messages, Data1} = marshaller:unmarshal_data(Data),
+%%     {ok, Messages, Data1} = dbus_marshaller:unmarshal_data(Data),
 
 %% %%     io:format("handle_data ~p ~p~n", [Messages, size(Data1)]),
 
@@ -111,8 +111,8 @@
 
 %%     io:format("Reply ~p ~p~n", [ReplyHeader, ReplyBody]),
 
-%%     {ok, Data} = marshaller:marshal_message(ReplyHeader, ReplyBody),
-%%     ok = connection:send(State#state.sock, Data),
+%%     {ok, Data} = dbus_marshaller:marshal_message(ReplyHeader, ReplyBody),
+%%     ok = dbus_connection:send(State#state.sock, Data),
 
 %%     {ok, State#state{serial=Serial}};
     
@@ -190,10 +190,10 @@ build_list_names(Serial) ->
 	    headers=Headers}.
 
 build_error(Header, ErrorName, ErrorText) ->
-%%     Path = message:header_fetch(?HEADER_PATH, Header),
-%%     Iface = message:header_fetch(?HEADER_INTERFACE, Header),
-%%     {_Type1, To} = message:header_fetch(?HEADER_DESTINATION, Header),
-    {_Type2, From} = message:header_fetch(?HEADER_SENDER, Header),
+%%     Path = dbus_message:header_fetch(?HEADER_PATH, Header),
+%%     Iface = dbus_message:header_fetch(?HEADER_INTERFACE, Header),
+%%     {_Type1, To} = dbus_message:header_fetch(?HEADER_DESTINATION, Header),
+    {_Type2, From} = dbus_message:header_fetch(?HEADER_SENDER, Header),
     Error = #variant{type=string, value=ErrorName},
     ReplySerial = #variant{type=uint32, value=Header#header.serial},
 
@@ -213,9 +213,9 @@ build_error(Header, ErrorName, ErrorText) ->
     {ok, ReplyHeader}.
 
 build_method_return(Header, Types, Body) ->
-    {_Type2, From} = message:header_fetch(?HEADER_SENDER, Header),
+    {_Type2, From} = dbus_message:header_fetch(?HEADER_SENDER, Header),
     ReplySerial = #variant{type=uint32, value=Header#header.serial},
-    Signature = marshaller:marshal_signature(Types),
+    Signature = dbus_marshaller:marshal_signature(Types),
 
     {ok, BinBody, _Pos} = 
 	marshaller:marshal_list(Types, Body),
@@ -239,7 +239,7 @@ build_signal(Path, Iface_name, Signal, Args) when is_atom(Path),
     Signature = Signal#signal.out_sig,
     Types = Signal#signal.out_types,
 
-    Signature = marshaller:marshal_signature(Types),
+    Signature = dbus_marshaller:marshal_signature(Types),
 
     {ok, Body, _Pos} = 
 	marshaller:marshal_list(Types, Args),

@@ -87,7 +87,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 %% handle_call({get_object, Service, Path}, From, State) ->
-%%     case proxy:start_link(self(), State#state.conn, Service, Path, From) of
+%%     case dbus_proxy:start_link(self(), State#state.conn, Service, Path, From) of
 %% 	{ok, Obj} ->
 %% 	    {noreply, State};
 %% 	E ->
@@ -105,15 +105,15 @@ handle_call(wait_ready, From, State) ->
 handle_call({export_service, ServiceName}, _From, State) ->
     BusObj = State#state.dbus_object,
 
-    {ok, BusIface} = proxy:interface(BusObj, 'org.freedesktop.DBus'),
-    {ok, _Header1} = proxy:call(BusIface, 'RequestName', [ServiceName, 0]),
+    {ok, BusIface} = dbus_proxy:interface(BusObj, 'org.freedesktop.DBus'),
+    {ok, _Header1} = dbus_proxy:call(BusIface, 'RequestName', [ServiceName, 0]),
     {reply, ok, State};
 
 handle_call({unexport_service, ServiceName}, _From, State) ->
     BusObj = State#state.dbus_object,
 
-    {ok, BusIface} = proxy:interface(BusObj, 'org.freedesktop.DBus'),
-    {ok, _Header1} = proxy:call(BusIface, 'ReleaseName', [ServiceName]),
+    {ok, BusIface} = dbus_proxy:interface(BusObj, 'org.freedesktop.DBus'),
+    {ok, _Header1} = dbus_proxy:call(BusIface, 'ReleaseName', [ServiceName]),
     {reply, ok, State};
 
 handle_call({get_service, ServiceName, Pid}, _From, State) ->
@@ -170,8 +170,8 @@ handle_cast({add_match, Match, Tag, Pid}, State) ->
 
     MatchStr = lists:foldl(Fold, "", Match),
 
-    {ok, DBusIFace} = proxy:interface(DBusObj, 'org.freedesktop.DBus'),
-    ok = proxy:call(DBusIFace, 'AddMatch', [MatchStr], [{reply, self(), add_match}]),
+    {ok, DBusIFace} = dbus_proxy:interface(DBusObj, 'org.freedesktop.DBus'),
+    ok = dbus_proxy:call(DBusIFace, 'AddMatch', [MatchStr], [{reply, self(), add_match}]),
 
     Signal_handlers = State#state.signal_handlers,
     {noreply, State#state{signal_handlers=[{Match, Tag, Pid}|Signal_handlers]}};
@@ -181,7 +181,7 @@ handle_cast(stop, State) ->
 
 handle_cast({cast, Header}, State) ->
     Conn = State#state.conn,
-    connection:cast(Conn, Header),
+    dbus_connection:cast(Conn, Header),
     {noreply, State};
 
 handle_cast(Request, State) ->
@@ -190,7 +190,7 @@ handle_cast(Request, State) ->
 
 
 handle_info({setup, BusId}, State) when is_record(BusId, bus_id) ->
-    {ok, Conn} = connection:start_link(BusId, [list, {packet, 0}]),
+    {ok, Conn} = dbus_connection:start_link(BusId, [list, {packet, 0}]),
 %%     ConnSpec = {{conn, DbusHost, DbusPort},{dbus_connection,start_link,[DbusHost, DbusPort, [list, {packet, 0}], self()]}, permanent, 10000, worker, [connection]},
 %%     {ok, Conn} = supervisor:start_child(dbus_sup, ConnSpec),
     {noreply, State#state{conn=Conn}};
@@ -200,8 +200,8 @@ handle_info({auth_ok, Conn}, #state{conn=Conn}=State) ->
     DBusRootNode = default_dbus_node(),
     {ok, DBusObj} =
 	proxy:start_link(self(), Conn, 'org.freedesktop.DBus', '/', DBusRootNode),
-    {ok, DBusIfaceObj} = proxy:interface(DBusObj, 'org.freedesktop.DBus'),
-    ok = proxy:call(DBusIfaceObj, 'Hello', [], [{reply, self(), hello}]),
+    {ok, DBusIfaceObj} = dbus_proxy:interface(DBusObj, 'org.freedesktop.DBus'),
+    ok = dbus_proxy:call(DBusIfaceObj, 'Hello', [], [{reply, self(), hello}]),
     io:format("Call returned~n"),
 
     Owner = State#state.owner,
@@ -217,10 +217,10 @@ handle_info({reply, hello, {ok, Reply}}, State) ->
     error_logger:error_msg("Hello reply ~p~n", [Reply]),
     [Id] = Reply,
 
-%%     {ok, DBusIntrospectable} = proxy:interface(DBusObj, 'org.freedesktop.DBus.Introspectable'),
-%%     ok = proxy:call(DBusIntrospectable, 'Introspect', [], [{reply, self(), introspect}]),
+%%     {ok, DBusIntrospectable} = dbus_proxy:interface(DBusObj, 'org.freedesktop.DBus.Introspectable'),
+%%     ok = dbus_proxy:call(DBusIntrospectable, 'Introspect', [], [{reply, self(), introspect}]),
 
-%%     ok = proxy:introspect(DBusObj),
+%%     ok = dbus_proxy:introspect(DBusObj),
 
     reply_waiting(ok, State),
     {noreply, State#state{id=Id}};

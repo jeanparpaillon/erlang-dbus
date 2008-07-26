@@ -50,17 +50,17 @@ stop() ->
 %% gen_server callbacks
 %%
 init([DbusHost, DbusPort, Owner]) ->
-    {ok, Sock} = tcp_conn:connect(DbusHost, DbusPort, [list, {packet, 0}]),
+    {ok, Sock} = dbus_tcp_conn:connect(DbusHost, DbusPort, [list, {packet, 0}]),
     init_common(Sock, Owner);
 init([Sock, Owner]) ->
-    transport:change_owner(Sock, Owner, self()),
+    dbus_transport:change_owner(Sock, Owner, self()),
     init_common(Sock, Owner).
 
 
 init_common(Sock, Owner) ->
     User = os:getenv("USER"),
-    ok = transport:send(Sock, <<0>>),
-    ok = transport:send(Sock, ["AUTH DBUS_COOKIE_SHA1 ",
+    ok = dbus_transport:send(Sock, <<0>>),
+    ok = dbus_transport:send(Sock, ["AUTH DBUS_COOKIE_SHA1 ",
 			     list_to_hexlist(User),
 			     "\r\n"]),
     {ok, #state{sock=Sock,
@@ -94,7 +94,7 @@ handle_info({received, Sock, "DATA " ++ Line}, #state{sock=Sock}=State) ->
 	{ok, Cookie} ->
 	    Challenge = calc_challenge(),
 	    Response = calc_response(ServerChallenge, Challenge, Cookie),
-	    ok = transport:send(Sock, ["DATA " ++ Response ++ "\r\n"]),
+	    ok = dbus_transport:send(Sock, ["DATA " ++ Response ++ "\r\n"]),
 
 	    {noreply, State}
     end;
@@ -102,15 +102,15 @@ handle_info({received, Sock, "DATA " ++ Line}, #state{sock=Sock}=State) ->
 handle_info({received, Sock, "OK " ++ Line}, #state{sock=Sock}=State) ->
     Guid = strip_eol(Line, []),
     error_logger:info_msg("GUID ~p~n", [Guid]),
-    ok = transport:setopts(Sock, [binary, {packet, raw}]),%, {recbuf, 8196}]),
-    ok = transport:send(Sock, ["BEGIN\r\n"]),
+    ok = dbus_transport:setopts(Sock, [binary, {packet, raw}]),%, {recbuf, 8196}]),
+    ok = dbus_transport:send(Sock, ["BEGIN\r\n"]),
 
     Owner = State#state.owner,
     Owner ! {auth_ok, self(), Sock},
     {stop, normal, State};
 
 handle_info({received, Sock, "REJECTED " ++ _Line}, #state{sock=Sock}=State) ->
-    ok = transport:close(Sock),
+    ok = dbus_transport:close(Sock),
 %%     Owner = State#state.owner,
 %%     Owner ! {auth_rejected, self()},
     {stop, {error, auth_rejected}, State};
