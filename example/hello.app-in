@@ -1,6 +1,6 @@
 {application, hello,
  [{description, "D-BUS Hello example"},
-  {vsn,"0.0"},
+  {vsn,"0.1"},
   {modules, [
 	     hello,
 	     hello_app,
@@ -14,5 +14,5 @@
 		  stdlib,
 		  sasl,
 		  crypto,
-		  dberl
+		  dbus
 		  ]}]}.
