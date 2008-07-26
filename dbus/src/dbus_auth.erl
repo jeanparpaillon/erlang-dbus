@@ -10,16 +10,7 @@
 %% {auth_ok, Pid, Sock}
 %% Sent after successfull authentication
 
--module(dberl.auth).
-
--import(crypto).
--import(error_logger).
--import(file).
--import(gen_server).
-%%-import(hex).
--import(io).
--import(lists).
--import(os).
+-module(dbus_auth).
 
 -behaviour(gen_server).
 

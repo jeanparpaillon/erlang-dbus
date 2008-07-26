@@ -4,10 +4,7 @@
 %% @doc call gen_server
 %%
 
--module(dberl.call).
-
--import(gen_server).
--import(error_logger).
+-module(dbus_call).
 
 -include("dbus.hrl").
 

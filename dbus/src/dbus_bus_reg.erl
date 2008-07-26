@@ -4,14 +4,7 @@
 %% @doc Bus registry
 %%
 
--module(dberl.bus_reg).
-
--import(error_logger).
--import(gen_server).
--import(gen_tcp).
--import(inet).
--import(io).
--import(lists).
+-module(dbus_bus_reg).
 
 -behaviour(gen_server).
 

@@ -1,13 +1,7 @@
 %%
 %% Unfinished
 %%
--module(dberl.remote_service).
-
--import(error_logger).
--import(gen_server).
--import(io).
--import(lists).
--import(timer).
+-module(dbus_remote_service).
 
 -behaviour(gen_server).
 

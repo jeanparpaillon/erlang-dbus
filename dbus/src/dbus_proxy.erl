@@ -4,13 +4,7 @@
 %% @doc proxy gen server representing a remote D-BUS object
 %%
 
--module(dberl.proxy).
-
--import(dbus).
--import(error_logger).
--import(gen_server).
--import(io).
--import(lists).
+-module(dbus_proxy).
 
 -include("dbus.hrl").
 

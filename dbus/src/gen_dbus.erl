@@ -4,13 +4,7 @@
 %% @doc dbus object behaviour
 %%
 
--module(dberl.gen_dbus).
-
--import(behaviour).
--import(error_logger).
--import(gen_server).
--import(io).
--import(lists).
+-module(gen_dbus).
 
 -behaviour(gen_server).
 

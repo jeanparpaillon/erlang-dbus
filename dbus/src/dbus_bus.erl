@@ -4,13 +4,7 @@
 %% @doc Bus gen_server
 %%
 
--module(dberl.bus).
-
--import(error_logger).
--import(gen_server).
--import(io).
--import(lists).
--import(supervisor).
+-module(dbus_bus).
 
 -include("dbus.hrl").
 

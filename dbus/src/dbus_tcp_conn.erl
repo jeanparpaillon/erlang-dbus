@@ -7,12 +7,7 @@
 %% {received, Pid, Data}
 %% {closed, Pid}
 
--module(dberl.tcp_conn).
-
--import(error_logger).
--import(gen_server).
--import(gen_tcp).
--import(inet).
+-module(dbus_tcp_conn).
 
 -behaviour(gen_server).
 

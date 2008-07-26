@@ -10,9 +10,7 @@
 %% {received, Conn, Data}
 %% {closed, Conn}
 
--module(dberl.transport).
-
--import(gen_server).
+-module(dbus_transport).
 
 %% api
 -export([send/2, change_owner/3, setopts/2, stop/1, close/1]).

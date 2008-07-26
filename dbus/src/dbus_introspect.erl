@@ -4,12 +4,7 @@
 %% @doc introspect support module
 %%
 
--module(dberl.introspect).
-
--import(io).
--import(lists).
--import(xmerl).
--import(xmerl_scan).
+-module(dbus_introspect).
 
 -include("xmerl.hrl").
 -include("dbus.hrl").

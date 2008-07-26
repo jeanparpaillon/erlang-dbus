@@ -9,14 +9,7 @@
 %% {received, Conn, Data}
 %% {auth_ok, Auth, Sock}
 
--module(dberl.connection).
-
--import(error_logger).
--import(gen_server).
--import(gen_tcp).
--import(inet).
--import(io).
--import(lists).
+-module(dbus_connection).
 
 -behaviour(gen_server).
 

@@ -4,13 +4,7 @@
 %% @doc message module. Builds error and result messages
 %%
 
--module(dberl.message).
-
--import(call).
--import(error_logger).
--import(gen_server).
--import(io).
--import(lists).
+-module(dbus_message).
 
 -include("dbus.hrl").
 

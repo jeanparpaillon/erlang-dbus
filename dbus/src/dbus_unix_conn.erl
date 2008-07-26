@@ -6,12 +6,7 @@
 %% TODO
 %%
 
--module(dberl.unix_conn).
-
--import(unixdom_drv).
-%% -import(gen_server).
-%% -import(gen_tcp).
-%% -import(inet).
+-module(dbus_unix_conn).
 
 %% api
 -export([connect/2]).

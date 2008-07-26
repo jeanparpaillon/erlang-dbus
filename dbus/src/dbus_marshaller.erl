@@ -4,13 +4,7 @@
 %% @doc marshaller module
 %%
 
--module(dberl.marshaller).
-
--import(dict).
--import(error_logger).
--import(file).
--import(io).
--import(lists).
+-module(dbus_marshaller).
 
 -include("dbus.hrl").
 

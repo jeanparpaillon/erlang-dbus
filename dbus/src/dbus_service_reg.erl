@@ -4,14 +4,7 @@
 %% @doc Register of exported D-BUS services gen_server
 %%
 
--module(dberl.service_reg).
-
--import(error_logger).
--import(gen_server).
--import(gen_tcp).
--import(inet).
--import(io).
--import(lists).
+-module(dbus_service_reg).
 
 -behaviour(gen_server).
 

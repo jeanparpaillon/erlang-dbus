@@ -3,11 +3,7 @@
 %% @author    Mikael Magnusson <mikma@users.sourceforge.net>
 %% @doc       Top supervisor
 %%
--module(dberl.sup).
-
--import(dbus).
--import(error_logger).
--import(supervisor).
+-module(dbus_sup).
 
 -behaviour(supervisor).
 
