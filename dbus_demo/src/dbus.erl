@@ -6,15 +6,9 @@
 
 -module(dbus).
 
--import(dberl.proxy).
--import(dberl.bus).
--import(dberl.bus_reg).
--import(dberl.remote_service).
-
 -behaviour(gen_server).
 
 -include("dbus.hrl").
--include("config.hrl").
 
 %% gen_server callbacks
 -export([
@@ -40,34 +34,7 @@
 	  bus_obj
 	 }).
 
--export([make/0, test/0, run_test/1]).
-
-make() ->
-    Modules = [
-	       "dbus",
-	       "hello",
-	       "hello_app",
-	       "hello_sup"
-	      ],
-
-    Prefix = "example/",
-    make_modules(Prefix, Modules).
-
-make_modules(Prefix, Modules) ->
-    Srcdir = ?TOP_SRCDIR ++ "/" ++ Prefix,
-    Builddir = ?TOP_BUILDDIR ++ "/" ++ Prefix,
-
-    Files = lists:map(fun(File) -> Srcdir ++ File end, Modules),
-
-    make:files(Files,
-	       [
-		load,
-		{i, ?TOP_BUILDDIR ++ "/include"},
-		{i, ?TOP_SRCDIR ++ "/src"},
-		{i, ?ERLANG_LIB_DIR_XMERL ++ "/include"},
-		{outdir, Builddir}
-	       ]).
-
+-export([test/0, run_test/1]).
 
 test() ->
     Pid = case start_link() of

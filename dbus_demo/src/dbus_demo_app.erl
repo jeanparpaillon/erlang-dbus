@@ -1,11 +1,11 @@
 %%%-------------------------------------------------------------------
-%%% File    : hello_app.erl
+%%% File    : dbus_demo_app.erl
 %%% Author  : Mikael Magnusson <mikael@skinner.hem.za.org>
 %%% Description : 
 %%%
 %%% Created : 29 Oct 2006 by Mikael Magnusson <mikael@skinner.hem.za.org>
 %%%-------------------------------------------------------------------
--module(hello_app).
+-module(dbus_demo_app).
 
 -behaviour(application).
 
@@ -26,7 +26,7 @@
 %% top supervisor of the tree.
 %%--------------------------------------------------------------------
 start(_Type, StartArgs) ->
-    case hello_sup:start_link(StartArgs) of
+    case dbus_demo_sup:start_link(StartArgs) of
 	{ok, Pid} -> 
 	    {ok, Pid};
 	Error ->

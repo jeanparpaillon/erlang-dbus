@@ -1,11 +1,11 @@
 %%%-------------------------------------------------------------------
-%%% File    : hello_sup.erl
+%%% File    : dbus_demo_sup.erl
 %%% Author  : Mikael Magnusson <mikael@skinner.hem.za.org>
 %%% Description : 
 %%%
 %%% Created : 29 Oct 2006 by Mikael Magnusson <mikael@skinner.hem.za.org>
 %%%-------------------------------------------------------------------
--module(hello_sup).
+-module(dbus_demo_sup).
 
 -behaviour(supervisor).
 
@@ -40,9 +40,9 @@ start_link([]) ->
 %% specifications.
 %%--------------------------------------------------------------------
 init([]) ->
-    Hello = {hello, {hello, start_link, ['org.za.hem.DBus', '/Root']},
-	     permanent, 10000, worker, [hello]},
-    Dbus = {dberl,{dbus,start_link,[]}, permanent, 10000, worker, [dbus]},
+    Hello = {dbus_demo, {dbus_demo, start_link, ['org.za.hem.DBus', '/Root']},
+	     permanent, 10000, worker, [dbus_demo]},
+    Dbus = {dbus,{dbus,start_link,[]}, permanent, 10000, worker, [dbus]},
     {ok,{{one_for_one,10,60}, [Hello, Dbus]}}.
 
 %%====================================================================

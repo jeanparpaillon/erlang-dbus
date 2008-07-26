@@ -1,12 +1,8 @@
--module(hello).
+-module(dbus_demo).
 
 -include("dbus.hrl").
 
--import(error_logger).
--import(dberl.gen_dbus).
--import(io).
-
--behaviour(dberl.gen_dbus).
+-behaviour(gen_dbus).
 
 %% api
 -export([
@@ -33,7 +29,7 @@
 	 }).
 
 start_link(Service, Path) ->
-    gen_dbus:start_link({local, hello}, ?MODULE, [Service, Path], []).
+    gen_dbus:start_link({local, dbus_demo}, ?MODULE, [Service, Path], []).
 
 
 init([Service, Path]) ->
@@ -53,7 +49,7 @@ init([Service, Path]) ->
      {signature, [string], [{array, string}]}].
 
 'HelloWorld'([Id, Hello_message], From, State) when is_integer(Id) ->
-    self() ! {hello, [Id, Hello_message], From},
+    self() ! {dbus_demo, [Id, Hello_message], From},
     {noreply, State}.
 
 
@@ -75,7 +71,7 @@ init([Service, Path]) ->
     {reply, #variant{type={dict, byte, string}, value=Dict}, State}.
 
 
-handle_info({hello, [Id, Hello_message], From}, State) ->
+handle_info({dbus_demo, [Id, Hello_message], From}, State) ->
     io:format("HelloWorld: callback ~p, ~p~n", [Id, Hello_message]),
     gen_dbus:signal('OnClick', ["x", "y"]),
     gen_dbus:reply(From, {ok, ["Hello callback", " from Erlang service.erl"]}),
