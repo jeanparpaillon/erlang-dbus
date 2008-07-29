@@ -138,7 +138,7 @@ handle_call({get_service, ServiceName, Pid}, _From, State) ->
 	    Services1 = lists:keyreplace(Service, 2, Services, Value),
 	    {reply, {ok, Service}, State#state{services=Services1}};
 	false ->
-	    {ok, Service} = remote_service:start_link(self(), State#state.conn,
+	    {ok, Service} = dbus_remote_service:start_link(self(), State#state.conn,
 						      ServiceName),
 	    true = link(Pid),
 	    Services1 = [{ServiceName, Service, [Pid]} | Services],
@@ -211,7 +211,7 @@ handle_info({auth_ok, Conn}, #state{conn=Conn}=State) ->
     
     DBusRootNode = default_dbus_node(),
     {ok, DBusObj} =
-	proxy:start_link(self(), Conn, 'org.freedesktop.DBus', '/', DBusRootNode),
+	dbus_proxy:start_link(self(), Conn, 'org.freedesktop.DBus', '/', DBusRootNode),
     {ok, DBusIfaceObj} = dbus_proxy:interface(DBusObj, 'org.freedesktop.DBus'),
     ok = dbus_proxy:call(DBusIfaceObj, 'Hello', [], [{reply, self(), hello}]),
     io:format("Call returned~n"),

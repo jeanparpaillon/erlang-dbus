@@ -3,7 +3,7 @@
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
 %% @doc transport gen_server
 %%
-%% Glue module to tcp_conn transport module
+%% Glue module to dbus_tcp_conn and dbus_unix_conn transport modules
 %%
 %% Messages imlemented by transport modules
 %%
