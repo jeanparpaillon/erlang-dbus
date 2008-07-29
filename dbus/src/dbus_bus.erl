@@ -260,7 +260,7 @@ handle_info({dbus_signal, Header, Conn}, #state{conn=Conn}=State) ->
     io:format("Ignore signal ~p~n", [Header]),
     
     Signal_handlers = State#state.signal_handlers,
-    Fun = fun({Match, Tag, Pid}) ->
+    Fun = fun({_Match, Tag, Pid}) ->
 		  Pid ! {dbus_signal, Header, Tag}
 	  end,
     lists:foreach(Fun, Signal_handlers),

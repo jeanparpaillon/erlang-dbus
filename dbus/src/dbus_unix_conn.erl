@@ -11,13 +11,26 @@
 %% api
 -export([connect/2]).
 
--define(DEFAULT_BUS_SYSTEM, "/var/run/dbus/system_bus_socket").
 -define(DRV, unixdom_drv).
 
-connect(Path, Options) ->
+connect(BusOptions, Options) ->
+    Path =
+	case lists:keysearch(path, 1, BusOptions) of
+	    {value, {_, Path1}} ->
+		Path1;
+	    _ ->
+		case lists:keysearch(abstract, 1, BusOptions) of
+		    {value, {_, Path2}} ->
+			[$\0 | Path2];
+		    _ ->
+			throw(no_path)
+		end
+	end,
+
     {ok, Port} = ?DRV:start(),
     {ok, ClntSock} = ?DRV:open(Port, Path, 0),
     {ok, ClntSockFd} = ?DRV:getfd(Port, ClntSock),
-    {ok, Tcpsockfd} = ?DRV:receivefd(Port, ClntSockFd),
-    ?DRV:shutdown(Port),
-    dbus_tcp_conn:connect(Tcpsockfd, Options).
+%    io:format("shutdown~n", []),
+%    ?DRV:shutdown(Port),
+    {ok, Sock} = dbus_tcp_conn:connect(ClntSockFd, Options),
+    {ok, Sock}.
