@@ -44,11 +44,13 @@ connect(Host, Port, Options) ->
 init([Fd, Options, Owner]) when is_integer(Fd), is_pid(Owner) ->
     true = link(Owner),
     {ok, Sock} = gen_tcp:fdopen(Fd, Options),
+    ok = inet:setopts(Sock, [{active, once}]),
     {ok, #state{sock=Sock,
 		owner=Owner}};
 init([Host, Port, Options, Owner]) ->
     true = link(Owner),
     {ok, Sock} = gen_tcp:connect(Host, Port, Options),
+    ok = inet:setopts(Sock, [{active, once}]),
     {ok, #state{sock=Sock,
 		owner=Owner}}.
 
@@ -92,6 +94,7 @@ handle_cast(Request, State) ->
 handle_info({tcp, Sock, Data}, #state{sock=Sock}=State) ->
     Owner = State#state.owner,
     Owner ! {received, self(), Data},
+    ok = inet:setopts(Sock, [{active, once}]),
     {noreply, State};
 
 handle_info({tcp_closed, Sock}, #state{sock=Sock}=State) ->
