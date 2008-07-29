@@ -61,9 +61,9 @@ start_link(Bus, Conn, Service, Path, Tag) when is_pid(Conn),
 stop(Proxy) ->
     gen_server:cast(Proxy, stop).
 
-interface(Proxy, IfaceName) when is_list(IfaceName) ->
+interface(Proxy, IfaceName) when is_pid(Proxy), is_list(IfaceName) ->
     interface(Proxy, list_to_atom(IfaceName));
-interface(Proxy, IfaceName) when is_atom(IfaceName) ->
+interface(Proxy, IfaceName) when is_pid(Proxy), is_atom(IfaceName) ->
     Iface = {interface, Proxy, IfaceName},
     {ok, Iface}.
 
