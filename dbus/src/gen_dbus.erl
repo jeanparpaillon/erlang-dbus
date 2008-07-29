@@ -244,7 +244,7 @@ terminate(_Reason, _State) ->
 do_signal(Iface_name, Signal, Args, Options, State) ->
     Path = State#state.path,
     {ok, Header} = dbus_message:build_signal(Path, Iface_name, Signal, Args),
-    bus_reg:cast(Header),
+    dbus_bus_reg:cast(Header),
     error_logger:error_msg("~p: signal ~p~n", [?MODULE, Header]),
     {noreply, State}.
 

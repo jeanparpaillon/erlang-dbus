@@ -97,7 +97,7 @@
 %%     ReplySerial = #variant{type=uint32, value=Header#header.serial},
 
 %%     {ok, ReplyBody, _Pos} = 
-%% 	marshaller:marshal_list([string], ["Erlang: Object not found."]),
+%% 	dbus_marshaller:marshal_list([string], ["Erlang: Object not found."]),
 %%     Headers = [
 %% 	       [?HEADER_ERROR_NAME, Error],
 %% 	       [?HEADER_REPLY_SERIAL, ReplySerial],
@@ -198,7 +198,7 @@ build_error(Header, ErrorName, ErrorText) ->
     ReplySerial = #variant{type=uint32, value=Header#header.serial},
 
     {ok, ReplyBody, _Pos} = 
-	marshaller:marshal_list([string], [ErrorText]),
+	dbus_marshaller:marshal_list([string], [ErrorText]),
     Headers = [
 	       {?HEADER_ERROR_NAME, Error},
 	       {?HEADER_REPLY_SERIAL, ReplySerial},
@@ -218,7 +218,7 @@ build_method_return(Header, Types, Body) ->
     Signature = dbus_marshaller:marshal_signature(Types),
 
     {ok, BinBody, _Pos} = 
-	marshaller:marshal_list(Types, Body),
+	dbus_marshaller:marshal_list(Types, Body),
     Headers = [
 	       {?HEADER_REPLY_SERIAL, ReplySerial},
  	       {?HEADER_DESTINATION, From},
@@ -242,7 +242,7 @@ build_signal(Path, Iface_name, Signal, Args) when is_atom(Path),
     Signature = dbus_marshaller:marshal_signature(Types),
 
     {ok, Body, _Pos} = 
-	marshaller:marshal_list(Types, Args),
+	dbus_marshaller:marshal_list(Types, Args),
     Headers = [
 	       {?HEADER_PATH, #variant{type=object_path, value=Path}},
 	       {?HEADER_INTERFACE, #variant{type=string, value=Iface_name}},

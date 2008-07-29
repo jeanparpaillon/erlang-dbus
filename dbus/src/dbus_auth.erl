@@ -174,7 +174,7 @@ hex_to_list(Hex) ->
 hex_to_list([], List) ->
     List;
 hex_to_list([H1, H2|R], List) ->
-    List1 = List ++ [hex:from([H1, H2])],
+    List1 = List ++ [dbus_hex:from([H1, H2])],
     hex_to_list(R, List1).
 
 read_cookie(CookieId) ->
