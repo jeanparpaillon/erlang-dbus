@@ -61,7 +61,7 @@ handle_call({get_object, Path, Pid}, From, State) ->
 	    true = link(Pid),
 	    Pids1 = [Pid | Pids],
 	    Value = {Path, Object, Pids1},
-	    Objects1 = lists:keyreplace(Object, 2, Value, Objects),
+	    Objects1 = lists:keyreplace(Object, 2, Objects, Value),
 	    {reply, {ok, Object}, State#state{objects=Objects1}};
 	false ->
 	    {ok, Object} = dbus_proxy:start_link(State#state.bus, State#state.conn,

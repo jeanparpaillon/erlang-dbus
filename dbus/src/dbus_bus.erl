@@ -123,7 +123,7 @@ handle_call({get_service, ServiceName, Pid}, _From, State) ->
 	    true = link(Pid),
 	    Pids1 = [Pid | Pids],
 	    Value = {ServiceName, Service, Pids1},
-	    Services1 = lists:keyreplace(Service, 2, Value, Services),
+	    Services1 = lists:keyreplace(Service, 2, Services, Value),
 	    {reply, {ok, Service}, State#state{services=Services1}};
 	false ->
 	    {ok, Service} = remote_service:start_link(self(), State#state.conn,
