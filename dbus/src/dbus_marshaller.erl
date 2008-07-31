@@ -14,6 +14,7 @@
 -export([
 	 marshal_message/1,
 %% 	 marshal_message/2,
+	 marshal_signature/1,
 	 marshal_list/2,
 	 unmarshal_data/1,
 	 unmarshal_signature/1
