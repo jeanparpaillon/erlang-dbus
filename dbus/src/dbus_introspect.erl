@@ -10,6 +10,7 @@
 -include("dbus.hrl").
 
 -export([
+	 to_xml/1,
 	 build_introspect/2,
 	 from_xml/1,
 	 from_xml_string/1,
@@ -25,6 +26,12 @@
 
 %% api
 
+to_xml(Node) ->
+    Prolog = "<?xml version=\"1.0\" encoding=\"utf-8\" ?><!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\" \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">",
+    lists:flatten(xmerl:export_simple([to_xmerl(Node)], xmerl_xml, [{prolog, Prolog}])).
+
+to_xmerl(undefined) ->
+    [];
 to_xmerl(List) when is_list(List) ->
     lists:map(fun(Elem) -> to_xmerl(Elem) end, List);
 
@@ -73,6 +80,30 @@ to_xmerl(Elem) when is_record(Elem, method) ->
      to_xmerl(Elem#method.args) ++ 
      Result};
 
+to_xmerl(Elem) when is_record(Elem, signal) ->
+    io:format("signal ~p~n", [Elem]),
+    Result =
+	case Elem#signal.result of
+	    none ->
+		[];
+	    undefined ->
+		[];
+	    Arg ->
+		[to_xmerl(Arg)]
+	end,
+%%     Fun = fun(Arg) ->
+%% 		  {arg, [{direction, Arg#
+
+    {signal,
+     case Elem#signal.name of
+	 undefined ->
+	     [];
+	 Name ->
+	     [{name, Name}]
+     end,
+     to_xmerl(Elem#signal.args) ++ 
+     Result};
+
 to_xmerl(Elem) when is_record(Elem, arg) ->
     io:format("arg ~p~n", [Elem]),
     {arg, 
@@ -85,7 +116,7 @@ to_xmerl(Elem) when is_record(Elem, arg) ->
      [{direction, Elem#arg.direction},
       {type, Elem#arg.type}], []}.
 
-build_introspect(Service, Path) ->
+build_introspect(Service, Path) when is_list(Service), is_list(Path) ->
     Headers = [
 	       {?HEADER_PATH, #variant{type=object_path, value=Path}},
 	       {?HEADER_DESTINATION, #variant{type=string, value=Service}},
