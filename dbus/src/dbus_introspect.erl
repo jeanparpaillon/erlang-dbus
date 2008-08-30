@@ -116,7 +116,7 @@ to_xmerl(Elem) when is_record(Elem, arg) ->
      [{direction, Elem#arg.direction},
       {type, Elem#arg.type}], []}.
 
-build_introspect(Service, Path) when is_list(Service), is_list(Path) ->
+build_introspect(Service, Path) ->
     Headers = [
 	       {?HEADER_PATH, #variant{type=object_path, value=Path}},
 	       {?HEADER_DESTINATION, #variant{type=string, value=Service}},
