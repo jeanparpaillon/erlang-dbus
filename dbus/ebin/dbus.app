@@ -30,5 +30,6 @@
 		  stdlib,
 		  sasl,
 		  crypto,
-		  xmerl
+		  xmerl,
+		  unixdom_drv
 		  ]}]}.
