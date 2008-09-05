@@ -1,0 +1,58 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+  <interface name="org.freedesktop.DBus.Introspectable">
+    <method name="Introspect">
+      <arg name="data" direction="out" type="s"/>
+    </method>
+  </interface>
+  <interface name="org.freedesktop.DBus.Properties">
+    <method name="Get">
+      <arg name="interface" direction="in" type="s"/>
+      <arg name="propname" direction="in" type="s"/>
+      <arg name="value" direction="out" type="v"/>
+    </method>
+    <method name="Set">
+      <arg name="interface" direction="in" type="s"/>
+      <arg name="propname" direction="in" type="s"/>
+      <arg name="value" direction="in" type="v"/>
+    </method>
+  </interface>
+  <interface name="org.gnome.Rhythmbox.Shell">
+    <method name="clearQueue">
+    </method>
+    <method name="removeFromQueue">
+      <arg name="uri" type="s" direction="in"/>
+    </method>
+    <method name="quit">
+    </method>
+    <method name="addToQueue">
+      <arg name="uri" type="s" direction="in"/>
+    </method>
+    <method name="setSongProperty">
+      <arg name="uri" type="s" direction="in"/>
+      <arg name="propname" type="s" direction="in"/>
+      <arg name="value" type="v" direction="in"/>
+    </method>
+    <method name="getSongProperties">
+      <arg name="uri" type="s" direction="in"/>
+      <arg name="arg1" type="a{sv}" direction="out"/>
+    </method>
+    <method name="present">
+      <arg name="arg0" type="u" direction="in"/>
+    </method>
+    <method name="getPlaylistManager">
+      <arg name="arg0" type="o" direction="out"/>
+    </method>
+    <method name="getPlayer">
+      <arg name="arg0" type="o" direction="out"/>
+    </method>
+    <method name="loadURI">
+      <arg name="arg0" type="s" direction="in"/>
+      <arg name="arg1" type="b" direction="in"/>
+    </method>
+    <signal name="visibilityChanged">
+      <arg type="b"/>
+    </signal>
+  </interface>
+</node>
