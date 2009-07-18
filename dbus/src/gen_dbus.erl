@@ -241,7 +241,7 @@ handle_info(Info, State) ->
 terminate(_Reason, _State) ->
     terminated.
 
-do_signal(Iface_name, Signal, Args, Options, State) ->
+do_signal(Iface_name, Signal, Args, _Options, State) ->
     Path = State#state.path,
     {ok, Header} = dbus_message:build_signal(Path, Iface_name, Signal, Args),
     dbus_bus_reg:cast(Header),

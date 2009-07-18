@@ -373,7 +373,7 @@ marshal_struct_signature([SubType|R], Res) ->
 
 %% unmarshal(Type, Binary) ->
 
-unmarshal(Type, <<>>, Pos) ->
+unmarshal(Type, <<>>, _Pos) ->
     throw({error, Type});
 unmarshal(byte, Data, Pos) ->
     << Value:8, Data1/binary >> = Data,

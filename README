@@ -1,3 +1,1 @@
-Use sourceforge, and not Google since sourceforge supports xml exports.
-
-http://sitedocs.sourceforge.net/projects/adocman/xml_export.html
+Implementation of the D-Bus protocol in Erlang.
