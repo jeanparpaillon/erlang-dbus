@@ -2,6 +2,7 @@
  [{description, "D-BUS Demo"},
   {vsn,"0.1"},
   {modules, [
+	     dbus_example_client,
 	     dbus_demo,
 	     dbus_demo_app,
 	     dbus_demo_hello,
