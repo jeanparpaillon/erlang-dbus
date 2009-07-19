@@ -78,7 +78,7 @@ handle_call({release_object, Object, Pid}, _From, State) ->
 	{error, Reason, State1} ->
 	    {reply, Reason, State1};
 	{stop, State1} ->
-	    {stop, normal, State1}
+	    {stop, normal, ok, State1}
     end;
 
 handle_call(Request, _From, State) ->
@@ -132,19 +132,38 @@ terminate(_Reason, _State) ->
 %%
 %%     case handle_release_object(Object, Pid, State) of
 
-handle_release_object(Object, _Pid, State) ->
+handle_release_object(Object, Pid, State) ->
+    error_logger:info_msg("~p: ~p handle_release_object ~p~n",
+                          [?MODULE, self(), Object]),
+
     Objects = State#state.objects,
     case lists:keysearch(Object, 2, Objects) of
-	{value, {Path, _}} ->
-	    true = unlink(Object),
-	    error_logger:info_msg("~p: Object terminated ~p ~p~n", [?MODULE, Object, Path]),
-	    Objects1 = lists:keydelete(Object, 2, Objects),
-	    if
-		Objects1 == [] ->
-		    error_logger:info_msg("~p: No more objects stopping ~p service~n", [?MODULE, State#state.name]),
-		    {stop, State};
-		true ->
-		    {ok, State#state{objects=Objects1}}
+	{value, {Path, _, Pids}} ->
+            case lists:delete(Pid, Pids) of
+                Pids ->
+                    %% Pid was not in Pids!
+                    %% Do nothing.
+                    {error, not_registered, State};
+                [] ->
+                    %% No more Pids, remove object.
+                    true = unlink(Pid),
+                    error_logger:info_msg("~p: Object terminated ~p ~p~n", [?MODULE, Object, Path]),
+                    Objects1 = lists:keydelete(Object, 2, Objects),
+                    if
+                        Objects1 == [] ->
+                            error_logger:info_msg("~p: No more objects stopping ~p service~n", [?MODULE, State#state.name]),
+                            {stop, State};
+                            %%error_logger:warning_msg("~p: No more objects TODO stop service~n", [?MODULE]),
+                            %%{ok, State#state{objects=Objects1}};
+                        true ->
+                            {ok, State#state{objects=Objects1}}
+                    end;
+                Pids1 ->
+                    %% Update tuple with new Pids.
+                    true = unlink(Pid),
+                    Value = {Path, Object, Pids1},
+                    Objects1 = lists:keyreplace(Object, 2, Objects, Value),
+                    {ok, State#state{objects=Objects1}}
 	    end;
 	false ->
 	    {error, not_registered, State}
