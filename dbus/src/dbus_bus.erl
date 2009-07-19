@@ -419,4 +419,10 @@ parse_params([Param|Rest], Acc) ->
 parse_param(Param) when is_list(Param) ->
     {Key, [?KEY_DELIM | Value]} =
 	lists:splitwith(fun(A) -> A =/= ?KEY_DELIM end, Param),
-    {list_to_atom(Key), Value}.
+    Key_atom = list_to_existing_atom(Key),
+    {Key_atom, parse_value(Key_atom, Value)}.
+
+parse_value(port, Value) ->
+    list_to_integer(Value);
+parse_value(_, Value) ->
+    Value.

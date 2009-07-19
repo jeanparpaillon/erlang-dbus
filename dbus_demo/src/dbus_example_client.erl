@@ -10,22 +10,17 @@
 
 -export([test/0]).
 
-%% api
--define(SERVER, ?MODULE).
--define(HOST, "localhost").
--define(PORT, 1236).
-
 test() ->
-    {ok, Bus} = get_bus([?HOST, ?PORT]),
+    [BusId|_R] = dbus_bus:env_to_bus_id(),
+    io:format("Id: ~p~n", [BusId]),
+    {ok, Bus} = get_bus(BusId),
 
     run_test(Bus),
     
     ok = dbus_bus_reg:release_bus(Bus).
 
-get_bus([Host, Port]) ->
-    {ok, Bus} = dbus_bus_reg:get_bus(#bus_id{scheme=tcp,
-                                             options=[{host, Host},
-                                                      {port, Port}]}),
+get_bus(BusId) ->
+    {ok, Bus} = dbus_bus_reg:get_bus(BusId),
     true = link(Bus),
     ok = dbus_bus:wait_ready(Bus),
     io:format("Ready~n"),
