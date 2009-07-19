@@ -14,6 +14,7 @@
 -export([
 	 start_link/0,
 	 get_bus/1,
+	 release_bus/1,
 	 export_service/2,
 	 unexport_service/2,
 	 set_service_reg/1,
@@ -42,6 +43,10 @@ start_link() ->
 
 get_bus(BusId) when is_record(BusId, bus_id) ->
     gen_server:call(?SERVER, {get_bus, BusId}).
+
+release_bus(Bus) when is_pid(Bus) ->
+    gen_server:call(?SERVER, {release_bus, Bus}).
+
 %%     case R of
 %% 	{ok, Pid} ->
 %% 	    link(Pid);
@@ -84,6 +89,18 @@ handle_call({get_bus, BusId}, _From, State) when is_record(BusId, bus_id) ->
 	    {ok, Bus} = dbus_bus:connect(BusId),
 	    Busses1 = [{BusId, Bus} | Busses],
 	    {reply, {ok, Bus}, State#state{busses=Busses1}}
+    end;
+
+handle_call({release_bus, Bus}, _From, State) when is_pid(Bus) ->
+    Busses = State#state.busses,
+    case lists:keysearch(Bus, 2, Busses) of
+	{value, {BusId, _Bus}} ->
+            io:format("Release BusId ~p~n", [BusId]),
+            Busses1 = lists:keydelete(Bus, 2, Busses),
+            ok = dbus_bus:stop(Bus),
+            {reply, ok, State#state{busses=Busses1}};
+	false ->
+	    {reply, {error, not_registered}, State}
     end;
 
 handle_call({export_service, _Service, ServiceName}, _From, State) ->
