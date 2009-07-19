@@ -23,6 +23,7 @@
 	 export_service/2,
 	 unexport_service/2,
 	 get_service/2,
+	 release_service/2,
 	 cast/2
 	]).
 
@@ -82,6 +83,9 @@ unexport_service(Bus, ServiceName) ->
 get_service(Bus, ServiceName) ->
     gen_server:call(Bus, {get_service, ServiceName, self()}).
 
+release_service(Bus, Service) ->
+    gen_server:call(Bus, {release_service, Service, self()}).
+
 cast(Bus, Header) ->
     gen_server:cast(Bus, {cast, Header}).
 
@@ -89,7 +93,7 @@ cast(Bus, Header) ->
 %% gen_server callbacks
 %%
 init([BusId, Owner]) ->
-    process_flag(trap_exit, true),
+    %%process_flag(trap_exit, true),
     self() ! {setup, BusId},
     {ok, #state{owner=Owner}}.
 
@@ -144,6 +148,11 @@ handle_call({get_service, ServiceName, Pid}, _From, State) ->
 	    Services1 = [{ServiceName, Service, [Pid]} | Services],
 	    {reply, {ok, Service}, State#state{services=Services1}}
     end;
+
+handle_call({release_service, Service, Pid}, _From, State) ->
+    error_logger:info_msg("~p: ~p release_service ~p ~p~n",
+                          [?MODULE, self(), Service, Pid]),
+    handle_release_service(Service, Pid, State);
 
 handle_call(Request, _From, State) ->
     error_logger:error_msg("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
@@ -226,7 +235,7 @@ handle_info({auth_ok, Conn}, #state{conn=Conn}=State) ->
 
 handle_info({reply, hello, {ok, Reply}}, State) ->
 %%     DBusObj = State#state.dbus_object,
-    error_logger:error_msg("Hello reply ~p~n", [Reply]),
+    error_logger:info_msg("Hello reply ~p~n", [Reply]),
     [Id] = Reply,
 
 %%     {ok, DBusIntrospectable} = dbus_proxy:interface(DBusObj, 'org.freedesktop.DBus.Introspectable'),
@@ -278,6 +287,7 @@ handle_info({proxy, Result, From, _Obj}, State) ->
     {noreply, State};
 
 handle_info({'EXIT', Pid, Reason}, State) ->
+    error_logger:info_msg("~p: EXIT ~p ~p~n", [?MODULE, Pid, Reason]),
     case handle_release_all_services(Pid, State) of
 	{ok, State1} ->
 	    {noreply, State1};
@@ -324,8 +334,44 @@ default_dbus_node() ->
     DBusRootNode.
 
 
-handle_release_all_services(_Pid, _State) ->
+handle_release_all_services(Pid, State) ->
+    error_logger:info_msg("~p: handle_release_all_services ~p~n", [?MODULE, Pid]),
     throw(unimplemented).
+
+
+handle_release_service(Service, Pid, State) ->
+    Services = State#state.services,
+    case lists:keysearch(Service, 2, Services) of
+	{value, {ServiceName, _, Pids}} ->
+            case lists:delete(Pid, Pids) of
+                Pids ->
+                    %% Pid was not in Pids!
+                    %% Do nothing
+                    {reply, {error, not_registered}, State};
+                [] ->
+                    %% No more Pids, remove service.
+                    true = unlink(Pid),
+                    error_logger:info_msg("~p: ~p Service terminated ~p~n", [?MODULE, self(), ServiceName]),
+                    Services1 = lists:keydelete(Service, 2, Services),
+                    if
+                        Services1 == [] ->
+                            %%error_logger:info_msg("~p: No more services stopping ~p bus~n", [?MODULE, State#state.name]),
+                            %%{stop, normal, State};
+                            error_logger:warning_msg("~p: No more services TODO stop bus~n", [?MODULE]),
+                            {reply, ok, State#state{services=Services1}};
+                        true ->
+                            {reply, ok, State#state{services=Services1}}
+                    end;
+                Pids1->
+                    %% Update tuple with new Pids.
+                    true = unlink(Pid),
+                    Value = {ServiceName, Service, Pids1},
+                    Services1 = lists:keyreplace(Service, 2, Services, Value),
+                    {reply, ok, State#state{services=Services1}}
+            end;
+	false ->
+	    {reply, {error, not_registered}, State}
+    end.
 
 %%     Services = State#state.services,
 %%     case lists:keysearch(Service, 2, Services) of
