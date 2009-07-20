@@ -41,7 +41,8 @@ start_link([]) ->
 %%--------------------------------------------------------------------
 init([]) ->
     Hello = {dbus_demo_hello, {dbus_demo_hello, start_link,
-			       ['org.za.hem.DBus', '/Root']},
+			       ["com.example.SampleService",
+                                '/SomeObject']},
 	     permanent, 10000, worker, [dbus_demo_hello]},
     Dbus = {dbus_demo,{dbus_demo,start_link,[]},
 	    permanent, 10000, worker, [dbus_demo]},
