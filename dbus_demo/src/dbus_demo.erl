@@ -22,12 +22,10 @@
 
 %% api
 -export([
-	 start_link/0
+	 start_link/0, start_link/1
 	]).
 
 -define(SERVER, ?MODULE).
--define(HOST, "localhost").
--define(PORT, 1236).
 
 -record(state, {
 	  bus,
@@ -44,7 +42,11 @@ test() ->
     run_test(Pid).
 
 start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [?HOST, ?PORT], []).
+    [BusId|_R] = dbus_bus:env_to_bus_id(),
+    start_link(BusId).
+
+start_link(BusId) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [BusId], []).
 
 run_test(Pid) ->
     gen_server:call(Pid, run_test).
@@ -52,8 +54,8 @@ run_test(Pid) ->
 %%
 %% gen_server callbacks
 %%
-init([Host, Port]) ->
-    self() ! {setup, Host, Port},
+init([BusId]) ->
+    self() ! {setup, BusId},
     {ok, #state{}}.
 
 
@@ -62,7 +64,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 handle_call(run_test, _From, State) ->
-    do_test(State),
+    error_logger:info_msg("do_test: ~p~n", [catch do_test(State)]),
     {reply, ok, State};
 
 handle_call(Request, _From, State) ->
@@ -75,11 +77,8 @@ handle_cast(Request, State) ->
     {noreply, State}.
 
 
-handle_info({setup, Host, Port}, State) ->
-     {ok, Bus} = dbus_bus_reg:get_bus(#bus_id{scheme=tcp,
-					 options=[{host, Host},
-						  {port, Port}]}),
-%%     {ok, Bus} = bus_reg:get_bus(Host, Port),
+handle_info({setup, BusId}, State) ->
+    {ok, Bus} = dbus_bus_reg:get_bus(BusId),
     true = link(Bus),
     ok = dbus_bus:wait_ready(Bus),
     io:format("Ready~n"),
@@ -101,48 +100,5 @@ handle_info(Info, State) ->
 terminate(_Reason, _State) ->
     terminated.
 
-
 do_test(State) ->
-    Bus = State#state.bus,
-
-%%     {ok, Rb} = dbus_bus:get_service(Bus, 'org.gnome.Rhythmbox'),
-
-%% %%     {ok, RbShellObj} = dbus_bus:get_object(Bus, 'org.gnome.Rhythmbox', '/org/gnome/Rhythmbox/Shell'),
-%%     {ok, RbShellObj} = dbus_remote_service:get_object(Rb, '/org/gnome/Rhythmbox/Shell'),
-%%     {ok, RbShell} = dbus_proxy:interface(RbShellObj, 'org.gnome.Rhythmbox.Shell'),
-%%     {ok, RbPlayerObj} = dbus_bus:get_object(Bus, 'org.gnome.Rhythmbox', '/org/gnome/Rhythmbox/Player'),
-%%     {ok, RbPlayer} = dbus_proxy:interface(RbPlayerObj, 'org.gnome.Rhythmbox.Player'),
-%% %%    ok = dbus_proxy:connect_signal(RbPlayer, 'elapsedChanged', mytag),
-%% %%    ok = dbus_proxy:connect_signal(RbPlayer, 'playingUriChanged', mytag),
-
-%%     {ok, Uri} = dbus_proxy:call(RbPlayer, 'getPlayingUri'),
-%%     {ok, Song} = dbus_proxy:call(RbShell, 'getSongProperties', [Uri]),
-%%     io:format("Song: ~p~n~p~n", [Uri, Song]),
-
-%% %%     io:format("manager: ~p~n", [dbus_proxy:call(RbShell, 'getPlaylistManager')]),
-%% %%     io:format("player: ~p~n", [dbus_proxy:call(RbShell, 'getPlayer')]),
-
-    {ok, Service} = dbus_bus:get_service(Bus, 'org.designfu.SampleService'),
-
-%%     {ok, Remote_object} = dbus_bus:get_object(Bus, 'org.designfu.SampleService', '/SomeObject'),
-    {ok, Remote_object} = dbus_remote_service:get_object(Service, '/SomeObject'),
-    io:format("Remote_object: ~p~n", [Remote_object]),
-    {ok, Iface} = dbus_proxy:interface(Remote_object, 'org.designfu.SampleInterface'),
-    ok = dbus_proxy:connect_signal(Iface, 'OnClick', mytag),
-%%     Var = #variant{type=string, value="Hello from Erlang!"},
-%%      Var = #variant{type={array, string}, value=["Hello", "from", "Erlang!"]},
-%%     Var = <<"Hello from Erlang">>,
-%%     Var = #variant{type={struct, [int16, string]}, value=[17, "Hello from Erlang!"]},
-    Var = #variant{type={struct, [int16, string]}, value={17, "Hello from Erlang!"}},
-    {ok, Reply1} = dbus_proxy:call(Iface, 'HelloWorld', [Var]),
-    io:format("HelloWorld 1: ~p~n", [Reply1]),
-
-    Var1 = #variant{type={struct, [int16, string]}, value={17, "Hello from Erlang no 2!"}},
-    {ok, Reply2} = dbus_proxy:call(Iface, 'HelloWorld', [Var1]),
-    io:format("HelloWorld 2: ~p~n", [Reply2]),
-%%     ok = dbus_proxy:stop(Remote_object),
-%%     ok = dbus_bus:stop(Bus),
-
-%%     {ok, PeerIface} = dbus_proxy:interface(BusObj, 'org.freedesktop.DBus.Peer'),
-%%     dbus_proxy:call(PeerIface, 'Ping'),
-    ok.
+    exit(unimplemented).
