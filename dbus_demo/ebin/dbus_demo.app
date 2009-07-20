@@ -3,6 +3,7 @@
   {vsn,"0.1"},
   {modules, [
 	     dbus_example_client,
+	     dbus_list_system_services,
 	     dbus_demo,
 	     dbus_demo_app,
 	     dbus_demo_hello,
