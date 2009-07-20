@@ -41,13 +41,23 @@
 	  owner
 	 }).
 
+start_link(Bus, Conn, Service, Path, Node) when is_atom(Service),
+                                                is_atom(Path) ->
+    start_link(Bus, Conn, atom_to_list(Service), atom_to_list(Path), Node);
 start_link(Bus, Conn, Service, Path, Node) when is_record(Node, node),
 						is_pid(Conn),
-						is_pid(Bus) ->
+						is_pid(Bus),
+                                                is_list(Service),
+                                                is_list(Path) ->
     gen_server:start_link(?MODULE, [Bus, Conn, Service, Path, Node], []);
 
+start_link(Bus, Conn, Service, Path, Tag) when is_atom(Service),
+                                               is_atom(Path) ->
+    start_link(Bus, Conn, atom_to_list(Service), atom_to_list(Path), Tag);
 start_link(Bus, Conn, Service, Path, Tag) when is_pid(Conn),
-					       is_pid(Bus) ->
+					       is_pid(Bus),
+                                               is_list(Service),
+                                               is_list(Path) ->
     gen_server:start_link(?MODULE, [Bus, Conn, Service, Path,Tag,self()], []).
 %%     {ok, Pid} = gen_server:start_link(?MODULE, [Bus, Conn, Service, Path], []),
 %%     case gen_server:call(Pid, proxy_ready) of

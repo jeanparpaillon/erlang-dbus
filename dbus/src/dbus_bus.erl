@@ -121,14 +121,14 @@ handle_call(wait_ready, From, State) ->
 handle_call({export_service, ServiceName}, _From, State) ->
     BusObj = State#state.dbus_object,
 
-    {ok, BusIface} = dbus_proxy:interface(BusObj, 'org.freedesktop.DBus'),
+    {ok, BusIface} = dbus_proxy:interface(BusObj, "org.freedesktop.DBus"),
     {ok, _Header1} = dbus_proxy:call(BusIface, 'RequestName', [ServiceName, 0]),
     {reply, ok, State};
 
 handle_call({unexport_service, ServiceName}, _From, State) ->
     BusObj = State#state.dbus_object,
 
-    {ok, BusIface} = dbus_proxy:interface(BusObj, 'org.freedesktop.DBus'),
+    {ok, BusIface} = dbus_proxy:interface(BusObj, "org.freedesktop.DBus"),
     {ok, _Header1} = dbus_proxy:call(BusIface, 'ReleaseName', [ServiceName]),
     {reply, ok, State};
 
@@ -191,7 +191,7 @@ handle_cast({add_match, Match, Tag, Pid}, State) ->
 
     MatchStr = lists:foldl(Fold, "", Match),
 
-    {ok, DBusIFace} = dbus_proxy:interface(DBusObj, 'org.freedesktop.DBus'),
+    {ok, DBusIFace} = dbus_proxy:interface(DBusObj, "org.freedesktop.DBus"),
     ok = dbus_proxy:call(DBusIFace, 'AddMatch', [MatchStr], [{reply, self(), add_match}]),
 
     Signal_handlers = State#state.signal_handlers,
@@ -220,8 +220,8 @@ handle_info({auth_ok, Conn}, #state{conn=Conn}=State) ->
     
     DBusRootNode = default_dbus_node(),
     {ok, DBusObj} =
-	dbus_proxy:start_link(self(), Conn, 'org.freedesktop.DBus', '/', DBusRootNode),
-    {ok, DBusIfaceObj} = dbus_proxy:interface(DBusObj, 'org.freedesktop.DBus'),
+	dbus_proxy:start_link(self(), Conn, "org.freedesktop.DBus", "/", DBusRootNode),
+    {ok, DBusIfaceObj} = dbus_proxy:interface(DBusObj, "org.freedesktop.DBus"),
     ok = dbus_proxy:call(DBusIfaceObj, 'Hello', [], [{reply, self(), hello}]),
     io:format("Call returned~n"),
 
@@ -238,7 +238,7 @@ handle_info({reply, hello, {ok, Reply}}, State) ->
     error_logger:info_msg("Hello reply ~p~n", [Reply]),
     [Id] = Reply,
 
-%%     {ok, DBusIntrospectable} = dbus_proxy:interface(DBusObj, 'org.freedesktop.DBus.Introspectable'),
+%%     {ok, DBusIntrospectable} = dbus_proxy:interface(DBusObj, "org.freedesktop.DBus.Introspectable"),
 %%     ok = dbus_proxy:call(DBusIntrospectable, 'Introspect', [], [{reply, self(), introspect}]),
 
 %%     ok = dbus_proxy:introspect(DBusObj),
@@ -321,14 +321,14 @@ reply_waiting(Reply, State) ->
 
 
 default_dbus_node() ->
-    HelloMethod = #method{name='Hello', args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
-    AddMatch = #method{name='AddMatch', args=[#arg{direction=in, type="s"}], in_sig="s", in_types=[string]},
-    RequestName = #method{name='RequestName', args=[#arg{direction=in, type="s"}, #arg{direction=in, type="u"}, #arg{direction=out, type="u"}], in_sig="su", in_types=[string,uint32]},
-    ReleaseName = #method{name='ReleaseName', args=[#arg{direction=in, type="s"}, #arg{direction=out, type="u"}], in_sig="s", in_types=[string]},
-    DBusIface = #interface{name='org.freedesktop.DBus', methods=[HelloMethod, AddMatch, RequestName, ReleaseName]},
+    HelloMethod = #method{name="Hello", args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
+    AddMatch = #method{name="AddMatch", args=[#arg{direction=in, type="s"}], in_sig="s", in_types=[string]},
+    RequestName = #method{name="RequestName", args=[#arg{direction=in, type="s"}, #arg{direction=in, type="u"}, #arg{direction=out, type="u"}], in_sig="su", in_types=[string,uint32]},
+    ReleaseName = #method{name="ReleaseName", args=[#arg{direction=in, type="s"}, #arg{direction=out, type="u"}], in_sig="s", in_types=[string]},
+    DBusIface = #interface{name="org.freedesktop.DBus", methods=[HelloMethod, AddMatch, RequestName, ReleaseName]},
 
-    IntrospectMethod = #method{name='Introspect', args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
-    DBusIntrospectableIface = #interface{name='org.freedesktop.DBus.Introspectable', methods=[IntrospectMethod]},
+    IntrospectMethod = #method{name="Introspect", args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
+    DBusIntrospectableIface = #interface{name="org.freedesktop.DBus.Introspectable", methods=[IntrospectMethod]},
 
     DBusRootNode = #node{elements=[], interfaces=[DBusIface, DBusIntrospectableIface]},
     DBusRootNode.
@@ -405,7 +405,7 @@ list_to_bus_id([L|Rest], Acc) ->
 to_bus_id(Server) when is_list(Server) ->
     {Transport, [?TRANSPORT_DELIM | Params]} =
 	lists:splitwith(fun(A) -> A =/= ?TRANSPORT_DELIM end, Server),
-    #bus_id{scheme=list_to_atom(Transport),
+    #bus_id{scheme=list_to_existing_atom(Transport),
 	    options=parse_params(Params)}.
 
 parse_params(Params) when is_list(Params) ->
