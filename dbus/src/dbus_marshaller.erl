@@ -348,9 +348,10 @@ marshal_signature(object_path) ->
 marshal_signature(signature) ->
     "g";
 marshal_signature({array, Type}) ->
-    [$a, marshal_signature(Type)];
+    [$a | marshal_signature(Type)];
 marshal_signature({struct, SubTypes}) ->
-    [$(, marshal_struct_signature(SubTypes, []), $)];
+    %% TODO use reverse?
+    "(" ++ marshal_struct_signature(SubTypes, []) ++ ")";
 marshal_signature(variant) ->
     "v";
 marshal_signature({dict, KeyType, ValueType}) ->
@@ -359,7 +360,8 @@ marshal_signature({dict, KeyType, ValueType}) ->
 
     %% TODO check length(KeySig) == 1
 
-    [$a, ${, KeySig, ValueSig, $}];
+    %% TODO use reverse?
+    "a{" ++ KeySig ++ ValueSig ++ "}";
 marshal_signature([]) ->
     "";
 marshal_signature([Type|R]) ->
@@ -369,7 +371,7 @@ marshal_signature([Type|R]) ->
 marshal_struct_signature([], Res) ->
     Res;
 marshal_struct_signature([SubType|R], Res) ->
-    marshal_struct_signature(R, Res ++ [marshal_signature(SubType)]).
+    marshal_struct_signature(R, Res ++ marshal_signature(SubType)).
 
 %% unmarshal(Type, Binary) ->
 
