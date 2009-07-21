@@ -45,7 +45,8 @@ behaviour_info(callbacks) ->
 	  default_iface,
 	  path,
 	  pending=[],
-	  node
+	  node,
+	  xml_body
 	 }).
 
 start_link(Module, Args, Options) ->
@@ -75,36 +76,57 @@ init([Module, Args]) ->
 	{ok, {ServiceName, Path, DBus_config}, SubState} ->
 	    {ok, Service} = dbus_service_reg:export_service(ServiceName),
 	    ok = dbus_service:register_object(Service, Path, self()),
-	    Signal = #signal{name = 'OnClick',
-			     out_sig="ss",
-			     out_types=[string,string]},
-	    Interface = #interface{name = 'org.designfu.SampleInterface',
-				   signals = [Signal]},
-	    Node = #node{interfaces = [Interface]},
-
 	    State = #state{service=Service,
 			   path=Path,
 			   module=Module,
-			   sub=SubState,
-			   node=Node},
+			   sub=SubState},
 	    setup(DBus_config, State)
     end.
 
 setup(DBus_config, State) ->
-    Fun = fun(E, State2) ->
+    Default_face =
+	case lists:keysearch(interface, 1, DBus_config) of
+            {value, {interface, Interface}} ->
+                Interface;
+            false ->
+                undefined
+        end,
+
+    State1 = State#state{default_iface=Default_face},
+
+    Fun = fun(E, {Iface, Interfaces}) ->
 		  case E of
-		      {interface, IFace} ->
-			  State2#state{default_iface = IFace};
-		      {members, Members} ->
-			  State2#state{node = build_introspect(Members, State2)};
+		      {interface, Iface1} ->
+                          %% Ignore
+			  {Iface1, Interfaces};
+		      {methods, Members} ->
+			  io:format("Methods: ~p~n", [Members]),
+                          {Iface,
+                           build_introspect(method, Members,
+                                            State1, Interfaces)};
+ 		      {signals, Members} ->
+ 			  io:format("Signals: ~p~n", [Members]),
+ 			  {Iface,
+                           build_introspect(signal, Members,
+                                            State1, Interfaces)};
 		      _ ->
 			  io:format("Ignore config param ~p~n", [E]),
-			  State2
+			  {Iface, Interfaces}
 		  end
 	  end,
 
-    State1 = lists:foldl(Fun, State, DBus_config),
-    {ok, State1}.
+    {Iface, Interfaces} = lists:foldl(Fun, {undefined, dict:new()},
+                                           DBus_config),
+    Node = #node{name=State1#state.path,
+                 interfaces=lists:map(fun({Key, {Methods, Signals}}) ->
+                                              #interface{name=Key,
+                                                         methods=Methods,
+                                                         signals=Signals}
+                                      end, dict:to_list(Interfaces))},
+    io:format("Node: ~p~n", [Node]),
+    Xml_body = dbus_introspect:to_xml(Node),
+    State2 = State1#state{default_iface=Iface,node=Node,xml_body=Xml_body},
+    {ok, State2}.
 
 
 code_change(_OldVsn, State, _Extra) ->
@@ -122,12 +144,12 @@ handle_cast(stop, State) ->
 handle_cast({reply, From, Reply}, State) ->
     Pending = State#state.pending,
     case lists:keysearch(From, 1, Pending) of
-	{value, {_, Header, Conn}} ->
+	{value, {_, Header, Conn, Signature}} ->
 	    ReplyMsg =
 		case Reply of
 		    {ok, ReplyBody} ->
 			%% Send method return
-			{ok, ReplyMsg1} = dbus_message:build_method_return(Header, [string], [ReplyBody]),
+			{ok, ReplyMsg1} = dbus_message:build_method_return(Header, Signature, [ReplyBody]),
 			ReplyMsg1;
 		    {dbus_error, Iface, Text} ->
 			%% Send error
@@ -153,7 +175,7 @@ handle_cast({signal, Signal_name, Args, Options}, State) ->
 	case lists:keysearch(interface, 1, Options) of
 	    {value, {interface, Name}} ->
 		Name;
-	    _ ->
+	    false ->
 		State#state.default_iface
 	end,
 
@@ -192,7 +214,9 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
     case Member of
 	'Introspect' ->
 	    %% Empty introspect xml
-	    ReplyBody = "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\" \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\"><node></node>",
+	    %%ReplyBody = "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\" \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\"><node></node>",
+	    ReplyBody = State#state.xml_body,
+	    io:format("Introspect ~p~n", [ReplyBody]),
 	    {ok, Reply} = dbus_message:build_method_return(Header, [string], [ReplyBody]),
 	    ok = dbus_connection:cast(Conn, Reply),
 	    {noreply, State};
@@ -219,9 +243,10 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 		    {noreply, State};
 		{ok, Sub1} ->
 		    {noreply, State#state{sub=Sub1}};
-		{pending, From, Sub1} ->
+		{pending, From, Sub1, Signature} ->
 %% 		    io:format("Pending ~p~n", [From]),
-		    Pending = [{From, Header, Conn}, State#state.pending],
+		    Pending = [{From, Header, Conn, Signature} |
+                               State#state.pending],
 		    {noreply, State#state{sub=Sub1, pending=Pending}}
 	    end
     end;
@@ -257,6 +282,14 @@ do_method_call(Module, Member, Header, Conn, Sub) ->
 		make_ref()
 	end,
 
+    Signature =
+        case lists:keysearch(signature, 1, Module:Member(dbus_info)) of
+            {value, {signature, Args, Returns}} ->
+                Returns;
+            false ->
+                []
+        end,
+
     case {Module:Member(Header#header.body, {self(), From}, Sub), From} of
 	{{dbus_error, Iface, Msg, Sub1}, _} ->
 	    {ok, Reply} = dbus_message:build_error(Header, Iface, Msg),
@@ -269,30 +302,92 @@ do_method_call(Module, Member, Header, Conn, Sub) ->
 	    {ok, Sub1};
 	{{reply, ReplyBody, Sub1}, _} ->
 %% 	    io:format("Reply ~p~n", [ReplyBody]),
-	    {ok, Reply} = dbus_message:build_method_return(Header, [variant], [ReplyBody]),
+	    {ok, Reply} = dbus_message:build_method_return(Header, Signature, [ReplyBody]),
 %% 	    io:format("Reply ~p~n", [Reply]),
 	    ok = dbus_connection:cast(Conn, Reply),
 	    {ok, Sub1};
 	{{noreply, Sub1}, _} ->
-	    {pending, From, Sub1}
+	    {pending, From, Sub1, Signature}
     end.
 
-build_introspect(Members, State) when is_list(Members),
-				      is_record(State, state) ->
-    #node{interfaces = [#interface{name = 'org.designfu.SampleInterface',
-				   signals = [#signal{name = 'OnClick',
-						      out_sig="ss",
-						      out_types=[string,string]}]}]}.
+build_introspect(Member_type, Members,
+                 State, Interfaces) when is_list(Members),
+                                         is_record(State, state) ->
+    lists:foldl(fun(Member, Interfaces1) ->
+                        member_build_introspect(Member_type, Member,
+                                                State, Interfaces1)
+                end, Interfaces, Members).
 
-%%     lists:map(fun(Member) -> member_build_introspect(Member) end, Members).
+member_build_introspect(Member_type, Member,
+                        State, Interfaces) when is_atom(Member),
+                                                is_record(State, state) ->
+    {Interface_name, Member_node} = member_info(Member_type, Member, State),
 
-%% member_build_introspect(Member, State) when is_atom(Member),
-%% 					    is_record(State, state) ->
-%%     Module = State#state.module,
-%%     Info = Module:Member(dbus_info),
-%%     Signature = case lists:keysearch(signature, 1, Info) of
-%% 		    {value, {signature, Result, Args}} ->
-%% 			todo;
-%% 		    _ ->
-			
-%% 		end.
+    {Methods, Signals} =
+        case dict:find(Interface_name, Interfaces) of
+            {ok, Value} ->
+                Value;
+            error ->
+                {[], []}
+        end,
+
+    Interface1 =
+        case Member_type of
+            method ->
+                {[Member_node | Methods], Signals};
+            signal ->
+                {Methods, [Member_node | Signals]}
+        end,
+
+    dict:store(Interface_name, Interface1, Interfaces).
+
+
+member_info(Member_type, Member, State) ->
+    Module = State#state.module,
+    Info = Module:Member(dbus_info),
+    Interface_name =
+	case lists:keysearch(interface, 1, Info) of
+            {value, {interface, Interface1}} ->
+                Interface1;
+            false ->
+                State#state.default_iface
+        end,
+
+    Member_node =
+	case lists:keysearch(signature, 1, Info) of
+	    {value, {signature, Args, Results}} ->
+                Results_arg =
+                    case args_build_introspect(Results, out) of
+                        [] ->
+                            none;
+                        [E] ->
+                            E
+                    end,
+		Args_xml = args_build_introspect(Args, in),
+
+                case Member_type of
+                    method ->
+                        #method{name = Member,
+                                args = Args_xml,
+                                result = Results_arg};
+                    signal ->
+                        #signal{name = Member,
+                                args = Args_xml,
+                                result = Results_arg}
+                end;
+	    false ->
+		undefined
+	end,
+    {Interface_name, Member_node}.
+
+args_build_introspect(Args, Dir) when is_list(Args) ->
+    args_build_introspect(Args, Dir, []).
+
+args_build_introspect([], _Dir, Acc) ->
+    lists:reverse(Acc);
+args_build_introspect([Arg | Rest], Dir, Acc) ->
+    args_build_introspect(Rest, Dir, [arg_build_introspect(Arg, Dir)| Acc]).
+
+arg_build_introspect(Arg, Dir) ->
+    #arg{direction=Dir,
+	 type=dbus_marshaller:marshal_signature(Arg)}.

@@ -26,7 +26,7 @@
 
 %% api
 
-to_xml(Node) ->
+to_xml(Node) when is_record(Node, node) ->
     Prolog = "<?xml version=\"1.0\" encoding=\"utf-8\" ?><!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\" \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">",
     lists:flatten(xmerl:export_simple([to_xmerl(Node)], xmerl_xml, [{prolog, Prolog}])).
 
