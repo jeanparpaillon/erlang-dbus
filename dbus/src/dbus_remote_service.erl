@@ -44,7 +44,7 @@ release_object(Service, Object) ->
 %% gen_server callbacks
 %%
 init([Bus, Conn, ServiceName]) ->
-    process_flag(trap_exit, true),
+    %%process_flag(trap_exit, true),
     State = #state{name=ServiceName, bus=Bus, conn=Conn},
     self() ! setup,
     {ok, State}.

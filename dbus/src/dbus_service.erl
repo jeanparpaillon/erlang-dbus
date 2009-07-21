@@ -29,6 +29,7 @@
 
 -record(state, {
 	  name,
+	  xml_body,
 	  objects=[]
 	 }).
 
@@ -45,7 +46,7 @@ unregister_object(Service, Object) ->
 %% gen_server callbacks
 %%
 init([ServiceName]) ->
-    process_flag(trap_exit, true),
+    %%process_flag(trap_exit, true),
     State = #state{name=ServiceName},
     self() ! setup,
     {ok, State}.
@@ -96,18 +97,7 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
     PathStr = PathVar#variant.value,
     Path = list_to_atom(PathStr),
 
-    case lists:keysearch(Path, 1, State#state.objects) of
-	{value, {Path, Object}} ->
-	    Object ! {dbus_method_call, Header, Conn};
-
-	_ ->
-	    ErrorName = "org.freedesktop.DBus.Error.UnknownObject",
-	    ErrorText = "Erlang: Object not found: " ++ PathStr,
-	    {ok, Reply} = dbus_message:build_error(Header, ErrorName, ErrorText),
-	    io:format("Reply ~p~n", [Reply]),
-	    ok = dbus_connection:cast(Conn, Reply)
-    end,
-    {noreply, State};
+    handle_method_call(Path, Header, Conn, State);
 
 handle_info({'EXIT', Pid, Reason}, State) ->
     case handle_unregister_object(Pid, State) of
@@ -152,3 +142,44 @@ handle_unregister_object(Object, State) ->
 	false ->
 	    {error, not_registered, State}
     end.
+
+
+handle_method_call('/', Header, Conn, State) ->
+    {_, MemberVar} = dbus_message:header_fetch(?HEADER_MEMBER, Header),
+    MemberStr = MemberVar#variant.value,
+    Member = list_to_atom(MemberStr),
+
+    case Member of
+	'Introspect' ->
+	    Elements = lists:foldl(fun({Path, _}, Res) ->
+					   [$/ | PathStr] = atom_to_list(Path),
+					   [#node{name=PathStr} | Res]
+				   end, [], State#state.objects),
+	    Node = #node{name="/", elements=Elements},
+	    %%ReplyBody = State#state.xml_body,
+	    ReplyBody = dbus_introspect:to_xml(Node),
+	    io:format("Introspect ~p~n", [ReplyBody]),
+	    {ok, Reply} = dbus_message:build_method_return(Header, [string], [ReplyBody]),
+	    ok = dbus_connection:cast(Conn, Reply),
+	    {noreply, State};
+	_ ->
+	    ErrorName = "org.freedesktop.DBus.Error.UnknownMethod",
+	    ErrorText = "Erlang: Function not found: " ++ MemberStr,
+	    {ok, Reply} = dbus_message:build_error(Header, ErrorName, ErrorText),
+	    ok = dbus_connection:cast(Conn, Reply),
+	    {noreply, State}
+    end;
+handle_method_call(Path, Header, Conn, State) ->
+    case lists:keysearch(Path, 1, State#state.objects) of
+	{value, {Path, Object}} ->
+	    Object ! {dbus_method_call, Header, Conn};
+
+	_ ->
+	    PathStr = atom_to_list(Path),
+	    ErrorName = "org.freedesktop.DBus.Error.UnknownObject",
+	    ErrorText = "Erlang: Object not found: " ++ PathStr,
+	    {ok, Reply} = dbus_message:build_error(Header, ErrorName, ErrorText),
+	    io:format("Reply ~p~n", [Reply]),
+	    ok = dbus_connection:cast(Conn, Reply)
+    end,
+    {noreply, State}.

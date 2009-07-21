@@ -44,7 +44,7 @@ export_service(ServiceName) ->
 %% gen_server callbacks
 %%
 init([]) ->
-    process_flag(trap_exit, true),
+    %%process_flag(trap_exit, true),
     dbus_bus_reg:set_service_reg(self()),
     {ok, Service} = dbus_service:start_link(dummy),
     {ok, #state{service=Service}}.

@@ -72,7 +72,7 @@ cast(Header) ->
 %% gen_server callbacks
 %%
 init([]) ->
-    process_flag(trap_exit, true),
+    %%process_flag(trap_exit, true),
     {ok, #state{}}.
 
 
