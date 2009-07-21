@@ -18,6 +18,7 @@
 	 'GetTuple'/3,
 	 'GetDict'/1,
 	 'GetDict'/3,
+	 'RaiseException'/1,
 	 'RaiseException'/3
 	]).
 
@@ -34,9 +35,10 @@ start_link(Service, Path) ->
 
 init([Service, Path]) ->
     State = #state{},
+    Methods = ['HelloWorld', 'GetTuple', 'GetDict', 'RaiseException'],
     {ok, {Service, Path, [
 			  {interface, 'com.example.SampleInterface'},
-			  {methods, ['HelloWorld', 'GetTuple', 'GetDict']},
+			  {methods, Methods},
 			  {signals, []}
 			 ]}, State}.
 
@@ -45,9 +47,12 @@ init([Service, Path]) ->
      {signature, [string], [{array, string}]}].
 
 'HelloWorld'([Hello_message], From, State) ->
+%%    {reply, ["Hello callback", " from Erlang " ++ get_source_name(), "with unique name", "FIXME"], State}.
     self() ! {hello, [Hello_message], From},
     {noreply, State}.
 
+'RaiseException'(dbus_info) ->
+    [{signature, [], []}].
 'RaiseException'([], From, State) ->
     {dbus_error, "com.example.DemoException",
      "The RaiseException method does what you might expect", State}.
@@ -60,14 +65,15 @@ init([Service, Path]) ->
 
 
 'GetDict'(dbus_info) ->
-    [{interface, 'com.example.SampleInterface'}].
+    [{interface, 'com.example.SampleInterface'},
+     {signature, [], [{dict, string, string}]}].
 
 'GetDict'([], _From, State) ->
     List = [{"first", "Hello"},
 	    {"second", " from " ++ get_source_name()}],
     Dict = dict:from_list(List),
 
-    {reply, #variant{type={dict, string, string}, value=Dict}, State}.
+    {reply, Dict, State}.
 
 
 handle_info({hello, [Hello_message], From}, State) ->
