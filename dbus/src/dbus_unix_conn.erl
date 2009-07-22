@@ -18,22 +18,22 @@
 -define(IS_NULLTERM, 4).
 
 connect(BusOptions, Options) ->
-    Path =
+    {Flags, Path} =
 	case lists:keysearch(path, 1, BusOptions) of
 	    {value, {_, Path1}} ->
-		Path1;
+		{?IS_NULLTERM, Path1};
 	    _ ->
 		case lists:keysearch(abstract, 1, BusOptions) of
 		    {value, {_, Path2}} ->
 			%[$\0 | Path2];
-			Path2;
+			{?IS_ABSTRACT bor ?IS_NULLTERM, Path2};
 		    _ ->
 			throw(no_path)
 		end
 	end,
 
     {ok, Port} = ?DRV:start(),
-    {ok, ClntSock} = ?DRV:open(Port, Path, ?IS_ABSTRACT bor ?IS_NULLTERM),
+    {ok, ClntSock} = ?DRV:open(Port, Path, Flags),
     {ok, ClntSockFd} = ?DRV:getfd(Port, ClntSock),
 %    io:format("shutdown~n", []),
 %    ?DRV:shutdown(Port),
