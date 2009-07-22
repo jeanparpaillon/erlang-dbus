@@ -31,16 +31,20 @@
 
 -record(state, {
 	  owner,
-	  sock
+	  sock,
+	  type
 	 }).
 
 -define(SERVER, ?MODULE).
 
-start_link(DbusHost, DbusPort) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [DbusHost, DbusPort, self()], []).
+start_link(Sock) when is_pid(Sock) ->
+    start_link(Sock, []).
 
-start_link(Sock) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [Sock, self()], []).
+start_link(DbusHost, DbusPort) when is_integer(DbusPort) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [DbusHost, DbusPort, self()], []);
+
+start_link(Sock, Options) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [Sock, Options, self()], []).
 
 stop() ->
     gen_server:cast(?SERVER, stop).
@@ -49,22 +53,45 @@ stop() ->
 %%
 %% gen_server callbacks
 %%
-init([DbusHost, DbusPort, Owner]) ->
+init([DbusHost, DbusPort, Owner]) when is_integer(DbusPort) ->
     {ok, Sock} = dbus_tcp_conn:connect(DbusHost, DbusPort, [list, {packet, 0}]),
     init_common(Sock, Owner);
-init([Sock, Owner]) ->
+init([Sock, Options, Owner]) when is_list(Options) ->
     dbus_transport:change_owner(Sock, Owner, self()),
-    init_common(Sock, Owner).
+    init_common(Sock, Owner, Options).
 
 
 init_common(Sock, Owner) ->
+    init_common(Sock, Owner, []).
+
+init_common(Sock, Owner, Options) ->
     User = os:getenv("USER"),
     ok = dbus_transport:send(Sock, <<0>>),
-    ok = dbus_transport:send(Sock, ["AUTH DBUS_COOKIE_SHA1 ",
-			     list_to_hexlist(User),
-			     "\r\n"]),
+
+    Auth_type =
+	case lists:keysearch(auth, 1, Options) of
+	    {value, {auth, Type}} ->
+	        Type;
+	    false ->
+	        detect
+	end,
+
+    Auth_str =
+	case Auth_type of
+	    external ->
+	        "AUTH EXTERNAL 31303030\r\n";
+	    cookie ->
+	        ["AUTH DBUS_COOKIE_SHA1 ",
+	         list_to_hexlist(User), "\r\n"];
+	    detect ->
+	        "AUTH\r\n"
+	end,
+
+    ok = dbus_transport:send(Sock, Auth_str),
+
     {ok, #state{sock=Sock,
-		owner=Owner}}.
+		owner=Owner,
+	        type=Auth_type}}.
 
 
 code_change(_OldVsn, State, _Extra) ->

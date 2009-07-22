@@ -88,7 +88,7 @@ init([#bus_id{scheme=tcp,options=BusOptions}, Options, Owner]) ->
 		   end,
 
     {ok, Sock} = dbus_tcp_conn:connect(Host, Port, Options),
-    {ok, Auth} = dbus_auth:start_link(Sock),
+    {ok, Auth} = dbus_auth:start_link(Sock, [{auth, cookie}]),
     {ok, #state{sock=Sock,
 		auth=Auth,
 		owner=Owner}};
@@ -96,7 +96,7 @@ init([#bus_id{scheme=tcp,options=BusOptions}, Options, Owner]) ->
 init([#bus_id{scheme=unix, options=BusOptions}, Options, Owner]) ->
     true = link(Owner),
     {ok, Sock} = dbus_unix_conn:connect(BusOptions, Options),
-    {ok, Auth} = dbus_auth:start_link(Sock),
+    {ok, Auth} = dbus_auth:start_link(Sock, [{auth, external}]),
     {ok, #state{sock=Sock,
 		auth=Auth,
 		owner=Owner}};
