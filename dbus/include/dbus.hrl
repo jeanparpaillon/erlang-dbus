@@ -32,7 +32,7 @@
 -record(bus_id, {
 	  scheme,				% tcp or unix
 	  options				% tcp: address, port
-						% unix: path
+						% unix: path|abstract
 	 }).
 
 -record(message, {
