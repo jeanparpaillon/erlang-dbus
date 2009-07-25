@@ -35,7 +35,8 @@
 	 handle_info/2,
 	 terminate/2]).
 
--export([env_to_bus_id/0,
+-export([get_bus_id/1,
+         env_to_bus_id/0,
 	 str_to_bus_id/1,
 	 parse_params/1,
 	 parse_param/1]).
@@ -390,6 +391,12 @@ handle_release_service(Service, Pid, State) ->
 %% 	    {error, not_registered, State}
 %%     end.
 
+
+get_bus_id(session) ->
+    [BusId|_R] = env_to_bus_id(),
+    BusId;
+get_bus_id(system) ->
+    #bus_id{scheme=unix,options=[{path,?DEFAULT_BUS_SYSTEM}]}.
 
 env_to_bus_id() ->
     str_to_bus_id(os:getenv(?SESSION_ENV)).
