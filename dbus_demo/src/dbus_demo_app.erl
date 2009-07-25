@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
 %%% File    : dbus_demo_app.erl
-%%% Author  : Mikael Magnusson <mikael@skinner.hem.za.org>
+%%% Author  : Mikael Magnusson <mikma@users.sourceforge.net>
 %%% Description : 
 %%%
-%%% Created : 29 Oct 2006 by Mikael Magnusson <mikael@skinner.hem.za.org>
+%%% Created : 29 Oct 2006 by Mikael Magnusson <mikma@users.sourceforge.net>
 %%%-------------------------------------------------------------------
 -module(dbus_demo_app).
 
