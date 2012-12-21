@@ -6,7 +6,7 @@
 
 -module(dbus_introspect).
 
--include("xmerl.hrl").
+-include_lib("xmerl/include/xmerl.hrl").
 -include("dbus.hrl").
 
 -export([
