@@ -53,7 +53,7 @@ init([Service, Path]) ->
 
 'RaiseException'(dbus_info) ->
     [{signature, [], []}].
-'RaiseException'([], From, State) ->
+'RaiseException'([], _From, State) ->
     {dbus_error, "com.example.DemoException",
      "The RaiseException method does what you might expect", State}.
 

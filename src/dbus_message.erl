@@ -165,29 +165,29 @@
 
 
 
-build_hello(Serial) ->
-    Headers = [
-	       {?HEADER_PATH, #variant{type=object_path, value="/org/freedesktop/DBus"}},
-	       {?HEADER_DESTINATION, #variant{type=string, value="org.freedesktop.DBus"}},
-	       {?HEADER_INTERFACE, #variant{type=string, value="org.freedesktop.DBus"}},
-	       {?HEADER_MEMBER, #variant{type=string, value="Hello"}}
-	      ],
+%% build_hello(Serial) ->
+%%     Headers = [
+%% 	       {?HEADER_PATH, #variant{type=object_path, value="/org/freedesktop/DBus"}},
+%% 	       {?HEADER_DESTINATION, #variant{type=string, value="org.freedesktop.DBus"}},
+%% 	       {?HEADER_INTERFACE, #variant{type=string, value="org.freedesktop.DBus"}},
+%% 	       {?HEADER_MEMBER, #variant{type=string, value="Hello"}}
+%% 	      ],
 
-    #header{type=?TYPE_METHOD_CALL,
-	    serial=Serial,
-	    headers=Headers}.
+%%     #header{type=?TYPE_METHOD_CALL,
+%% 	    serial=Serial,
+%% 	    headers=Headers}.
 
-build_list_names(Serial) ->
-    Headers = [
-	       {?HEADER_PATH, #variant{type=object_path, value="/org/freedesktop/DBus"}},
-	       {?HEADER_DESTINATION, #variant{type=string, value="org.freedesktop.DBus"}},
-	       {?HEADER_INTERFACE, #variant{type=string, value="org.freedesktop.DBus"}},
-	       {?HEADER_MEMBER, #variant{type=string, value="ListNames"}}
-	      ],
+%% build_list_names(Serial) ->
+%%     Headers = [
+%% 	       {?HEADER_PATH, #variant{type=object_path, value="/org/freedesktop/DBus"}},
+%% 	       {?HEADER_DESTINATION, #variant{type=string, value="org.freedesktop.DBus"}},
+%% 	       {?HEADER_INTERFACE, #variant{type=string, value="org.freedesktop.DBus"}},
+%% 	       {?HEADER_MEMBER, #variant{type=string, value="ListNames"}}
+%% 	      ],
 
-    #header{type=?TYPE_METHOD_CALL,
-	    serial=Serial,
-	    headers=Headers}.
+%%     #header{type=?TYPE_METHOD_CALL,
+%% 	    serial=Serial,
+%% 	    headers=Headers}.
 
 build_error(Header, ErrorName, ErrorText) ->
 %%     Path = dbus_message:header_fetch(?HEADER_PATH, Header),

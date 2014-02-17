@@ -30,7 +30,7 @@ get_bus(BusId) ->
     {ok, Bus}.
 
 
-run_test(Bus, Name) ->
+run_test(Bus, _Name) ->
     {ok, Service} = dbus_bus:get_service(Bus, 'org.freedesktop.DBus'),
     {ok, Remote_object} = dbus_remote_service:get_object(Service, '/org/freedesktop/DBus'),
     io:format("Remote_object: ~p~n", [Remote_object]),

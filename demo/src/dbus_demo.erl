@@ -100,5 +100,5 @@ handle_info(Info, State) ->
 terminate(_Reason, _State) ->
     terminated.
 
-do_test(State) ->
+do_test(_State) ->
     exit(unimplemented).

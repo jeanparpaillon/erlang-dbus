@@ -1,5 +1,7 @@
+*~
 /Mnesia.*
 /ebin
+/demo/ebin
 .DS_Store
 /rel
 /deps

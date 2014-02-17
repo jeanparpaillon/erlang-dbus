@@ -160,7 +160,7 @@ calc_challenge() ->
 calc_response(ServerChallenge, Challenge, Cookie) ->
     A1 = ServerChallenge ++ ":" ++ Challenge ++ ":" ++ Cookie,
     io:format("A1: ~p~n", [A1]),
-    Digest = crypto:sha(A1),
+    Digest = crypto:hash(sha, A1),
     DigestHex = list_to_hexlist(binary_to_list(Digest)),
     Response = list_to_hexlist(Challenge ++ " " ++ DigestHex),
     Response.

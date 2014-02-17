@@ -335,7 +335,7 @@ default_dbus_node() ->
     DBusRootNode.
 
 
-handle_release_all_services(Pid, State) ->
+handle_release_all_services(Pid, _State) ->
     error_logger:info_msg("~p: handle_release_all_services ~p~n", [?MODULE, Pid]),
     throw(unimplemented).
 
@@ -428,7 +428,7 @@ parse_param(Param) when is_list(Param) ->
 	lists:splitwith(fun(A) -> A =/= ?KEY_DELIM end, Param),
     Key_name =
         case catch list_to_existing_atom(Key) of
-            {'EXIT', {badarg, Reason}} ->
+            {'EXIT', {badarg, _Reason}} ->
                 Key;
             Key_atom -> Key_atom
         end,
