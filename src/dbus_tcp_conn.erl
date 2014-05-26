@@ -1,6 +1,8 @@
 %%
 %% @copyright 2006-2007 Mikael Magnusson
+%% @copyright 2014 Jean Parpaillon
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @author Jean Parpaillon <jean.parpaillon@free.fr>
 %% @doc tcp connection gen_server
 %%
 %% Messages
@@ -8,6 +10,7 @@
 %% {closed, Pid}
 
 -module(dbus_tcp_conn).
+-compile([{parse_transform, lager_transform}]).
 
 -behaviour(gen_server).
 
@@ -43,17 +46,24 @@ connect(Host, Port, Options) ->
 %%
 init([Fd, Options, Owner]) when is_integer(Fd), is_pid(Owner) ->
     true = link(Owner),
-    {ok, Sock} = gen_tcp:fdopen(Fd, Options),
-    ok = inet:setopts(Sock, [{active, once}]),
-    {ok, #state{sock=Sock,
-		owner=Owner}};
+    case gen_tcp:fdopen(Fd, Options) of
+	{ok, Sock} -> 
+	    ok = inet:setopts(Sock, [{active, once}]),
+	    {ok, #state{sock=Sock, owner=Owner}};
+	{error, Err} ->
+	    lager:error("Error opening socket: ~p~n", [Err]),
+	    {error, Err}
+    end;
 init([Host, Port, Options, Owner]) ->
     true = link(Owner),
-    {ok, Sock} = gen_tcp:connect(Host, Port, Options),
-    ok = inet:setopts(Sock, [{active, once}]),
-    {ok, #state{sock=Sock,
-		owner=Owner}}.
-
+    case gen_tcp:connect(Host, Port, Options) of
+	{ok, Sock} ->
+	    ok = inet:setopts(Sock, [{active, once}]),
+	    {ok, #state{sock=Sock, owner=Owner}};
+	{error, Err} ->
+	    lager:error("Error opening socket: ~p~n", [Err]),
+	    {error, Err}
+    end.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
