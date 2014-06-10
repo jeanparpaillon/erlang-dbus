@@ -94,10 +94,11 @@ cast(Bus, Header) ->
 %% gen_server callbacks
 %%
 init([BusId, Owner]) ->
-    %%process_flag(trap_exit, true),
-    self() ! {setup, BusId},
-    {ok, #state{owner=Owner}}.
-
+    case setup(BusId) of
+	{ok, Conn} -> {ok, #state{owner=Owner, conn=Conn}};
+	ignore -> ignore;
+	{error, Err} -> {stop, Err}
+    end.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -211,11 +212,12 @@ handle_cast(Request, State) ->
     {noreply, State}.
 
 
-handle_info({setup, BusId}, State) when is_record(BusId, bus_id) ->
-    {ok, Conn} = dbus_connection:start_link(BusId, [list, {packet, 0}]),
-%%     ConnSpec = {{conn, DbusHost, DbusPort},{dbus_connection,start_link,[DbusHost, DbusPort, [list, {packet, 0}], self()]}, permanent, 10000, worker, [connection]},
-%%     {ok, Conn} = supervisor:start_child(dbus_sup, ConnSpec),
-    {noreply, State#state{conn=Conn}};
+handle_info({setup, BusId}, State) ->
+    case setup(BusId)of
+	{ok, Conn} -> {noreply, State#state{conn=Conn}};
+	ignore -> {noreply, State};
+	{error, Err} -> {stop, Err, State}
+    end;
 
 handle_info({auth_ok, Conn}, #state{conn=Conn}=State) ->
     
@@ -438,3 +440,9 @@ parse_value(port, Value) ->
     list_to_integer(Value);
 parse_value(_, Value) ->
     Value.
+
+%%%
+%%% Priv
+%%%
+setup(BusId) when is_record(BusId, bus_id) ->
+    dbus_connection:start_link(BusId, [list, {packet, 0}]).
