@@ -1,0 +1,18 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node name="/SomeObject">
+  <interface name="org.designfu.SampleInterface">
+    <method name="GetDict">
+    </method>
+    <method name="GetTuple">
+    </method>
+    <method name="HelloWorld">
+      <arg direction="in"  type="v" name="hello_message" />
+    </method>
+  </interface>
+  <interface name="org.freedesktop.DBus.Introspectable">
+    <method name="Introspect">
+      <arg direction="out" type="s" />
+    </method>
+  </interface>
+</node>
+
