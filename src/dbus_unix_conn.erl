@@ -11,8 +11,6 @@
 %% api
 -export([connect/2]).
 
--define(DRV, unixdom_drv).
-
 -define(IS_SERVER, 1).
 -define(IS_ABSTRACT, 2).
 -define(IS_NULLTERM, 4).
@@ -32,10 +30,10 @@ connect(BusOptions, Options) ->
 		end
 	end,
 
-    {ok, Port} = ?DRV:start(),
-    {ok, ClntSock} = ?DRV:open(Port, Path, Flags),
-    {ok, ClntSockFd} = ?DRV:getfd(Port, ClntSock),
-%    io:format("shutdown~n", []),
-%    ?DRV:shutdown(Port),
+    {ok, []} = uds_server:init([]),
+   % {ok, Port} = uds:listen(Path),
+    %{ok, Port} = uds:connect(Path),
+    {ok, ClntSock} = uds:connect(Path),
+    {ok, ClntSockFd} = uds:accept(ClntSock),
     {ok, Sock} = dbus_tcp_conn:connect(ClntSockFd, Options),
     {ok, Sock}.
