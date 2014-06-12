@@ -30,6 +30,5 @@ stop(_State) ->
 start() ->
     application:start(crypto),
     application:start(sasl),
-    application:start(unixdom_drv),
     application:start(xmerl),
     application:start(dbus).

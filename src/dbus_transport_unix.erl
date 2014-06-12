@@ -33,6 +33,7 @@
 -define(IS_NULLTERM, 4).
 
 connect(BusOptions, Options) ->
+    
     {_Flags, Path} =
 	case lists:keysearch(path, 1, BusOptions) of
 	    {value, {_, Path1}} ->
@@ -45,7 +46,7 @@ connect(BusOptions, Options) ->
 			throw(no_path)
 		end
 	end,
-    gen_server:start_link(?MODULE, [Path, Options, self()]).
+    gen_server:start_link(?MODULE, [Path, Options, self()],[]).
 
 %%
 %% gen_server callbacks
