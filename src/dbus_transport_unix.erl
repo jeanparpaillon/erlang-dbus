@@ -33,7 +33,6 @@
 -define(IS_NULLTERM, 4).
 
 connect(BusOptions, Options) ->
-    
     {_Flags, Path} =
 	case lists:keysearch(path, 1, BusOptions) of
 	    {value, {_, Path1}} ->
@@ -53,7 +52,6 @@ connect(BusOptions, Options) ->
 %%
 init([Path, _Options, Owner]) when is_pid(Owner) ->
     true = link(Owner),
-    uds_server:start_link(),
     try uds:connect(Path) of
 	{ok, Sock} ->
 	    uds:set_active(Sock, once),
