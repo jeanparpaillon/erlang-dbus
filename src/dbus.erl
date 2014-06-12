@@ -13,6 +13,9 @@
 %% api:s
 -export([start/0]).
 
+%% helpers
+-export([get_system_bus/0, get_session_bus/0]).
+
 %% application callbacks
 start(normal, []) ->
     error_logger:logfile({open, "dbus.log"}),
@@ -32,3 +35,9 @@ start() ->
     application:start(sasl),
     application:start(xmerl),
     application:start(dbus).
+
+get_system_bus() ->
+    dbus_bus_reg:get_bus(dbus_bus:get_bus_id(system)).
+
+get_session_bus() ->
+    dbus_bus_reg:get_bus(dbus_bus:get_bus_id(session)).
