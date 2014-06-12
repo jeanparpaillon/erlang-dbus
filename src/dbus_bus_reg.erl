@@ -1,10 +1,12 @@
 %%
 %% @copyright 2006-2007 Mikael Magnusson
+%% @copyright 2014 Jean Parpaillon
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @author Jean Parpaillon <jean.parpaillon@free.fr>
 %% @doc Bus registry
 %%
-
 -module(dbus_bus_reg).
+-compile([{parse_transform, lager_transform}]).
 
 -behaviour(gen_server).
 
@@ -47,14 +49,6 @@ get_bus(BusId) when is_record(BusId, bus_id) ->
 release_bus(Bus) when is_pid(Bus) ->
     gen_server:call(?SERVER, {release_bus, Bus}).
 
-%%     case R of
-%% 	{ok, Pid} ->
-%% 	    link(Pid);
-%% 	_ ->
-%% 	    ignore
-%%     end,
-%%     R.
-	    
 export_service(Service, ServiceName) ->
     gen_server:call(?SERVER, {export_service, Service, ServiceName}).
 
@@ -66,7 +60,6 @@ set_service_reg(ServiceReg) ->
 
 cast(Header) ->
     gen_server:cast(?SERVER, {cast, Header}).
-    
 
 %%
 %% gen_server callbacks
@@ -95,7 +88,7 @@ handle_call({release_bus, Bus}, _From, State) when is_pid(Bus) ->
     Busses = State#state.busses,
     case lists:keysearch(Bus, 2, Busses) of
 	{value, {BusId, _Bus}} ->
-            io:format("Release BusId ~p~n", [BusId]),
+            lager:debug("Release BusId ~p~n", [BusId]),
             Busses1 = lists:keydelete(Bus, 2, Busses),
             ok = dbus_bus:stop(Bus),
             {reply, ok, State#state{busses=Busses1}};
@@ -106,7 +99,7 @@ handle_call({release_bus, Bus}, _From, State) when is_pid(Bus) ->
 handle_call({export_service, _Service, ServiceName}, _From, State) ->
     Busses = State#state.busses,
     Fun = fun({_, Bus}) ->
-		  io:format("export_service bus ~p~n", [Bus]),
+		  lager:debug("export_service bus ~p~n", [Bus]),
 		  ok = dbus_bus:export_service(Bus, ServiceName)
 	  end,
     io:format("export_service name ~p~n", [ServiceName]),
@@ -116,15 +109,15 @@ handle_call({export_service, _Service, ServiceName}, _From, State) ->
 handle_call({unexport_service, _Service, ServiceName}, _From, State) ->
     Busses = State#state.busses,
     Fun = fun({_, Bus}) ->
-		  io:format("~p unexport_service bus ~p~n", [?MODULE, Bus]),
+		  lager:debug("~p unexport_service bus ~p~n", [?MODULE, Bus]),
 		  ok = dbus_bus:unexport_service(Bus, ServiceName)
 	  end,
-    io:format("~p unexport_service name ~p~n", [?MODULE, ServiceName]),
+    lager:debug("~p unexport_service name ~p~n", [?MODULE, ServiceName]),
     lists:foreach(Fun, Busses),
     {reply, ok, State};
 
 handle_call(Request, _From, State) ->
-    error_logger:error_msg("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
+    lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
 
 
@@ -140,7 +133,7 @@ handle_cast({cast, Header}, State) ->
     {noreply, State};
 
 handle_cast(Request, State) ->
-    error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
+    lager:error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
 
@@ -167,7 +160,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     end;
 
 handle_info(Info, State) ->
-    error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
+    lager:error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
 

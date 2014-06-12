@@ -1,10 +1,12 @@
 %%
 %% @copyright 2006-2007 Mikael Magnusson
+%% @copyright 2014 Jean Parpaillon
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @author Jean Parpaillon <jean.parpaillon@free.fr>
 %% @doc Bus gen_server
 %%
-
 -module(dbus_bus).
+-compile([{parse_transform, lager_transform}]).
 
 -include("dbus.hrl").
 
@@ -117,7 +119,7 @@ handle_call(wait_ready, _From, #state{state=up}=State) ->
 
 handle_call(wait_ready, From, State) ->
     Waiting = [ From | State#state.waiting ],
-    io:format("wait_ready received ~p~n", [Waiting]),
+    lager:debug("wait_ready received ~p~n", [Waiting]),
     {noreply, State#state{waiting=Waiting}};
 
 handle_call({export_service, ServiceName}, _From, State) ->
@@ -152,12 +154,12 @@ handle_call({get_service, ServiceName, Pid}, _From, State) ->
     end;
 
 handle_call({release_service, Service, Pid}, _From, State) ->
-    error_logger:info_msg("~p: ~p release_service ~p ~p~n",
+    lager:error("~p: ~p release_service ~p ~p~n",
                           [?MODULE, self(), Service, Pid]),
     handle_release_service(Service, Pid, State);
 
 handle_call(Request, _From, State) ->
-    error_logger:error_msg("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
+    lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
 
 
@@ -208,7 +210,7 @@ handle_cast({cast, Header}, State) ->
     {noreply, State};
 
 handle_cast(Request, State) ->
-    error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
+    lager:error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
 
@@ -226,7 +228,7 @@ handle_info({auth_ok, Conn}, #state{conn=Conn}=State) ->
 	dbus_proxy:start_link(self(), Conn, "org.freedesktop.DBus", "/", DBusRootNode),
     {ok, DBusIfaceObj} = dbus_proxy:interface(DBusObj, "org.freedesktop.DBus"),
     ok = dbus_proxy:call(DBusIfaceObj, 'Hello', [], [{reply, self(), hello}]),
-    io:format("Call returned~n"),
+    lager:debug("Call returned~n"),
 
     Owner = State#state.owner,
     Owner ! {bus_ready, self()},
@@ -238,7 +240,7 @@ handle_info({auth_ok, Conn}, #state{conn=Conn}=State) ->
 
 handle_info({reply, hello, {ok, Reply}}, State) ->
 %%     DBusObj = State#state.dbus_object,
-    error_logger:info_msg("Hello reply ~p~n", [Reply]),
+    lager:debug("Hello reply ~p~n", [Reply]),
     [Id] = Reply,
 
 %%     {ok, DBusIntrospectable} = dbus_proxy:interface(DBusObj, "org.freedesktop.DBus.Introspectable"),
@@ -269,7 +271,7 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
     {noreply, State};
 
 handle_info({dbus_signal, Header, Conn}, #state{conn=Conn}=State) ->
-    io:format("Ignore signal ~p~n", [Header]),
+    lager:debug("Ignore signal ~p~n", [Header]),
     
     Signal_handlers = State#state.signal_handlers,
     Fun = fun({_Match, Tag, Pid}) ->
@@ -290,7 +292,7 @@ handle_info({proxy, Result, From, _Obj}, State) ->
     {noreply, State};
 
 handle_info({'EXIT', Pid, Reason}, State) ->
-    error_logger:info_msg("~p: EXIT ~p ~p~n", [?MODULE, Pid, Reason]),
+    lager:error("~p: EXIT ~p ~p~n", [?MODULE, Pid, Reason]),
     case handle_release_all_services(Pid, State) of
 	{ok, State1} ->
 	    {noreply, State1};
@@ -306,7 +308,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     end;
 
 handle_info(Info, State) ->
-    error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
+    lager:error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
 
@@ -316,10 +318,9 @@ terminate(_Reason, _State) ->
 
 reply_waiting(Reply, State) ->
     Fun = fun(From) ->
-		    io:format("reply_waiting ~p~n", [From]),
-		    gen_server:reply(From, Reply)
+		  lager:debug("reply_waiting ~p~n", [From]),
+		  gen_server:reply(From, Reply)
 	    end,
-
     lists:foreach(Fun, State#state.waiting).
 
 
@@ -338,7 +339,7 @@ default_dbus_node() ->
 
 
 handle_release_all_services(Pid, _State) ->
-    error_logger:info_msg("~p: handle_release_all_services ~p~n", [?MODULE, Pid]),
+    lager:error("~p: handle_release_all_services ~p~n", [?MODULE, Pid]),
     throw(unimplemented).
 
 
@@ -354,13 +355,13 @@ handle_release_service(Service, Pid, State) ->
                 [] ->
                     %% No more Pids, remove service.
                     true = unlink(Pid),
-                    error_logger:info_msg("~p: ~p Service terminated ~p~n", [?MODULE, self(), ServiceName]),
+                    lager:error("~p: ~p Service terminated ~p~n", [?MODULE, self(), ServiceName]),
                     Services1 = lists:keydelete(Service, 2, Services),
                     if
                         Services1 == [] ->
                             %%error_logger:info_msg("~p: No more services stopping ~p bus~n", [?MODULE, State#state.name]),
                             %%{stop, normal, State};
-                            error_logger:warning_msg("~p: No more services TODO stop bus~n", [?MODULE]),
+                            lager:error("~p: No more services TODO stop bus~n", [?MODULE]),
                             {reply, ok, State#state{services=Services1}};
                         true ->
                             {reply, ok, State#state{services=Services1}}

@@ -107,7 +107,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 handle_call(Request, _From, State) ->
-    error_logger:error_msg("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
+    lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
 
 
@@ -137,7 +137,7 @@ handle_cast(close, State) ->
     ok = dbus_transport:close(State#state.sock),
     {stop, normal, State#state{sock=undefined}};
 handle_cast(Request, State) ->
-    error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
+    lager:error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
 
@@ -162,7 +162,7 @@ handle_info({auth_ok, Auth, Sock}, #state{auth=Auth}=State) ->
 %%     {stop, normal, State};
 
 handle_info(Info, State) ->
-    error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
+    lager:error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
 
@@ -217,7 +217,7 @@ handle_message(?TYPE_METHOD_RETURN, Header, State) ->
 		ok = dbus_call:reply(Pid, Header),
 		State#state{pending=lists:keydelete(Serial, 1, Pending)};
 	    _ ->
-		io:format("Ignore reply ~p~n", [Serial]),
+		lager:debug("Ignore reply ~p~n", [Serial]),
 		State
 	end,
     {ok, State1};
@@ -232,7 +232,7 @@ handle_message(?TYPE_ERROR, Header, State) ->
 		ok = dbus_call:error(Pid, Header),
 		State#state{pending=lists:keydelete(Serial, 1, Pending)};
 	    _ ->
-		io:format("Ignore error ~p~n", [Serial]),
+		lager:debug("Ignore error ~p~n", [Serial]),
 		State
 	end,
     {ok, State1};
@@ -248,6 +248,6 @@ handle_message(?TYPE_SIGNAL, Header, State) ->
     {ok, State};
 
 handle_message(Type, Header, State) ->
-    io:format("Ignore ~p ~p~n", [Type, Header]),
+    lager:debug("Ignore ~p ~p~n", [Type, Header]),
     {ok, State}.
 
