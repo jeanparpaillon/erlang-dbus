@@ -5,7 +5,7 @@
 %%
 %% Glue module to dbus_tcp_conn and dbus_unix_conn transport modules
 %%
-%% Messages imlemented by transport modules
+%% Messages implemented by transport modules
 %%
 %% {received, Conn, Data}
 %% {closed, Conn}
