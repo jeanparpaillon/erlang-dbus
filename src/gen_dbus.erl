@@ -3,8 +3,8 @@
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
 %% @doc dbus object behaviour
 %%
-
 -module(gen_dbus).
+-compile([{parse_transform, lager_transform}]).
 
 -behaviour(gen_server).
 
@@ -100,17 +100,17 @@ setup(DBus_config, State) ->
                           %% Ignore
 			  {Iface1, Interfaces};
 		      {methods, Members} ->
-			  io:format("Methods: ~p~n", [Members]),
+			  lager:debug("Methods: ~p~n", [Members]),
                           {Iface,
                            build_introspect(method, Members,
                                             State1, Interfaces)};
  		      {signals, Members} ->
- 			  io:format("Signals: ~p~n", [Members]),
+ 			  lager:debug("Signals: ~p~n", [Members]),
  			  {Iface,
                            build_introspect(signal, Members,
                                             State1, Interfaces)};
 		      _ ->
-			  io:format("Ignore config param ~p~n", [E]),
+			  lager:debug("Ignore config param ~p~n", [E]),
 			  {Iface, Interfaces}
 		  end
 	  end,
@@ -123,7 +123,7 @@ setup(DBus_config, State) ->
                                                          methods=Methods,
                                                          signals=Signals}
                                       end, dict:to_list(Interfaces))},
-    io:format("Node: ~p~n", [Node]),
+    lager:debug("Node: ~p~n", [Node]),
     Xml_body = dbus_introspect:to_xml(Node),
     State2 = State1#state{default_iface=Iface,node=Node,xml_body=Xml_body},
     {ok, State2}.
@@ -134,7 +134,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 handle_call(Request, _From, State) ->
-    error_logger:error_msg("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
+    lager:debug("Unhandled call in: ~p~n", [Request]),
     {reply, ok, State}.
 
 
@@ -156,21 +156,19 @@ handle_cast({reply, From, Reply}, State) ->
 			{ok, ReplyMsg1} = dbus_message:build_error(Header, Iface, Text),
 			ReplyMsg1;
 		    _ ->
-			error_logger:info_msg("Illegal reply ~p~n", [Reply]),
+			lager:debug("Illegal reply ~p~n", [Reply]),
 			{ok, ReplyMsg1} = dbus_message:build_error(Header, 'org.freedesktop.DBus.Error.Failed', "Failed"),
 			ReplyMsg1
 		end,
 	    ok = dbus_connection:cast(Conn, ReplyMsg);
 	false ->
-	    error_logger:info_msg("Pending not found ~p: ~p ~p~n", [?MODULE, From, Pending]),
+	    lager:debug("Pending not found: ~p ~p~n", [From, Pending]),
 	    ignore
     end,
     Pending1 = lists:keydelete(From, 1, Pending),
     {noreply, State#state{pending=Pending1}};
 
 handle_cast({signal, Signal_name, Args, Options}, State) ->
-    io:format("in gen_server signal ~p~n", [Signal_name]),
-
     Iface_name =
 	case lists:keysearch(interface, 1, Options) of
 	    {value, {interface, Name}} ->
@@ -205,18 +203,14 @@ handle_cast(Request, State) ->
 
 handle_info({dbus_method_call, Header, Conn}, State) ->
     Module = State#state.module,
-    %%Service = State#state.service,
     {_, MemberVar} = dbus_message:header_fetch(?HEADER_MEMBER, Header),
     MemberStr = MemberVar#variant.value,
     Member = list_to_atom(MemberStr),
 
-%%     io:format("Handle call ~p ~p~n", [Header, Member]),
     case Member of
 	'Introspect' ->
-	    %% Empty introspect xml
-	    %%ReplyBody = "<!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\" \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\"><node></node>",
 	    ReplyBody = State#state.xml_body,
-	    io:format("Introspect ~p~n", [ReplyBody]),
+	    lager:debug("Introspect ~p~n", [ReplyBody]),
 	    {ok, Reply} = dbus_message:build_method_return(Header, [string], [ReplyBody]),
 	    ok = dbus_connection:cast(Conn, Reply),
 	    {noreply, State};
@@ -226,25 +220,23 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
 
 	    case catch do_method_call(Module, Member, Header, Conn, Sub) of
 		{'EXIT', {undef, _}=Reason} ->
-		    io:format("undef method ~p~n", [Reason]),
+		    lager:debug("undef method ~p~n", [Reason]),
 		    ErrorName = "org.freedesktop.DBus.Error.UnknownMethod",
 		    ErrorText = "Erlang: Function not found: " ++ MemberStr,
 		    {ok, Reply} = dbus_message:build_error(Header, ErrorName, ErrorText),
-%% 		    io:format("Reply ~p~n", [Reply]),
 		    ok = dbus_connection:cast(Conn, Reply),
 		    {noreply, State};
 		{'EXIT', Reason} ->
- 		    io:format("Error ~p~n", [Reason]),
+ 		    lager:debug("Error ~p~n", [Reason]),
 		    ErrorName = "org.freedesktop.DBus.Error.InvalidParameters",
 		    ErrorText = "Erlang: Invalid parameters.",
 		    {ok, Reply} = dbus_message:build_error(Header, ErrorName, ErrorText),
- 		    io:format("InvalidParameters ~p~n", [Reply]),
+ 		    lager:debug("InvalidParameters ~p~n", [Reply]),
 		    ok = dbus_connection:cast(Conn, Reply),
 		    {noreply, State};
 		{ok, Sub1} ->
 		    {noreply, State#state{sub=Sub1}};
 		{pending, From, Sub1, Signature} ->
-%% 		    io:format("Pending ~p~n", [From]),
 		    Pending = [{From, Header, Conn, Signature} |
                                State#state.pending],
 		    {noreply, State#state{sub=Sub1, pending=Pending}}
@@ -270,7 +262,7 @@ do_signal(Iface_name, Signal, Args, _Options, State) ->
     Path = State#state.path,
     {ok, Header} = dbus_message:build_signal(Path, Iface_name, Signal, Args),
     dbus_bus_reg:cast(Header),
-    error_logger:error_msg("~p: signal ~p~n", [?MODULE, Header]),
+    lager:debug("signal ~p~n", [Header]),
     {noreply, State}.
 
 do_method_call(Module, Member, Header, Conn, Sub) ->
@@ -284,7 +276,7 @@ do_method_call(Module, Member, Header, Conn, Sub) ->
 
     Signature =
         case lists:keysearch(signature, 1, Module:Member(dbus_info)) of
-            {value, {signature, Args, Returns}} ->
+            {value, {signature, _Args, Returns}} ->
                 Returns;
             false ->
                 []
@@ -298,12 +290,9 @@ do_method_call(Module, Member, Header, Conn, Sub) ->
 	{{noreply, Sub1}, none} ->
 	    {ok, Sub1};
 	{{reply, _ReplyBody, Sub1}, none} ->
-%% 	    io:format("Ignore reply ~p~n", [ReplyBody]),
 	    {ok, Sub1};
 	{{reply, ReplyBody, Sub1}, _} ->
-%% 	    io:format("Reply ~p~n", [ReplyBody]),
 	    {ok, Reply} = dbus_message:build_method_return(Header, Signature, [ReplyBody]),
-%% 	    io:format("Reply ~p~n", [Reply]),
 	    ok = dbus_connection:cast(Conn, Reply),
 	    {ok, Sub1};
 	{{noreply, Sub1}, _} ->

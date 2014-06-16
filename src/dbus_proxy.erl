@@ -1,10 +1,12 @@
 %%
 %% @copyright 2006-2007 Mikael Magnusson
+%% @copyright 2014 Jean Parpaillon
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @author Jean Parpaillon <jean.parpaillon@free.fr>
 %% @doc proxy gen server representing a remote D-BUS object
 %%
-
 -module(dbus_proxy).
+-compile([{parse_transform, lager_transform}]).
 
 -include("dbus.hrl").
 
@@ -85,7 +87,6 @@ call(Interface, MethodName, Args) ->
     call(Interface, MethodName, Args, []).
 
 call({interface, Proxy, IfaceName}, MethodName, Args, Options) ->
-%%     io:format("before gen_server call ~p~n", [MethodName]),
     case gen_server:call(Proxy, {method, IfaceName, MethodName, Args, Options}) of
 	ok ->
 	    ok;
@@ -106,11 +107,9 @@ connect_signal({interface, Proxy, IfaceName}, SignalName, Tag) ->
 %% gen_server callbacks
 %%
 init([Bus, Conn, Service, Path, Node]) ->
-%%     io:format("~p ~p: init~n", [?MODULE, ?LINE]),
     {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path, node=Node}};
 
 init([Bus, Conn, Service, Path, Tag, Owner]) ->
-%%     io:format("~p ~p: init ~p ~p~n", [?MODULE, ?LINE, Service, Path]),
     Header = dbus_introspect:build_introspect(Service, Path),
     ok = dbus_connection:call(Conn, Header, introspect),
     {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path,
@@ -122,8 +121,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 handle_call({method, IfaceName, MethodName, Args, Options}, From, State) ->
-    io:format("in gen_server call ~p~n", [MethodName]),
-
+    lager:debug("in gen_server call ~p~n", [MethodName]),
     Method =
 	case dbus_introspect:find_interface(IfaceName, State#state.node) of
 	    {ok, Iface} ->
@@ -152,7 +150,7 @@ handle_call(proxy_ready, From, State) ->
 	    {reply, ok, State}
     end;
 handle_call(Request, _From, State) ->
-    error_logger:error_msg("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
+    lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
 
 
@@ -169,19 +167,15 @@ handle_cast({connect_signal, IfaceName, SignalName, Tag, Pid}, State) ->
 
     {noreply, State};
 handle_cast(Request, State) ->
-    error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
+    lager:error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
 
-handle_info({reply, Header, introspect}, State) ->
+handle_info({reply, Header, introspect}, #state{owner=Owner}=State) ->
     Body = Header#header.body,
     [XmlBody] = Body,
     Node = dbus_introspect:from_xml_string(XmlBody),
-%%    error_logger:info_msg("introspect ~p: ~p~n", [?MODULE, Node]),
-
-    Owner = State#state.owner,
     Owner ! {proxy, ok, State#state.tag, self()},
-
     Fun =
 	fun(From) ->
 		gen_server:reply(From, ok)
@@ -191,8 +185,7 @@ handle_info({reply, Header, introspect}, State) ->
     {noreply, State#state{node=Node,waiting=[]}};
 
 handle_info({error, Header, introspect}, State) ->
-%%     Body = Header#header.body,
-    error_logger:info_msg("Error in introspect ~p: ~n", [?MODULE]),
+    lager:debug("Error in introspect ~p: ~n", [?MODULE]),
 
     {_Type1, ErrorName} = dbus_message:header_fetch(?HEADER_ERROR_NAME, Header),
     ErrorName1 = list_to_atom(ErrorName#variant.value),
@@ -206,17 +199,13 @@ handle_info({error, Header, introspect}, State) ->
 		gen_server:reply(From, {error, {ErrorName1, Header#header.body}})
 	end,
     lists:map(Fun, State#state.waiting),
-
     {stop, normal, State};
 
 handle_info({reply, Header, {tag, From, Options}}, State) ->
-%%     error_logger:info_msg("Reply ~p: ~p~n", [?MODULE, From]),
     reply(From, {ok, Header#header.body}, Options),
     {noreply, State};
 
 handle_info({error, Header, {tag, From, Options}}, State) ->
-%%     error_logger:info_msg("Error ~p: ~p~n", [?MODULE, From]),
-
     {_Type1, ErrorName} = dbus_message:header_fetch(?HEADER_ERROR_NAME, Header),
     ErrorName1 = list_to_atom(ErrorName#variant.value),
 
@@ -224,7 +213,7 @@ handle_info({error, Header, {tag, From, Options}}, State) ->
     {noreply, State};
 
 handle_info(Info, State) ->
-    error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
+    lager:error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
 
@@ -244,7 +233,7 @@ do_method(IfaceName, Method, Args, Options, From, State) ->
     MethodName = Method#method.name,
     Signature = Method#method.in_sig,
     Types = Method#method.in_types,
-%%     error_logger:info_msg("Call ~p: ~p ~p~n", [?MODULE, From, Signature]),
+
     Service = State#state.service,
     Path = State#state.path,
     Conn = State#state.conn,
@@ -257,25 +246,20 @@ do_method(IfaceName, Method, Args, Options, From, State) ->
 	       {?HEADER_SIGNATURE, #variant{type=signature, value=Signature}}
 	      ],
 
-%%     io:format("before marshal~n"),
     case catch dbus_marshaller:marshal_list(Types, Args) of
 	{ok, Body, _Pos} ->
 	    Header = #header{type=?TYPE_METHOD_CALL,
 			     headers=Headers,
 			     body=Body},
 
-%% 	    io:format("before call~n"),
 	    ok = dbus_connection:call(Conn, Header, {tag, From, Options}),
-%% 	    io:format("after call~n"),
 	    case lists:keysearch(reply, 1, Options) of
 		{value, {reply, _Pid, _Ref}} ->
-%% 		    io:format("reply ok~n"),
 		    {reply, ok, State};
 		_ ->
 		    {noreply, State}
 	    end;
 	{'EXIT', Reason} ->
-%% 	    io:format("exit call~n"),
 	    {reply, {error, {'org.freedesktop.DBus.InvalidParameters', Reason}}, State}
     end.
 

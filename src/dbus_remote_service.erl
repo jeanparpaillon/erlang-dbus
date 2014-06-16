@@ -1,7 +1,9 @@
 %%
-%% Unfinished
+%% @author Jean Parpaillon <jean.parpaillon@free.fr>
+%% @copyright Copyright 2014 Jean Parpaillon
 %%
 -module(dbus_remote_service).
+-compile([{parse_transform, lager_transform}]).
 
 -behaviour(gen_server).
 
@@ -28,50 +30,45 @@
 	  name,
 	  bus,
 	  conn,
-	  objects=[]
+	  objects
 	 }).
 
 start_link(Bus, Conn, ServiceName) ->
     gen_server:start_link(?MODULE, [Bus, Conn, ServiceName], []).
 
 get_object(Service, Path) ->
-    gen_server:call(Service, {get_object, Path, self()}).
+    gen_server:call(Service, {get_object, Path}).
 
 release_object(Service, Object) ->
-    gen_server:call(Service, {release_object, Object, self()}).
+    gen_server:call(Service, {release_object, Object}).
 
 %%
 %% gen_server callbacks
 %%
 init([Bus, Conn, ServiceName]) ->
-    %%process_flag(trap_exit, true),
-    State = #state{name=ServiceName, bus=Bus, conn=Conn},
-    self() ! setup,
-    {ok, State}.
-
+    Reg = ets:new(objects, [set, private]),
+    {ok, #state{name=ServiceName, bus=Bus, conn=Conn, objects=Reg}}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+handle_call({get_object, Path}, {Pid, Tag}, #state{objects=Reg}=State) ->
+    Obj = case ets:lookup(Reg, Path) of
+	      [{Path, Object, Pids}] ->
+		  ets:insert(Reg, {Path, Object, sets:add_element(Pid, Pids)}),
+		  Object;
+	      [] ->
+		  {ok, Object} = dbus_proxy:start_link(State#state.bus, 
+						       State#state.conn,
+						       State#state.name, 
+						       Path, 
+						       {Pid, Tag}),
+		  Object
+	  end,
+    true = link(Pid),
+    {reply, {ok, Obj}, State};
 
-handle_call({get_object, Path, Pid}, From, State) ->
-    Objects = State#state.objects,
-    case lists:keysearch(Path, 1, Objects) of
-	{value, {Path, Object, Pids}} ->
-	    true = link(Pid),
-	    Pids1 = [Pid | Pids],
-	    Value = {Path, Object, Pids1},
-	    Objects1 = lists:keyreplace(Object, 2, Objects, Value),
-	    {reply, {ok, Object}, State#state{objects=Objects1}};
-	false ->
-	    {ok, Object} = dbus_proxy:start_link(State#state.bus, State#state.conn,
-					    State#state.name, Path, From),
-	    true = link(Pid),
-	    Objects1 = [{Path, Object, [Pid]} | Objects],
-	    {noreply, State#state{objects=Objects1}}
-    end;
-
-handle_call({release_object, Object, Pid}, _From, State) ->
+handle_call({release_object, Object}, {Pid, _}, State) ->
     case handle_release_object(Object, Pid, State) of
 	{ok, State1} ->
 	    {reply, ok, State1};
@@ -82,14 +79,14 @@ handle_call({release_object, Object, Pid}, _From, State) ->
     end;
 
 handle_call(Request, _From, State) ->
-    error_logger:error_msg("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
+    lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
 
 
 handle_cast(stop, State) ->
     {stop, normal, State};
 handle_cast(Request, State) ->
-    error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
+    lager:error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
 
@@ -120,7 +117,7 @@ handle_info({proxy, Result, From, _Obj}, State) ->
     {noreply, State};
 
 handle_info(Info, State) ->
-    error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
+    lager:error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
 
@@ -132,40 +129,36 @@ terminate(_Reason, _State) ->
 %%
 %%     case handle_release_object(Object, Pid, State) of
 
-handle_release_object(Object, Pid, State) ->
-    error_logger:info_msg("~p: ~p handle_release_object ~p~n",
-                          [?MODULE, self(), Object]),
-
-    Objects = State#state.objects,
-    case lists:keysearch(Object, 2, Objects) of
-	{value, {Path, _, Pids}} ->
-            case lists:delete(Pid, Pids) of
-                Pids ->
-                    %% Pid was not in Pids!
-                    %% Do nothing.
-                    {error, not_registered, State};
-                [] ->
-                    %% No more Pids, remove object.
-                    true = unlink(Pid),
-                    error_logger:info_msg("~p: Object terminated ~p ~p~n", [?MODULE, Object, Path]),
-                    Objects1 = lists:keydelete(Object, 2, Objects),
-                    if
-                        Objects1 == [] ->
-                            error_logger:info_msg("~p: No more objects stopping ~p service~n", [?MODULE, State#state.name]),
-                            {stop, State};
-                            %%error_logger:warning_msg("~p: No more objects TODO stop service~n", [?MODULE]),
-                            %%{ok, State#state{objects=Objects1}};
-                        true ->
-                            {ok, State#state{objects=Objects1}}
-                    end;
-                Pids1 ->
-                    %% Update tuple with new Pids.
-                    true = unlink(Pid),
-                    Value = {Path, Object, Pids1},
-                    Objects1 = lists:keyreplace(Object, 2, Objects, Value),
-                    {ok, State#state{objects=Objects1}}
+handle_release_object(Object, Pid, #state{objects=Reg}=State) ->
+    lager:debug("~p: ~p handle_release_object ~p~n", [?MODULE, self(), Object]),
+    case ets:match_object(Reg, {'_', Object, '_'}) of
+	[{Path, _, Pids}] ->
+	    case sets:is_element(Pid, Pids) of
+		true ->
+		    true = unlink(Pid),
+		    Pids2 = sets:del_element(Pid, Pids),
+		    case sets:size(Pids2) of
+			0 ->
+			    % No more pids, remove object
+			    lager:debug("object terminated ~p ~p~n", [Object, Path]),
+			    ets:delete(Reg, Path),
+			    case ets:info(Reg, size) of
+				0 ->
+				    lager:debug("No more object in service, stopping service ~p~n", [State#state.name]),
+				    {stop, State};
+				_ ->
+				    {ok, State}
+			    end;
+			_ ->
+			    % Update registry entry
+			    ets:insert(Reg, {Path, Object, Pids2}),
+			    {ok, State}
+		    end;
+		false ->
+		    % Pid was not in Pids
+		    {error, not_resgitered, State}
 	    end;
-	false ->
+	[] ->
 	    {error, not_registered, State}
     end.
 

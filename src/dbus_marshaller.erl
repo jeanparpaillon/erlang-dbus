@@ -3,8 +3,8 @@
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
 %% @doc marshaller module
 %%
-
 -module(dbus_marshaller).
+-compile([{parse_transform, lager_transform}]).
 
 -include("dbus.hrl").
 
@@ -107,7 +107,6 @@ unmarshal_header(Bin) ->
 		     serial=Serial,
 		     headers=Headers},
     Pad = padding(8, Pos),
-%%     io:format("unmarshal_list ~p ~p ~p ~p~n", [Pos, Pad, Size, size(Data1)]),
     <<0:Pad, Body:Size/binary, Data2/binary>> = Data1,
     {ok, Header, Body, Data2}.
     
@@ -165,7 +164,6 @@ marshal({array, SubType}, Value, Pos) when is_list(Value) ->
     Pos1 = Pos0 + 4,
     Pad1 = padding(SubType, Pos1),
     Pos1b = Pos1 + Pad1 div 8,
-%%     io:format("Array ~p ~p ~p~n", [Pad1, Pos1, Pos1b]),
     {ok, Value2, Pos2} = marshal_array(SubType, Value, Pos1b),
     Length = Pos2 - Pos1b,
     {ok, Value1, Pos1} = marshal(uint32, Length, Pos0),
@@ -307,7 +305,6 @@ marshal_dict(KeyType, ValueType, Value, Pos) when is_list(Value) ->
 
 marshal_struct(SubTypes, Values, Pos) ->
     Pad = padding(8, Pos),
-%%     io:format("marshal_struct ~p ~p ~n", [Pos, Pad]),
     {ok, Values1, Pos1} = marshal_struct(SubTypes, Values, Pos + Pad div 8, []),
     if
 	Pad == 0 ->
@@ -428,12 +425,10 @@ unmarshal({array, SubType}, Data, Pos) when true ->
     unmarshal_array(SubType, Length, Data1, Pos1);
 unmarshal({struct, SubTypes}, Data, Pos) ->
     Pad = padding(8, Pos),
-%%     io:format("padding2 ~p~n", [Pad]),
     << 0:Pad, Data1/binary >> = Data,
     Pos1 = Pos + Pad div 8,
     {ok, Res, Data2, Pos2} = unmarshal_struct(SubTypes, Data1, Pos1),
     {ok, list_to_tuple(Res), Data2, Pos2};
-%%     {ok, Res, Data2, Pos2};
 
 unmarshal({dict, KeyType, ValueType}, Data, Pos) ->
     {ok, Length, Data1, Pos1} = unmarshal(uint32, Data, Pos),
@@ -443,9 +438,7 @@ unmarshal({dict, KeyType, ValueType}, Data, Pos) ->
 unmarshal(variant, Data, Pos) ->
     {ok, Signature, Data1, Pos1} = unmarshal(signature, Data, Pos),
     [Type] = unmarshal_signature(Signature),
-%%    io:format("Variant: ~p~n", [Type]),
     {ok, Value, Data2, Pos2} = unmarshal(Type, Data1, Pos1),
-%%    io:format("Value: ~p~n", [Value]),
     {ok, #variant{type=Type, value=Value}, Data2, Pos2}.
 
 
@@ -490,11 +483,6 @@ unmarshal_signature([Signature|R], Res) ->
     Type = unmarshal_signature(Signature),
     unmarshal_signature(R, Res ++ [Type]).
 
-
-%% unmarshal_dict_signature([$}|R], Res) ->
-%%     Res;
-%% unmarshal_dict_signature([Signature|R], Res) ->
-%%     unmarshal_signature(
 
 unmarshal_struct_signature([$)|R], Res) ->
     {Res, R};
@@ -558,17 +546,13 @@ unmarshal_array(SubType, Length, Data, Pos) ->
     Pad = padding(padding(SubType), Pos),
     << 0:Pad, Data1/binary >> = Data,
     Pos1 = Pos + Pad div 8,
-%%    io:format("array padding ~p~n", [[Pad, Pos1, Length]]),
-%%    io:format("unmarshal_array ~p ~p ~p~n", [SubType, Pos1, Length]),
     unmarshal_array(SubType, Length, Data1, [], Pos1).
 
 unmarshal_array(_SubType, 0, Data, Res, Pos) ->
     {ok, Res, Data, Pos};
 unmarshal_array(SubType, Length, Data, Res, Pos) when is_integer(Length), Length > 0 ->
-%%     io:format("unmarshal_array ~p~n", [[SubType, Length, Data, Res, Pos]]),
     {ok, Value, Data1, Pos1} = unmarshal(SubType, Data, Pos),
     Size = Pos1 - Pos,
-%%    io:format("unmarshal_array ~p~n", [[Length, Pos, Pos1, Size]]),
     unmarshal_array(SubType, Length - Size, Data1, Res ++ [Value], Pos1).
 
 unmarshal_list(Types, Data) when is_list(Types), is_binary(Data) ->
@@ -587,10 +571,8 @@ unmarshal_list([Type|T], Data, Res, Pos) ->
 
 unmarshal_string(LenType, Data, Pos) ->
     {ok, Length, Data1, Pos1} = unmarshal(LenType, Data, Pos),
-%%     io:format("unmarshal_string ~p ~p ~p~n", [LenType, Length, Data1]),
     << String:Length/binary, 0, Data2/binary >> = Data1,
     Pos2 = Pos1 + Length + 1,
-%%    io:format("String: ~p~n", [binary_to_list(String)]),
     {ok, binary_to_list(String), Data2, Pos2}.
 
 padding(byte) ->

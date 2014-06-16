@@ -177,26 +177,19 @@ terminate(_Reason, State) ->
 
 handle_data(Data, State) ->
     {ok, Messages, Data1} = dbus_marshaller:unmarshal_data(Data),
-
-%%     io:format("handle_data ~p ~p~n", [Messages, size(Data1)]),
-
     {ok, State1} = handle_messages(Messages, State#state{buf=Data1}),
-
     {ok, State1}.
 
 
 handle_method_call(Header, Tag, Pid, State) ->
     Sock = State#state.sock,
     Serial = State#state.serial + 1,
-%%     io:format("handle call ~p ~p ~p~n", [Header, Tag, Pid]),
 
     {ok, Call} = dbus_call:start_link(self(), Tag, Pid),
     Pending = [{Serial, Call} | State#state.pending],
 
     {ok, Data} = dbus_marshaller:marshal_message(Header#header{serial=Serial}),
     ok = dbus_transport:send(Sock, Data),
-
-%%     io:format("sent call ~p ~p~n", [Sock, Data]),
 
     {ok, State#state{pending=Pending, serial=Serial}}.
 
@@ -207,7 +200,6 @@ handle_messages([Header|R], State) ->
     handle_messages(R, State1).
 
 handle_message(?TYPE_METHOD_RETURN, Header, State) ->
-%%     io:format("Return ~p~n", [Header]),
     {_, SerialHdr} = dbus_message:header_fetch(?HEADER_REPLY_SERIAL, Header),
     Pending = State#state.pending,
     Serial = SerialHdr#variant.value,
@@ -222,7 +214,6 @@ handle_message(?TYPE_METHOD_RETURN, Header, State) ->
 	end,
     {ok, State1};
 handle_message(?TYPE_ERROR, Header, State) ->
-%%     io:format("Error ~p~n", [Header]),
     {_, SerialHdr} = dbus_message:header_fetch(?HEADER_REPLY_SERIAL, Header),
     Pending = State#state.pending,
     Serial = SerialHdr#variant.value,
@@ -238,7 +229,6 @@ handle_message(?TYPE_ERROR, Header, State) ->
     {ok, State1};
 handle_message(?TYPE_METHOD_CALL, Header, State) ->
     Owner = State#state.owner,
-%%     io:format("Method call ~p~n", [Owner]),
     Owner ! {dbus_method_call, Header, self()},
     {ok, State};
 

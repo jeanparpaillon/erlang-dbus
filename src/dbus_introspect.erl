@@ -36,7 +36,6 @@ to_xmerl(List) when is_list(List) ->
     lists:map(fun(Elem) -> to_xmerl(Elem) end, List);
 
 to_xmerl(Elem) when is_record(Elem, node) ->
-    io:format("node~n"),
     {node,
      case Elem#node.name of
 	 undefined ->
@@ -49,7 +48,6 @@ to_xmerl(Elem) when is_record(Elem, node) ->
     };
 
 to_xmerl(Elem) when is_record(Elem, interface) ->
-    io:format("interface ~p~n", [Elem]),
     {interface,
      [{name, Elem#interface.name}],
      to_xmerl(Elem#interface.methods) ++
@@ -57,7 +55,6 @@ to_xmerl(Elem) when is_record(Elem, interface) ->
      to_xmerl(Elem#interface.properties)};
 
 to_xmerl(Elem) when is_record(Elem, method) ->
-    io:format("method ~p~n", [Elem]),
     Result =
 	case Elem#method.result of
 	    none ->
@@ -67,9 +64,6 @@ to_xmerl(Elem) when is_record(Elem, method) ->
 	    Arg ->
 		[to_xmerl(Arg)]
 	end,
-%%     Fun = fun(Arg) ->
-%% 		  {arg, [{direction, Arg#
-
     {method,
      case Elem#method.name of
 	 undefined ->
@@ -81,7 +75,6 @@ to_xmerl(Elem) when is_record(Elem, method) ->
      Result};
 
 to_xmerl(Elem) when is_record(Elem, signal) ->
-    io:format("signal ~p~n", [Elem]),
     Result =
 	case Elem#signal.result of
 	    none ->
@@ -91,9 +84,6 @@ to_xmerl(Elem) when is_record(Elem, signal) ->
 	    Arg ->
 		[to_xmerl(Arg)]
 	end,
-%%     Fun = fun(Arg) ->
-%% 		  {arg, [{direction, Arg#
-
     {signal,
      case Elem#signal.name of
 	 undefined ->
@@ -105,7 +95,6 @@ to_xmerl(Elem) when is_record(Elem, signal) ->
      Result};
 
 to_xmerl(Elem) when is_record(Elem, arg) ->
-    io:format("arg ~p~n", [Elem]),
     {arg, 
      case Elem#arg.name of
 	 undefined ->
@@ -349,7 +338,6 @@ find_signal(Signal_name, Iface) when is_record(Iface, interface) ->
 test() ->
     Data = default_dbus_node(),
     Data1 = Data,
-    io:format("Data ~p~n", [Data1]),
     lists:flatten(xmerl:export_simple([to_xmerl(Data1)], xmerl_xml)).
 
 default_dbus_node() ->

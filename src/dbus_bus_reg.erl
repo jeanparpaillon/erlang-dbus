@@ -102,7 +102,7 @@ handle_call({export_service, _Service, ServiceName}, _From, State) ->
 		  lager:debug("export_service bus ~p~n", [Bus]),
 		  ok = dbus_bus:export_service(Bus, ServiceName)
 	  end,
-    io:format("export_service name ~p~n", [ServiceName]),
+    lager:debug("export_service name ~p~n", [ServiceName]),
     lists:foreach(Fun, Busses),
     {reply, ok, State};
 

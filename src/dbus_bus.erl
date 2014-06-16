@@ -46,16 +46,17 @@
 -record(state, {
 	  conn,
 	  state,
-	  waiting=[],
+	  waiting           = [],
 	  hello_ref,
 	  id,
 	  dbus_object,
 	  owner,
-	  services=[],
-	  signal_handlers=[]
+	  services                        :: term(), % tid()
+	  signal_handlers   = []
 	 }).
 
--define(DEFAULT_BUS_SYSTEM, "/var/run/dbus/system_bus_socket").
+%-define(DEFAULT_BUS_SYSTEM, #bus_id{scheme=tcp,options=[{host, "127.0.0.1"}, {port, 55556}]}).
+-define(DEFAULT_BUS_SYSTEM, #bus_id{scheme=unix,options=[{path, "/var/run/dbus/system_bus_socket"}]}).
 -define(SESSION_ENV, "DBUS_SESSION_BUS_ADDRESS").
 -define(SERVER_DELIM, $;).
 -define(TRANSPORT_DELIM, $:).
@@ -84,10 +85,10 @@ unexport_service(Bus, ServiceName) ->
     gen_server:call(Bus, {unexport_service, ServiceName}).
 
 get_service(Bus, ServiceName) ->
-    gen_server:call(Bus, {get_service, ServiceName, self()}).
+    gen_server:call(Bus, {get_service, ServiceName}).
 
 release_service(Bus, Service) ->
-    gen_server:call(Bus, {release_service, Service, self()}).
+    gen_server:call(Bus, {release_service, Service}).
 
 cast(Bus, Header) ->
     gen_server:cast(Bus, {cast, Header}).
@@ -97,9 +98,13 @@ cast(Bus, Header) ->
 %%
 init([BusId, Owner]) ->
     case setup(BusId) of
-	{ok, Conn} -> {ok, #state{owner=Owner, conn=Conn}};
-	ignore -> ignore;
-	{error, Err} -> {stop, Err}
+	{ok, Conn} -> 
+	    Reg = ets:new(services, [set, private]),
+	    {ok, #state{owner=Owner, conn=Conn, services=Reg}};
+	ignore ->
+	    ignore;
+	{error, Err} -> 
+	    {stop, Err}
     end.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -136,26 +141,21 @@ handle_call({unexport_service, ServiceName}, _From, State) ->
     {ok, _Header1} = dbus_proxy:call(BusIface, 'ReleaseName', [ServiceName]),
     {reply, ok, State};
 
-handle_call({get_service, ServiceName, Pid}, _From, State) ->
-    Services = State#state.services,
-    case lists:keysearch(ServiceName, 1, Services) of
-	{value, {ServiceName, Service, Pids}} ->
-	    true = link(Pid),
-	    Pids1 = [Pid | Pids],
-	    Value = {ServiceName, Service, Pids1},
-	    Services1 = lists:keyreplace(Service, 2, Services, Value),
-	    {reply, {ok, Service}, State#state{services=Services1}};
-	false ->
-	    {ok, Service} = dbus_remote_service:start_link(self(), State#state.conn,
-						      ServiceName),
-	    true = link(Pid),
-	    Services1 = [{ServiceName, Service, [Pid]} | Services],
-	    {reply, {ok, Service}, State#state{services=Services1}}
-    end;
+handle_call({get_service, Name}, {Pid, _}, #state{conn=Conn, services=Reg}=State) ->
+    Srv = case ets:lookup(Reg, Name) of
+	      [{Name, Service, Pids}] ->
+		  ets:insert(Reg, {Name, Service, sets:add_element(Pid, Pids)}),
+		  Service;
+	      [] ->
+		  {ok, Service} = dbus_remote_service:start_link(self(), Conn, Name),
+		  ets:insert(Reg, {Name, Service, sets:from_list([Pid])}),
+		  Service
+	  end,
+    true = link(Pid),
+    {reply, {ok, Srv}, State};
 
-handle_call({release_service, Service, Pid}, _From, State) ->
-    lager:error("~p: ~p release_service ~p ~p~n",
-                          [?MODULE, self(), Service, Pid]),
+handle_call({release_service, Service}, {Pid, _}, State) ->
+    lager:debug("~p: ~p release_service ~p ~p~n", [?MODULE, self(), Service, Pid]),
     handle_release_service(Service, Pid, State);
 
 handle_call(Request, _From, State) ->
@@ -221,25 +221,16 @@ handle_info({setup, BusId}, State) ->
 	{error, Err} -> {stop, Err, State}
     end;
 
-handle_info({auth_ok, Conn}, #state{conn=Conn}=State) ->
-    
+handle_info({auth_ok, Conn}, #state{conn=Conn, owner=Owner}=State) ->
     DBusRootNode = default_dbus_node(),
     {ok, DBusObj} =
 	dbus_proxy:start_link(self(), Conn, "org.freedesktop.DBus", "/", DBusRootNode),
     {ok, DBusIfaceObj} = dbus_proxy:interface(DBusObj, "org.freedesktop.DBus"),
     ok = dbus_proxy:call(DBusIfaceObj, 'Hello', [], [{reply, self(), hello}]),
-    lager:debug("Call returned~n"),
-
-    Owner = State#state.owner,
     Owner ! {bus_ready, self()},
-
-    {noreply, State#state{state=up,
-			  dbus_object=DBusObj
-			 }};
-
+    {noreply, State#state{state=up, dbus_object=DBusObj}};
 
 handle_info({reply, hello, {ok, Reply}}, State) ->
-%%     DBusObj = State#state.dbus_object,
     lager:debug("Hello reply ~p~n", [Reply]),
     [Id] = Reply,
 
@@ -270,18 +261,12 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
     dbus_service_reg ! {dbus_method_call, Header, Conn},
     {noreply, State};
 
-handle_info({dbus_signal, Header, Conn}, #state{conn=Conn}=State) ->
+handle_info({dbus_signal, Header, Conn}, #state{conn=Conn, signal_handlers=Handlers}=State) ->
     lager:debug("Ignore signal ~p~n", [Header]),
-    
-    Signal_handlers = State#state.signal_handlers,
-    Fun = fun({_Match, Tag, Pid}) ->
-		  Pid ! {dbus_signal, Header, Tag}
-	  end,
-    lists:foreach(Fun, Signal_handlers),
+    lists:foreach(fun({_Match, Tag, Pid}) ->
+			  Pid ! {dbus_signal, Header, Tag}
+		  end, Handlers),
     {noreply, State};
-
-%% handle_info({'EXIT', Pid, Reason}, State) ->
-%%     case lists:keysearch(Pid, 2, Services)
 
 handle_info({proxy, ok, From, Obj}, State) ->
     gen_server:reply(From, {ok, Obj}),
@@ -343,63 +328,34 @@ handle_release_all_services(Pid, _State) ->
     throw(unimplemented).
 
 
-handle_release_service(Service, Pid, State) ->
-    Services = State#state.services,
-    case lists:keysearch(Service, 2, Services) of
-	{value, {ServiceName, _, Pids}} ->
-            case lists:delete(Pid, Pids) of
-                Pids ->
-                    %% Pid was not in Pids!
-                    %% Do nothing
-                    {reply, {error, not_registered}, State};
-                [] ->
-                    %% No more Pids, remove service.
-                    true = unlink(Pid),
-                    lager:error("~p: ~p Service terminated ~p~n", [?MODULE, self(), ServiceName]),
-                    Services1 = lists:keydelete(Service, 2, Services),
-                    if
-                        Services1 == [] ->
-                            %%error_logger:info_msg("~p: No more services stopping ~p bus~n", [?MODULE, State#state.name]),
-                            %%{stop, normal, State};
-                            lager:error("~p: No more services TODO stop bus~n", [?MODULE]),
-                            {reply, ok, State#state{services=Services1}};
-                        true ->
-                            {reply, ok, State#state{services=Services1}}
-                    end;
-                Pids1->
-                    %% Update tuple with new Pids.
-                    true = unlink(Pid),
-                    Value = {ServiceName, Service, Pids1},
-                    Services1 = lists:keyreplace(Service, 2, Services, Value),
-                    {reply, ok, State#state{services=Services1}}
-            end;
-	false ->
+handle_release_service(Service, Pid, #state{services=Reg}=State) ->
+    case ets:match_object(Reg, {'_', Service, '_'}) of
+	[{Name, _, Pids}] ->
+	    case sets:is_element(Pid, Pids) of
+		true ->
+		    true = unlink(Pid),
+		    Pids2 = sets:del_element(Pid, Pids),
+		    case sets:size(Pids2) of
+			0 ->
+			    % No more pids
+			    {reply, ok, State};
+			_ ->
+			    % Update registery entry
+			    ets:insert(Reg, {Name, Service, Pids2}),
+			    {reply, ok, State}
+		    end;
+		false ->
+		    {reply, {error, not_registered}, State}
+	    end;
+	[] ->
 	    {reply, {error, not_registered}, State}
     end.
-
-%%     Services = State#state.services,
-%%     case lists:keysearch(Service, 2, Services) of
-%% 	{value, {Path, _}} ->
-%% 	    true = unlink(Service),
-%% 	    error_logger:info_msg("~p: Service terminated ~p ~p~n", [?MODULE, Service, Path]),
-%% 	    Services1 = lists:keydelete(Service, 2, Services),
-%% 	    if
-%% 		Services1 == [] ->
-%% 		    error_logger:info_msg("~p: No more services stopping ~p service~n", [?MODULE, State#state.name]),
-%% 		    {stop, State};
-%% 		true ->
-%% 		    {ok, State#state{services=Services1}}
-%% 	    end;
-%% 	false ->
-%% 	    {error, not_registered, State}
-%%     end.
-
 
 get_bus_id(session) ->
     [BusId|_R] = env_to_bus_id(),
     BusId;
 get_bus_id(system) ->
-    #bus_id{scheme=unix,options=[{path,?DEFAULT_BUS_SYSTEM}]}.
+    ?DEFAULT_BUS_SYSTEM.
 
 env_to_bus_id() ->
     str_to_bus_id(os:getenv(?SESSION_ENV)).

@@ -3,8 +3,8 @@
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
 %% @doc Register of exported D-BUS services gen_server
 %%
-
 -module(dbus_service_reg).
+-compile([{parse_transform, lager_transform}]).
 
 -behaviour(gen_server).
 
@@ -60,7 +60,7 @@ handle_call({export_service, ServiceName}, _From, State) ->
 	{value, {_, Service}} ->
 	    {reply, {ok, Service}, State};
 	_ ->
-	    io:format("~p: export_service name ~p~n", [?MODULE, ServiceName]),
+	    lager:debug("export_service name ~p~n", [ServiceName]),
 	    Service = State#state.service,
 	    ok = dbus_bus_reg:export_service(undefined, ServiceName),
 	    Services1 = [{ServiceName, Service}|Services],
@@ -68,32 +68,18 @@ handle_call({export_service, ServiceName}, _From, State) ->
     end;
 
 handle_call(Request, _From, State) ->
-    error_logger:error_msg("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
+    lager:error("Unhandled call in: ~p~n", [Request]),
     {reply, ok, State}.
 
 
 handle_cast(Request, State) ->
-    error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
+    lager:error("Unhandled cast in: ~p~n", [Request]),
     {noreply, State}.
 
 
 handle_info({dbus_method_call, Header, Conn}, State) ->
-%%     {_, ServiceNameVar} = dbus_message:header_fetch(?HEADER_DESTINATION, Header),
-%%     ServiceName = list_to_atom(ServiceNameVar#variant.value),
     Service = State#state.service,
-
-%%     io:format("Handle call ~p ~p~n", [Header, ServiceName]),
-%%     case lists:keysearch(ServiceName, 1, State#state.services) of
-%% 	{value, {ServiceName, Service}} ->
     Service ! {dbus_method_call, Header, Conn},
-
-%% 	_ ->
-%% 	    ErrorName = "org.freedesktop.DBus.Error.ServiceUnknown",
-%% 	    ErrorText = "Erlang: Service '" ++ [atom_to_list(ServiceName)] ++ "' not found.",
-%% 	    {ok, Reply} = dbus_message:build_error(Header, ErrorName, ErrorText),
-%% 	    io:format("Reply ~p~n", [Reply]),
-%% 	    ok = dbus_connection:reply(Conn, Reply)
-%%     end,
     {noreply, State};
 
 handle_info({new_bus, _Bus}, State) ->
@@ -107,7 +93,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     Services = State#state.services,
     case lists:keysearch(Pid, 2, Services) of
 	{value, {ServiceName, _}} ->
-	    error_logger:info_msg("~p ~p Terminated ~p~n", [?MODULE, Pid, Reason]),
+	    lager:debug("~p Terminated ~p~n", [Pid, Reason]),
 	    ok = dbus_bus_reg:unexport_service(Pid, ServiceName),
 	    Services1 =
 		lists:keydelete(Pid, 2, Services),
@@ -122,7 +108,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     end;
 
 handle_info(Info, State) ->
-    error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
+    lager:debug("Unhandled info in: ~p~n", [Info]),
     {noreply, State}.
 
 

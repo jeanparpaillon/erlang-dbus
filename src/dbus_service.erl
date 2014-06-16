@@ -3,8 +3,8 @@
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
 %% @doc Exported D-BUS service gen_server
 %%
-
 -module(dbus_service).
+-compile([{parse_transform, lager_transform}]).
 
 -behaviour(gen_server).
 
@@ -158,7 +158,7 @@ handle_method_call('/', Header, Conn, State) ->
 	    Node = #node{name="/", elements=Elements},
 	    %%ReplyBody = State#state.xml_body,
 	    ReplyBody = dbus_introspect:to_xml(Node),
-	    io:format("Introspect ~p~n", [ReplyBody]),
+	    lager:debug("Introspect ~p~n", [ReplyBody]),
 	    {ok, Reply} = dbus_message:build_method_return(Header, [string], [ReplyBody]),
 	    ok = dbus_connection:cast(Conn, Reply),
 	    {noreply, State};
@@ -179,7 +179,7 @@ handle_method_call(Path, Header, Conn, State) ->
 	    ErrorName = "org.freedesktop.DBus.Error.UnknownObject",
 	    ErrorText = "Erlang: Object not found: " ++ PathStr,
 	    {ok, Reply} = dbus_message:build_error(Header, ErrorName, ErrorText),
-	    io:format("Reply ~p~n", [Reply]),
+	    lager:debug("Reply ~p~n", [Reply]),
 	    ok = dbus_connection:cast(Conn, Reply)
     end,
     {noreply, State}.
