@@ -23,6 +23,9 @@
 	 handle_info/2,
 	 terminate/2]).
 
+% Needed for spawn_link
+-export([do_read/2]).
+
 -record(state, {
 	  sock,
 	  owner
@@ -31,6 +34,10 @@
 -define(IS_SERVER, 1).
 -define(IS_ABSTRACT, 2).
 -define(IS_NULLTERM, 4).
+
+-define(PF_LOCAL, 1).
+-define(UNIX_PATH_MAX, 108).
+-define(BACKLOG, 5).
 
 connect(BusOptions, Options) ->
     {_Flags, Path} =
@@ -50,18 +57,25 @@ connect(BusOptions, Options) ->
 %%
 %% gen_server callbacks
 %%
-init([Path, _Options, Owner]) when is_pid(Owner) ->
+init([Path, _Options, Owner]) when is_pid(Owner), is_list(Path) ->
     true = link(Owner),
-    try uds:connect(Path) of
+    case procket:socket(unix, stream, 0) of
 	{ok, Sock} ->
-	    uds:set_active(Sock, once),
-	    {ok, #state{sock=Sock, owner=Owner}};
+	    BinPath = list_to_binary(Path),
+	    SockUn = <<?PF_LOCAL:16/native,
+		       BinPath/binary,
+		       0:((?UNIX_PATH_MAX-byte_size(BinPath))*8)>>,
+	    case procket:connect(Sock, SockUn) of
+		ok ->
+		    %process_flag(trap_exit, true),
+		    spawn_link(?MODULE, do_read, [Sock, self()]),
+		    {ok, #state{sock=Sock, owner=Owner}};
+		{error, Err} ->
+		    lager:error("Error connecting socket: ~p~n", [Err]),
+		    {error, Err}
+	    end;
 	{error, Err} ->
-	    lager:error("Error opening socket: ~p~n", [Err]),
-	    {error, Err}
-    catch 
-	exit:Err -> 
-	    lager:error("Error opening socket: ~p~n", [Err]),
+	    lager:error("Error creating socket: ~p~n", [Err]),
 	    {error, Err}
     end.
 
@@ -85,12 +99,14 @@ handle_call(Request, _From, State) ->
     {reply, ok, State}.
 
 
-handle_cast({send, Data}, #state{sock=Sock}=State) ->
-    uds:send(Sock, Data),
+handle_cast({send, Data}, #state{sock=Sock}=State) when is_list(Data) ->
+    handle_cast({send, list_to_binary(Data)}, #state{sock=Sock}=State);
+handle_cast({send, Data}, #state{sock=Sock}=State) when is_binary(Data) ->
+    procket:sendto(Sock, Data, 0, <<>>),
     {noreply, State};
 
 handle_cast(close, #state{sock=Sock}=State) ->
-    uds:close(Sock),
+    procket:close(Sock),
     {stop, normal, State#state{sock=undefined}};
 
 handle_cast(stop, State) ->
@@ -101,9 +117,8 @@ handle_cast(Request, State) ->
     {noreply, State}.
 
 
-handle_info({unix, Sock, Data}, #state{sock=Sock, owner=Owner}=State) ->
+handle_info({unix, Data}, #state{owner=Owner}=State) ->
     Owner ! {received, self(), Data},
-    ok = uds:set_active(Sock, once),
     {noreply, State};
 
 handle_info({unix_closed, Sock}, #state{sock=Sock, owner=Owner}=State) ->
@@ -115,10 +130,24 @@ handle_info(Info, State) ->
     {noreply, State}.
 
 
-terminate(_Reason, State) ->
-    Sock = State#state.sock,
+terminate(_Reason, #state{sock=Sock}) ->
     case Sock of
 	undefined -> ignore;
-	_ -> uds:close(Sock)
+	_ -> procket:close(Sock)
     end,
     terminated.
+
+%%%
+%%% Priv
+%%%
+do_read(Sock, Pid) ->
+    case procket:recvfrom(Sock, 16#FFFF) of
+	{error, eagain} ->
+	    timer:sleep(10),
+	    do_read(Sock, Pid);
+	% EOF
+	{ok, <<>>} -> ok;
+	{ok, Buf} ->
+	    Pid ! {unix, Buf},
+	    do_read(Sock, Pid)
+    end.
