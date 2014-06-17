@@ -14,7 +14,7 @@
 
 %% api
 -export([
-	 start_link/5,
+	 start_link/4,
 	 stop/1,
 	 interface/2,
 	 call/2,
@@ -38,36 +38,39 @@
 	  node,					% #node()
 	  bus,					% bus connection
 	  conn,
-	  waiting=[],
-	  tag,
-	  owner
+	  waiting=[]
 	 }).
 
-start_link(Bus, Conn, Service, Path, Node) when is_atom(Service),
-                                                is_atom(Path) ->
-    start_link(Bus, Conn, atom_to_list(Service), atom_to_list(Path), Node);
-start_link(Bus, Conn, Service, Path, Node) when is_record(Node, node),
-						is_pid(Conn),
-						is_pid(Bus),
-                                                is_list(Service),
-                                                is_list(Path) ->
-    gen_server:start_link(?MODULE, [Bus, Conn, Service, Path, Node], []);
+-define(DBUS_HELLO_METHOD, #method{name="Hello", args=[], result=#arg{direction=out, type="s"}, 
+				   in_sig="", in_types=[]}).
+-define(DBUS_ADD_MATCH, #method{name="AddMatch", args=[#arg{direction=in, type="s"}], 
+				in_sig="s", in_types=[string]}).
+-define(DBUS_REQUEST_NAME, #method{name="RequestName", args=[#arg{direction=in, type="s"}, 
+							     #arg{direction=in, type="u"}, 
+							     #arg{direction=out, type="u"}], 
+				   in_sig="su", in_types=[string,uint32]}).
+-define(DBUS_RELEASE_NAME, #method{name="ReleaseName", args=[#arg{direction=in, type="s"}, 
+							     #arg{direction=out, type="u"}], 
+				   in_sig="s", in_types=[string]}).
+-define(DBUS_IFACE, #interface{name="org.freedesktop.DBus",
+			       methods=[?DBUS_HELLO_METHOD, ?DBUS_ADD_MATCH, 
+					?DBUS_REQUEST_NAME, ?DBUS_RELEASE_NAME]}).
 
-start_link(Bus, Conn, Service, Path, Tag) when is_atom(Service),
-                                               is_atom(Path) ->
-    start_link(Bus, Conn, atom_to_list(Service), atom_to_list(Path), Tag);
-start_link(Bus, Conn, Service, Path, Tag) when is_pid(Conn),
-					       is_pid(Bus),
-                                               is_list(Service),
-                                               is_list(Path) ->
-    gen_server:start_link(?MODULE, [Bus, Conn, Service, Path,Tag,self()], []).
-%%     {ok, Pid} = gen_server:start_link(?MODULE, [Bus, Conn, Service, Path], []),
-%%     case gen_server:call(Pid, proxy_ready) of
-%% 	ok ->
-%% 	    {ok, Pid};
-%% 	{error, Reason} ->
-%% 	    throw(Reason)
-%%     end.
+-define(DBUS_INTROSPECT_METHOD, #method{name="Introspect", args=[], result=#arg{direction=out, type="s"}, 
+					in_sig="", in_types=[]}).
+-define(DBUS_INTROSPECTABLE_IFACE, #interface{name="org.freedesktop.DBus.Introspectable", 
+					      methods=[?DBUS_INTROSPECT_METHOD]}).
+
+-define(DEFAULT_DBUS_NODE, #node{elements=[], interfaces=[?DBUS_IFACE, ?DBUS_INTROSPECTABLE_IFACE]}).
+
+start_link(Bus, Conn, Service, Path) when is_atom(Service),
+					  is_atom(Path) ->
+    start_link(Bus, Conn, atom_to_list(Service), atom_to_list(Path));
+start_link(Bus, Conn, Service, Path) when is_pid(Conn),
+					  is_pid(Bus),
+					  is_list(Service),
+					  is_list(Path) ->
+    gen_server:start_link(?MODULE, [Bus, Conn, Service, Path], []).
 
 
 stop(Proxy) ->
@@ -106,14 +109,11 @@ connect_signal({interface, Proxy, IfaceName}, SignalName, Tag) ->
 %%
 %% gen_server callbacks
 %%
-init([Bus, Conn, Service, Path, Node]) ->
-    {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path, node=Node}};
-
-init([Bus, Conn, Service, Path, Tag, Owner]) ->
-    Header = dbus_introspect:build_introspect(Service, Path),
-    ok = dbus_connection:call(Conn, Header, introspect),
-    {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path,
-		tag=Tag, owner=Owner}}.
+init([Bus, Conn, "org.freedesktop.DBus", "/"]) ->
+    {ok, #state{bus=Bus, conn=Conn, service="org.freedesktop.DBus", path="/", node=?DEFAULT_DBUS_NODE}};
+init([Bus, Conn, Service, Path]) ->
+    Node = do_introspect(Conn, Service, Path),
+    {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path, node=Node}}.
 
 
 code_change(_OldVsn, State, _Extra) ->
@@ -142,13 +142,6 @@ handle_call({method, IfaceName, MethodName, Args, Options}, From, State) ->
 	    do_method(IfaceName, Method, Args, Options, From, State)
     end;
 
-handle_call(proxy_ready, From, State) ->
-    case State#state.node of
-	undefined ->
-	    {noreply, State#state{waiting=[From]}};
-	_ ->
-	    {reply, ok, State}
-    end;
 handle_call(Request, _From, State) ->
     lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
@@ -170,36 +163,6 @@ handle_cast(Request, State) ->
     lager:error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
-
-handle_info({reply, Header, introspect}, #state{owner=Owner}=State) ->
-    Body = Header#header.body,
-    [XmlBody] = Body,
-    Node = dbus_introspect:from_xml_string(XmlBody),
-    Owner ! {proxy, ok, State#state.tag, self()},
-    Fun =
-	fun(From) ->
-		gen_server:reply(From, ok)
-	end,
-    lists:map(Fun, State#state.waiting),
-
-    {noreply, State#state{node=Node,waiting=[]}};
-
-handle_info({error, Header, introspect}, State) ->
-    lager:debug("Error in introspect ~p: ~n", [?MODULE]),
-
-    {_Type1, ErrorName} = dbus_message:header_fetch(?HEADER_ERROR_NAME, Header),
-    ErrorName1 = list_to_atom(ErrorName#variant.value),
-
-    Owner = State#state.owner,
-    Owner ! {proxy, {error, {ErrorName1, Header#header.body}},
-	     State#state.tag, self()},
-
-    Fun =
-	fun(From) ->
-		gen_server:reply(From, {error, {ErrorName1, Header#header.body}})
-	end,
-    lists:map(Fun, State#state.waiting),
-    {stop, normal, State};
 
 handle_info({reply, Header, {tag, From, Options}}, State) ->
     reply(From, {ok, Header#header.body}, Options),
@@ -263,4 +226,13 @@ do_method(IfaceName, Method, Args, Options, From, State) ->
 	    {reply, {error, {'org.freedesktop.DBus.InvalidParameters', Reason}}, State}
     end.
 
-
+do_introspect(Conn, Service, Path) ->
+    case dbus_connection:call(Conn, dbus_introspect:build_introspect(Service, Path)) of
+	{ok, Header} ->
+	    [XmlBody] = Header#header.body,
+	    {ok, dbus_introspect:from_xml_string(XmlBody)};
+	{error, Header} ->
+	    {_Type1, Err} = dbus_message:header_fetch(?HEADER_ERROR_NAME, Header),
+	    Err1 = list_to_atom(Err#variant.value),
+	    {error, {Err1, Header#header.body}}
+    end.

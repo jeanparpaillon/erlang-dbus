@@ -19,7 +19,6 @@
 	]).
 
 -export([
-%% 	 get_object/3,
 	 wait_ready/1,
 	 add_match/4,
 	 export_service/2,
@@ -55,7 +54,6 @@
 	  signal_handlers   = []
 	 }).
 
-%-define(DEFAULT_BUS_SYSTEM, #bus_id{scheme=tcp,options=[{host, "127.0.0.1"}, {port, 55556}]}).
 -define(DEFAULT_BUS_SYSTEM, #bus_id{scheme=unix,options=[{path, "/var/run/dbus/system_bus_socket"}]}).
 -define(SESSION_ENV, "DBUS_SESSION_BUS_ADDRESS").
 -define(SERVER_DELIM, $;).
@@ -68,9 +66,6 @@ connect(BusId) when is_record(BusId, bus_id) ->
 
 stop(Bus) ->
     gen_server:cast(Bus, stop).
-
-%% get_object(Bus, Service, Path) ->
-%%     gen_server:call(Bus, {get_object, Service, Path}).
 
 wait_ready(Bus) ->
     gen_server:call(Bus, wait_ready).
@@ -107,18 +102,11 @@ init([BusId, Owner]) ->
 	    {stop, Err}
     end.
 
+
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
-%% handle_call({get_object, Service, Path}, From, State) ->
-%%     case dbus_proxy:start_link(self(), State#state.conn, Service, Path, From) of
-%% 	{ok, Obj} ->
-%% 	    {noreply, State};
-%% 	E ->
-%% 	    {reply, E, State}
-%%     end;
-    
 handle_call(wait_ready, _From, #state{state=up}=State) ->
     {reply, ok, State};
 
@@ -222,9 +210,7 @@ handle_info({setup, BusId}, State) ->
     end;
 
 handle_info({auth_ok, Conn}, #state{conn=Conn, owner=Owner}=State) ->
-    DBusRootNode = default_dbus_node(),
-    {ok, DBusObj} =
-	dbus_proxy:start_link(self(), Conn, "org.freedesktop.DBus", "/", DBusRootNode),
+    {ok, DBusObj} = dbus_proxy:start_link(self(), Conn, "org.freedesktop.DBus", "/"),
     {ok, DBusIfaceObj} = dbus_proxy:interface(DBusObj, "org.freedesktop.DBus"),
     ok = dbus_proxy:call(DBusIfaceObj, 'Hello', [], [{reply, self(), hello}]),
     Owner ! {bus_ready, self()},
@@ -233,22 +219,8 @@ handle_info({auth_ok, Conn}, #state{conn=Conn, owner=Owner}=State) ->
 handle_info({reply, hello, {ok, Reply}}, State) ->
     lager:debug("Hello reply ~p~n", [Reply]),
     [Id] = Reply,
-
-%%     {ok, DBusIntrospectable} = dbus_proxy:interface(DBusObj, "org.freedesktop.DBus.Introspectable"),
-%%     ok = dbus_proxy:call(DBusIntrospectable, 'Introspect', [], [{reply, self(), introspect}]),
-
-%%     ok = dbus_proxy:introspect(DBusObj),
-
     reply_waiting(ok, State),
     {noreply, State#state{id=Id}};
-
-%% handle_info({reply, introspect, {ok, Header}}, State) ->
-%%     error_logger:error_msg("Introspect reply ~p~n", [Header]),
-
-%%     xxxxx
-
-%%     reply_waiting(ok, State),
-%%     {noreply, State#state{waiting=[]}};
 
 handle_info({reply, Ref, {error, Reason}}, #state{hello_ref=Ref}=State) ->
     {stop, {error, Reason}, State};
@@ -307,20 +279,6 @@ reply_waiting(Reply, State) ->
 		  gen_server:reply(From, Reply)
 	    end,
     lists:foreach(Fun, State#state.waiting).
-
-
-default_dbus_node() ->
-    HelloMethod = #method{name="Hello", args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
-    AddMatch = #method{name="AddMatch", args=[#arg{direction=in, type="s"}], in_sig="s", in_types=[string]},
-    RequestName = #method{name="RequestName", args=[#arg{direction=in, type="s"}, #arg{direction=in, type="u"}, #arg{direction=out, type="u"}], in_sig="su", in_types=[string,uint32]},
-    ReleaseName = #method{name="ReleaseName", args=[#arg{direction=in, type="s"}, #arg{direction=out, type="u"}], in_sig="s", in_types=[string]},
-    DBusIface = #interface{name="org.freedesktop.DBus", methods=[HelloMethod, AddMatch, RequestName, ReleaseName]},
-
-    IntrospectMethod = #method{name="Introspect", args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
-    DBusIntrospectableIface = #interface{name="org.freedesktop.DBus.Introspectable", methods=[IntrospectMethod]},
-
-    DBusRootNode = #node{elements=[], interfaces=[DBusIface, DBusIntrospectableIface]},
-    DBusRootNode.
 
 
 handle_release_all_services(Pid, _State) ->

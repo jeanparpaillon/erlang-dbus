@@ -26,10 +26,7 @@
 % Needed for spawn_link
 -export([do_read/2]).
 
--record(state, {
-	  sock,
-	  owner
-	 }).
+-record(state, {sock, owner}).
 
 -define(IS_SERVER, 1).
 -define(IS_ABSTRACT, 2).
@@ -86,14 +83,6 @@ handle_call({setopts, _Options}, _From, State) ->
     % TODO ?
     {reply, ok, State};
 
-handle_call({change_owner, OldPid, NewPid}, _From, #state{owner=OldPid}=State) when is_pid(NewPid) ->
-    true = link(NewPid),
-    true = unlink(OldPid),
-    {reply, ok, State#state{owner=NewPid}};
-
-handle_call({change_owner, _OldPid, _NewPid}, _From, State) ->
-    {reply, error, State};
-
 handle_call(Request, _From, State) ->
     lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
@@ -118,11 +107,11 @@ handle_cast(Request, State) ->
 
 
 handle_info({unix, Data}, #state{owner=Owner}=State) ->
-    Owner ! {received, self(), Data},
+    Owner ! {received, Data},
     {noreply, State};
 
 handle_info({unix_closed, Sock}, #state{sock=Sock, owner=Owner}=State) ->
-    Owner ! {closed, self()},
+    Owner ! closed,
     {stop, normal, State#state{sock=undefined}};
 
 handle_info(Info, State) ->
