@@ -26,10 +26,7 @@
 	 handle_info/2,
 	 terminate/2]).
 
--record(state, {
-	  sock,
-	  owner
-	 }).
+-record(state, {sock, owner}).
 
 connect(Host, Port, Options) ->
     gen_server:start_link(?MODULE, [Host, Port, Options, self()], []).
@@ -56,14 +53,6 @@ handle_call({setopts, Options}, _From, State) ->
     ok = inet:setopts(State#state.sock, Options),
     {reply, ok, State};
 
-handle_call({change_owner, OldPid, NewPid}, _From, #state{owner=OldPid}=State) when is_pid(NewPid) ->
-    true = link(NewPid),
-    true = unlink(OldPid),
-    {reply, ok, State#state{owner=NewPid}};
-
-handle_call({change_owner, _OldPid, _NewPid}, _From, State) ->
-    {reply, error, State};
-
 handle_call(Request, _From, State) ->
     error_logger:error_msg("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
@@ -86,13 +75,13 @@ handle_cast(Request, State) ->
 
 handle_info({tcp, Sock, Data}, #state{sock=Sock}=State) ->
     Owner = State#state.owner,
-    Owner ! {received, self(), Data},
+    Owner ! {received, Data},
     ok = inet:setopts(Sock, [{active, once}]),
     {noreply, State};
 
 handle_info({tcp_closed, Sock}, #state{sock=Sock}=State) ->
     Owner = State#state.owner,
-    Owner ! {closed, self()},
+    Owner ! closed,
     {stop, normal, State#state{sock=undefined}};
 
 handle_info(Info, State) ->

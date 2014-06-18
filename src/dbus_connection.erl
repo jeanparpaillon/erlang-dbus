@@ -11,43 +11,44 @@
 
 -module(dbus_connection).
 
--behaviour(gen_server).
+-behaviour(gen_fsm).
 
 -include("dbus.hrl").
 
 %% api
--export([
-	 start_link/1,
+-export([start_link/1,
 	 start_link/2,
 	 start_link/3,
 	 close/1,
 	 call/2,
-	 call/3,
-	 cast/2,
-	 reply/2
-	]).
+	 cast/2]).
 
-%% gen_server callbacks
--export([
-	 init/1,
-	 code_change/3,
-	 handle_call/3,
-	 handle_cast/2,
-	 handle_info/2,
-	 terminate/2
-	]).
+%% gen_fsm callbacks
+-export([init/1,
+	 code_change/4,
+	 handle_event/3,
+	 handle_sync_event/4,
+	 handle_info/3,
+	 terminate/3]).
 
--record(state, {
-	  serial=0,
-	  mod,
-	  sock,
-	  auth,
-	  buf= <<>>,
-	  owner,
-	  state,
-	  pending=[]
-	 }).
+%% gen_fsm states
+-export([connected/3,
+	 challenged/3,
+	 authenticated/3]).
+-export([connected/2,
+	 challenged/2,
+	 authenticated/2]).
 
+-record(state, {serial   = 0,
+		mod,
+		sock,
+		buf      = <<>>,
+		owner,
+		state,
+		pending           :: term(),  % tid()
+		waiting  = []}).
+
+-define(TIMEOUT, 5000).
 
 start_link(BusId) ->
     start_link(BusId, []).
@@ -58,25 +59,28 @@ start_link(BusId, Options) ->
 start_link(BusId, Options, Owner) when is_record(BusId, bus_id),
 				       is_list(Options),
 				       is_pid(Owner) ->
-    gen_server:start_link(?MODULE, [BusId, Options, Owner], []).
+    gen_fsm:start_link(?MODULE, [BusId, Options, Owner], []).
 
 close(Conn) ->
-    gen_server:cast(Conn, close).
+    gen_fsm:send_all_state_event(Conn, close).
 
+-spec call(pid(), term()) -> {ok, term()} | {error, term()}.
 call(Conn, Header) ->
-    gen_server:cast(Conn, {call, Header, self()}).
+    gen_fsm:sync_send_event(Conn, Header),
+    receive
+	{reply, Res} ->
+	    {ok, Res};
+	{error, Res} ->
+	    {error, Res}
+    after ?TIMEOUT -> {error, timeout}
+    end.	    
 
-call(Conn, Header, From) ->
-    gen_server:cast(Conn, {call, Header, From, self()}).
-
+-spec cast(pid(), term()) -> ok | {error, term()}.
 cast(Conn, Header) ->
-    gen_server:cast(Conn, {cast, Header}).
-
-reply(Conn, Header) ->
-    gen_server:cast(Conn, {dbus_reply, Header}).
+    gen_fsm:send_event(Conn, Header).
 
 %%
-%% gen_server callbacks
+%% gen_fsm callbacks
 %%
 init([#bus_id{scheme=tcp,options=BusOptions}, Options, Owner]) ->
     true = link(Owner),
@@ -89,155 +93,244 @@ init([#bus_id{scheme=tcp,options=BusOptions}, Options, Owner]) ->
 		   end,
 
     {ok, Sock} = dbus_transport_tcp:connect(Host, Port, Options),
-    {ok, Auth} = dbus_auth:start_link(Sock, [{auth, cookie}]),
-    {ok, #state{sock=Sock, auth=Auth, owner=Owner}};
+    ok = auth(Sock, [{auth, cookie}]),
+    {ok, connected, #state{sock=Sock, owner=Owner, pending=ets:new(pending, [private])}};
 
 init([#bus_id{scheme=unix, options=BusOptions}, Options, Owner]) ->
     true = link(Owner),
     {ok, Sock} = dbus_transport_unix:connect(BusOptions, Options),
-    {ok, Auth} = dbus_auth:start_link(Sock, [{auth, external}]),
-    {ok, #state{sock=Sock, auth=Auth, owner=Owner}};
-
-init(_Args) ->
-    throw({bad_init_args}).
+    ok = auth(Sock, [{auth_external}]),
+    {ok, connected, #state{sock=Sock, owner=Owner, pending=ets:new(pending, [private])}}.
 
 
-code_change(_OldVsn, State, _Extra) ->
+code_change(_OldVsn, _StateName, State, _Extra) ->
     {ok, State}.
 
 
-handle_call(Request, _From, State) ->
-    lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
-    {reply, ok, State}.
+handle_sync_event(_Evt, _From, StateName, State) ->
+    {reply, ok, StateName, State}.
 
 
-handle_cast({call, Header, Pid}, State) ->
-    {ok, State1} = handle_method_call(Header, none, Pid, State),
-    {noreply, State1};
-
-handle_cast({call, Header, From, Pid}, State) ->
-    {ok, State1} = handle_method_call(Header, From, Pid, State),
-    {noreply, State1};
-
-handle_cast({cast, Header}, State) ->
-    Serial = State#state.serial+1,
-    Header1 = Header#header{serial=Serial},
-    {ok, Data} = dbus_marshaller:marshal_message(Header1),
-    ok = dbus_transport:send(State#state.sock, Data),
-    {noreply, State#state{serial=Serial}};
-
-handle_cast({dbus_reply, Header}, State) ->
-    Serial = State#state.serial+1,
-    Header1 = Header#header{serial=Serial},
-    {ok, Data} = dbus_marshaller:marshal_message(Header1),
-    ok = dbus_transport:send(State#state.sock, Data),
-    {noreply, State#state{serial=Serial}};
-
-handle_cast(close, State) ->
-    ok = dbus_transport:close(State#state.sock),
+handle_event(close, _StateName, #state{sock=Sock}=State) ->
+    ok = dbus_transport:close(Sock),
     {stop, normal, State#state{sock=undefined}};
-handle_cast(Request, State) ->
-    lager:error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
-    {noreply, State}.
+
+handle_event(Evt, StateName, State) ->
+    lager:error("Unhandled event: ~p~n", [Evt]),
+    {next_state, StateName, State}.
 
 
-handle_info({received, Sock, Data}, #state{sock=Sock}=State) ->
-    Buf = State#state.buf,
-    {ok, State1} = handle_data(<<Buf/binary, Data/binary>>, State),
-    {noreply, State1};
+handle_info({received, <<"DATA ", Line/binary>>}, connected, #state{sock=Sock}=State) ->
+    Bin = dbus_hex:from(strip_eol(Line)),
+    case binary:split(Bin, <<$\ >>, [global]) of
+	[Context, CookieId, ServerChallenge] ->
+	    lager:debug("Received authentication data: ~p,~p,~p ~n", [Context, CookieId, ServerChallenge]),
+	    case read_cookie(CookieId) of
+		error ->
+		    {stop, {error, {no_cookie, CookieId}}, State};
+		{ok, Cookie} ->
+		    Challenge = calc_challenge(),
+		    Response = calc_response(ServerChallenge, Challenge, Cookie),
+		    ok = dbus_transport:send(Sock, <<"DATA ", Response/binary, "\r\n">>),
+		    {next_state, challenged, State}
+	    end;
+	_ ->
+	    {stop, {error, invalid_data}, State}
+    end;
 
-handle_info({auth_ok, Auth, Sock}, #state{auth=Auth}=State) ->
-    ok = dbus_transport:change_owner(Sock, Auth, self()),
+handle_info({received, <<"OK", Line/binary>>}, challenged, #state{sock=Sock}=State) ->
+    Guid = strip_eol(Line),
+    lager:debug("GUID ~p~n", [Guid]),
+    ok = dbus_transport:setopts(Sock, [binary, {packet, raw}]),%, {recbuf, 8196}]),
+    ok = dbus_transport:send(Sock, <<"BEGIN\r\n">>),
+    flush_waiting(State),
+    {next_state, connected, State};
 
-    Owner = State#state.owner,
-    Owner ! {auth_ok, self()},
+handle_info({received, <<"RECEIVED", _Line/binary>>}, challenged, #state{sock=Sock}=State) ->
+    ok = dbus_transport:close(Sock),
+    {stop, {error, auth_rejected}, State};
 
-    {noreply, State#state{sock=Sock,
-			  state=up,
-			  auth=terminated
-			 }};
+handle_info({received, Data}, StateName, #state{buf=Buf}=State) ->
+    {ok, Msgs, Rest} = dbus_marshaller:unmarshal_data(<<Buf/binary, Data/binary>>),
+    case handle_messages(Msgs, State#state{buf=Rest}) of
+	{ok, State2} ->
+	    {next_state, StateName, State2};
+	{error, Err, State2} ->
+	    {stop, {error, Err}, State2}
+    end;
 
-%% handle_info({auth_rejected, Auth}, #state{auth=Auth}=State) ->
-%%     reply_waiting({error, auth_error}, State),
-%%     {stop, normal, State};
-
-handle_info(Info, State) ->
-    lager:error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
-    {noreply, State}.
+handle_info(Info, _StateName, State) ->
+    lager:error("Unhandled info in: ~p~n", [Info]),
+    {stop, {error, unexpected_message}, State}.
 
 
-terminate(_Reason, State) ->
-    Sock = State#state.sock,
+terminate(_Reason, _StateName, #state{sock=Sock}) ->
     case Sock of
 	undefined -> ignore;
 	_ -> dbus_connection:close(Sock)
     end,
     terminated.
 
+%%%
+%%% gen_fsm states
+%%%
+connected(_Evt, _From, State) ->
+    {reply, {error, waiting_authentication}, connected, State}.
 
-handle_data(Data, State) ->
-    {ok, Messages, Data1} = dbus_marshaller:unmarshal_data(Data),
-    {ok, State1} = handle_messages(Messages, State#state{buf=Data1}),
-    {ok, State1}.
+challenged(_Evt, _From, State) ->
+    {reply, {error, waiting_authentication}, challenged, State}.
 
-
-handle_method_call(Header, Tag, Pid, State) ->
-    Sock = State#state.sock,
-    Serial = State#state.serial + 1,
-
-    {ok, Call} = dbus_call:start_link(self(), Tag, Pid),
-    Pending = [{Serial, Call} | State#state.pending],
-
-    {ok, Data} = dbus_marshaller:marshal_message(Header#header{serial=Serial}),
+authenticated(#header{}=Header, _From, #state{sock=Sock, serial=S}=State) ->
+    {ok, Data} = dbus_marshaller:marshal_message(Header#header{serial=S}),
     ok = dbus_transport:send(Sock, Data),
+    {reply, ok, authenticated, State}.
 
-    {ok, State#state{pending=Pending, serial=Serial}}.
 
+connected(Evt, #state{waiting=W}=State) ->
+    {next_state, connected, State#state{waiting=[Evt|W]}}.
+
+challenged(Evt, #state{waiting=W}=State) ->
+    {next_state, challenged, State#state{waiting=[Evt|W]}}.
+
+authenticated(#header{}=Header, #state{sock=Sock, serial=S}=State) ->
+    {ok, Data} = dbus_marshaller:marshal_message(Header#header{serial=S}),
+    ok = dbus_transport:send(Sock, Data),
+    {noreply, authenticated, State#state{serial=S+1}}.
+
+%%%
+%%% Priv
+%%%
 handle_messages([], State) ->
     {ok, State};
-handle_messages([Header|R], State) ->
-    {ok, State1} = handle_message(Header#header.type, Header, State),
-    handle_messages(R, State1).
+handle_messages([#header{type=Type}=Header | R], State) ->
+    case handle_message(Type, Header, State) of
+	{ok, State2} ->
+	    handle_messages(R, State2);
+	{error, Err} ->
+	    {error, Err}
+    end.
 
-handle_message(?TYPE_METHOD_RETURN, Header, State) ->
+
+handle_message(?TYPE_METHOD_RETURN, Header, #state{pending=Pending}=State) ->
     {_, SerialHdr} = dbus_message:header_fetch(?HEADER_REPLY_SERIAL, Header),
-    Pending = State#state.pending,
     Serial = SerialHdr#variant.value,
-    State1 =
-	case lists:keysearch(Serial, 1, Pending) of
-	    {value, {Serial, Pid}} ->
-		ok = dbus_call:reply(Pid, Header),
-		State#state{pending=lists:keydelete(Serial, 1, Pending)};
-	    _ ->
-		lager:debug("Ignore reply ~p~n", [Serial]),
-		State
-	end,
-    {ok, State1};
-handle_message(?TYPE_ERROR, Header, State) ->
+    case ets:lookup(Pending, Serial) of
+	[{Serial, Pid}] ->
+	    Pid ! {reply, Header},
+	    ets:delete(Pending, Serial),
+	    {ok, State};
+	[_] ->
+	    lager:debug("Unexpected message: ~p~n", [Serial]),
+	    {error, unexpected_message, State}
+    end;
+
+handle_message(?TYPE_ERROR, Header, #state{pending=Pending}=State) ->
     {_, SerialHdr} = dbus_message:header_fetch(?HEADER_REPLY_SERIAL, Header),
-    Pending = State#state.pending,
     Serial = SerialHdr#variant.value,
-    State1 =
-	case lists:keysearch(Serial, 1, Pending) of
-	    {value, {Serial, Pid}} ->
-		ok = dbus_call:error(Pid, Header),
-		State#state{pending=lists:keydelete(Serial, 1, Pending)};
-	    _ ->
-		lager:debug("Ignore error ~p~n", [Serial]),
-		State
-	end,
-    {ok, State1};
-handle_message(?TYPE_METHOD_CALL, Header, State) ->
-    Owner = State#state.owner,
+    case ets:lookup(Pending, Serial) of
+	[{Serial, Pid}] ->
+	    Pid ! {error, Header},
+	    ets:delete(Pending, Serial),
+	    {ok, State};
+	[_] ->
+	    lager:debug("Unexpected message: ~p~n", [Serial]),
+	    {error, unexpected_message, State}
+    end;
+
+handle_message(?TYPE_METHOD_CALL, Header, #state{owner=Owner}=State) ->
     Owner ! {dbus_method_call, Header, self()},
     {ok, State};
 
-handle_message(?TYPE_SIGNAL, Header, State) ->
-    Owner = State#state.owner,
+handle_message(?TYPE_SIGNAL, Header, #state{owner=Owner}=State) ->
     Owner ! {dbus_signal, Header, self()},
     {ok, State};
 
 handle_message(Type, Header, State) ->
     lager:debug("Ignore ~p ~p~n", [Type, Header]),
-    {ok, State}.
+    {error, unexpected_message, State}.
 
+
+flush_waiting(#state{waiting=[]}) ->
+    ok;
+
+flush_waiting(#state{sock=Sock, serial=S, waiting=[Header | W]}=State) ->
+    {ok, Data} = dbus_marshaller:marshal_message(Header#header{serial=S}),
+    ok = dbus_transport:send(Sock, Data),
+    flush_waiting(State#state{serial=S+1, waiting=W}).
+
+
+auth(Sock, Opts) ->
+    User = os:getenv("USER"),
+    ok = dbus_transport:send(Sock, <<0>>),
+    Auth_type =
+	case lists:keysearch(auth, 1, Opts) of
+	    {value, {auth, Type}} ->
+	        Type;
+	    false ->
+	        detect
+	end,
+    AuthBin =
+	case Auth_type of
+	    external ->
+	        <<"AUTH EXTERNAL 31303030\r\n">>;
+	    cookie ->
+		HexUser = dbus_hex:to(User),
+		<<"AUTH DBUS_COOKIE_SHA1 ", HexUser/binary, "\r\n">>;
+	    detect ->
+	        <<"AUTH\r\n">>
+	end,
+    dbus_transport:send(Sock, AuthBin).
+
+
+calc_challenge() ->
+    {MegaSecs, Secs, _MicroSecs} = now(),
+    UnixTime = MegaSecs * 1000000 + Secs,
+    BinTime = integer_to_binary(UnixTime),
+    dbus_hex:to(<<"Hello ", BinTime/binary>>).
+
+
+calc_response(ServerChallenge, Challenge, Cookie) ->
+    A1 = ServerChallenge ++ ":" ++ Challenge ++ ":" ++ Cookie,
+    lager:debug("A1: ~p~n", [A1]),
+    DigestHex = dbus_hex:to(crypto:hash(sha, A1)),
+    <<Challenge/binary, " ", DigestHex/binary>>.
+
+
+read_cookie(CookieId) ->
+    Home = os:getenv("HOME"),
+    Name = Home ++ "/.dbus-keyrings/org_freedesktop_general",
+    {ok, File} = file:open(Name, [read, binary]),
+    Result = read_cookie(File, CookieId),
+    ok = file:close(File),
+    Result.
+
+
+read_cookie(Device, CookieId) ->
+    case io:get_line(Device, "") of
+	eof ->
+	    error;
+	Line ->
+	    case binary:split(strip_eol(Line), <<$\ >>, [global]) of
+		[CookieId1, _Time, Cookie] ->
+		    if
+			CookieId == CookieId1 ->
+			    {ok, Cookie};
+			true ->
+			    read_cookie(Device, CookieId)
+		    end;
+		_ ->
+		    error
+	    end
+    end.
+
+strip_eol(Bin) ->
+    strip_eol(Bin, <<>>).
+
+strip_eol(<<>>, Acc) ->
+    Acc;
+strip_eol(<<$\r, Rest/binary>>, Acc) ->
+    strip_eol(Rest, Acc);
+strip_eol(<<$\n, Rest/binary>>, Acc) ->
+    strip_eol(Rest, Acc);
+strip_eol(<<C:8, Rest/binary>>, Acc) ->
+    strip_eol(Rest, <<C, Acc/binary>>).
