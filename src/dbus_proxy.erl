@@ -227,6 +227,7 @@ do_method(IfaceName, Method, Args, Options, From, State) ->
     end.
 
 do_introspect(Conn, Service, Path) ->
+    lager:debug("Introspecting: ~p:~p~n", [Service, Path]),
     case dbus_connection:call(Conn, dbus_introspect:build_introspect(Service, Path)) of
 	{ok, Header} ->
 	    [XmlBody] = Header#header.body,

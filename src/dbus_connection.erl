@@ -8,8 +8,8 @@
 %%
 %% {received, Conn, Data}
 %% {auth_ok, Auth, Sock}
-
 -module(dbus_connection).
+-compile([{parse_transform, lager_transform}]).
 
 -behaviour(gen_fsm).
 
@@ -99,7 +99,7 @@ init([#bus_id{scheme=tcp,options=BusOptions}, Options, Owner]) ->
 init([#bus_id{scheme=unix, options=BusOptions}, Options, Owner]) ->
     true = link(Owner),
     {ok, Sock} = dbus_transport_unix:connect(BusOptions, Options),
-    ok = auth(Sock, [{auth_external}]),
+    ok = auth(Sock, [{auth, external}]),
     {ok, connected, #state{sock=Sock, owner=Owner, pending=ets:new(pending, [private])}}.
 
 
@@ -138,6 +138,10 @@ handle_info({received, <<"DATA ", Line/binary>>}, connected, #state{sock=Sock}=S
 	    {stop, {error, invalid_data}, State}
     end;
 
+handle_info({received, <<"REJECTED", _Line/binary>>}, connected, #state{sock=Sock}=State) ->
+    ok = dbus_transport:close(Sock),
+    {stop, {error, auth_rejected}, State};
+
 handle_info({received, <<"OK", Line/binary>>}, challenged, #state{sock=Sock}=State) ->
     Guid = strip_eol(Line),
     lager:debug("GUID ~p~n", [Guid]),
@@ -145,10 +149,6 @@ handle_info({received, <<"OK", Line/binary>>}, challenged, #state{sock=Sock}=Sta
     ok = dbus_transport:send(Sock, <<"BEGIN\r\n">>),
     flush_waiting(State),
     {next_state, connected, State};
-
-handle_info({received, <<"RECEIVED", _Line/binary>>}, challenged, #state{sock=Sock}=State) ->
-    ok = dbus_transport:close(Sock),
-    {stop, {error, auth_rejected}, State};
 
 handle_info({received, Data}, StateName, #state{buf=Buf}=State) ->
     {ok, Msgs, Rest} = dbus_marshaller:unmarshal_data(<<Buf/binary, Data/binary>>),
@@ -262,15 +262,9 @@ flush_waiting(#state{sock=Sock, serial=S, waiting=[Header | W]}=State) ->
 auth(Sock, Opts) ->
     User = os:getenv("USER"),
     ok = dbus_transport:send(Sock, <<0>>),
-    Auth_type =
-	case lists:keysearch(auth, 1, Opts) of
-	    {value, {auth, Type}} ->
-	        Type;
-	    false ->
-	        detect
-	end,
-    AuthBin =
-	case Auth_type of
+    AuthType = proplists:get_value(auth, Opts, detect),
+    AuthBin = 
+	case AuthType of
 	    external ->
 	        <<"AUTH EXTERNAL 31303030\r\n">>;
 	    cookie ->
@@ -279,6 +273,7 @@ auth(Sock, Opts) ->
 	    detect ->
 	        <<"AUTH\r\n">>
 	end,
+    lager:debug("Sending DBUS authentication~n", []),
     dbus_transport:send(Sock, AuthBin).
 
 

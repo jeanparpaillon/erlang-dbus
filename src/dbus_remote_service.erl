@@ -52,7 +52,7 @@ init([Bus, Conn, ServiceName]) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-handle_call({get_object, Path}, {Pid, Tag}, #state{objects=Reg}=State) ->
+handle_call({get_object, Path}, {Pid, _Tag}, #state{objects=Reg}=State) ->
     Obj = case ets:lookup(Reg, Path) of
 	      [{Path, Object, Pids}] ->
 		  ets:insert(Reg, {Path, Object, sets:add_element(Pid, Pids)}),
@@ -61,11 +61,9 @@ handle_call({get_object, Path}, {Pid, Tag}, #state{objects=Reg}=State) ->
 		  {ok, Object} = dbus_proxy:start_link(State#state.bus, 
 						       State#state.conn,
 						       State#state.name, 
-						       Path, 
-						       {Pid, Tag}),
+						       Path),
 		  Object
 	  end,
-    true = link(Pid),
     {reply, {ok, Obj}, State};
 
 handle_call({release_object, Object}, {Pid, _}, State) ->
@@ -123,11 +121,6 @@ handle_info(Info, State) ->
 
 terminate(_Reason, _State) ->
     terminated.
-
-%%
-%% Return {ok, State}|{error, Reason, State}|{stop, State}
-%%
-%%     case handle_release_object(Object, Pid, State) of
 
 handle_release_object(Object, Pid, #state{objects=Reg}=State) ->
     lager:debug("~p: ~p handle_release_object ~p~n", [?MODULE, self(), Object]),
