@@ -37,6 +37,7 @@
 -define(BACKLOG, 5).
 
 connect(BusOptions, Options) ->
+    lager:info("transport_unix:connect"),
     {_Flags, Path} =
 	case lists:keysearch(path, 1, BusOptions) of
 	    {value, {_, Path1}} ->
@@ -65,7 +66,9 @@ init([Path, _Options, Owner]) when is_pid(Owner), is_list(Path) ->
 	    case procket:connect(Sock, SockUn) of
 		ok ->
 		    %process_flag(trap_exit, true),
-		    spawn_link(?MODULE, do_read, [Sock, self()]),
+	 	    lager:info("transport_unix:init connect"),
+		    Res = spawn_link(?MODULE, do_read, [Sock, self()]),
+                    lager:info("transport_unix:init Res= ~p",[Res]),
 		    {ok, #state{sock=Sock, owner=Owner}};
 		{error, Err} ->
 		    lager:error("Error connecting socket: ~p~n", [Err]),
@@ -121,10 +124,10 @@ handle_info(Info, State) ->
 
 terminate(_Reason, #state{sock=Sock}) ->
     case Sock of
-	undefined -> ignore;
-	_ -> procket:close(Sock)
+	    undefined -> ignore;
+	    _ -> procket:close(Sock)
     end,
-    terminated.
+        terminated.
 
 %%%
 %%% Priv
@@ -134,9 +137,14 @@ do_read(Sock, Pid) ->
 	{error, eagain} ->
 	    timer:sleep(10),
 	    do_read(Sock, Pid);
+	{error, Err} ->
+	    lager:debug("UNIX socket listener died: ~p~n", [Err]),
+	    ok;
 	% EOF
-	{ok, <<>>} -> ok;
+	{ok, <<>>} ->
+	    do_read(Sock, Pid);
 	{ok, Buf} ->
+	    lager:info("transport_unix:do_read ok Buf = ~p ",[Buf]),
 	    Pid ! {unix, Buf},
 	    do_read(Sock, Pid)
     end.

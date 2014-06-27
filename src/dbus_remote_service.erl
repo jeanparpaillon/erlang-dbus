@@ -61,8 +61,8 @@ handle_call({get_object, Path}, {Pid, Tag}, #state{objects=Reg}=State) ->
 		  {ok, Object} = dbus_proxy:start_link(State#state.bus, 
 						       State#state.conn,
 						       State#state.name, 
-						       Path, 
-						       {Pid, Tag}),
+						       Path), 
+						      % {Pid, Tag}),
 		  Object
 	  end,
     true = link(Pid),

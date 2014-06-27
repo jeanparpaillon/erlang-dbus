@@ -93,7 +93,8 @@ cast(Bus, Header) ->
 %%
 init([BusId, Owner]) ->
     case setup(BusId) of
-	{ok, Conn} -> 
+	{ok, Conn} ->
+	    dbus_connection:auth(Conn),
 	    Reg = ets:new(services, [set, private]),
 	    {ok, #state{owner=Owner, conn=Conn, services=Reg}};
 	ignore ->
