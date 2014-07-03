@@ -35,7 +35,7 @@
 
 %% gen_fsm states
 -export([connected/3,
-	 challenged/3,
+	 waiting_initial/3,
 	 authenticated/3]).
 -export([connected/2,
 	 challenged/2,
@@ -69,12 +69,12 @@ close(Conn) ->
 -spec call(pid(), term()) -> {ok, term()} | {error, term()}.
 call(Conn, Header) ->
     lager:info("connection:call Conn= ~p, Header= ~p", [Conn,Header]),
-    R = gen_fsm:sync_send_event(Conn, {call, Header}),
-    lager:debug("### sync_end_event: ~p  state = ~p", [R,#state{}]),
+    {Pid, Header1} = gen_fsm:sync_send_event(Conn, {call, Header}),
+    lager:info("connection:call Pid=~p , Header=~p",[Pid, Header1]),
     receive
-   	    {reply, Res} ->
-   	         lager:info("connection:call ok"),
-   	        {ok, Res};
+   	    {authenticated, Pid, Header1} ->
+   	        lager:info("connection:call ok"),
+   	        {ok, Header1};
    	    {error, Res} ->
    	         lager:info("connection:call error"),
    	         {error, Res}
@@ -88,8 +88,8 @@ cast(Conn, Header) ->
     gen_fsm:send_event(Conn, Header).
 
 auth(Conn) ->
-    {Pid, Tag} = gen_fsm:sync_send_event(Conn, {auth}),
-    lager:info("connection:auth/1 Pid=~p,Tag=~p",[Pid,Tag]),
+    {Pid, Tag} = gen_fsm:sync_send_event(Conn, auth),
+    lager:info("connection:auth/1 Pid=~p,Tag=~p",[Pid, Tag]),
     receive
         {authenticated, Pid, Tag} ->
             lager:info("connection:auth/1 ok Pid = ~p, Tag= ~p",[Pid, Tag]),
@@ -113,12 +113,13 @@ init([#bus_id{scheme=tcp,options=BusOptions}, Options, Owner]) ->
 		   end,
 
     {ok, Sock} = dbus_transport_tcp:connect(Host, Port, Options),
-    ok = auth(Sock, [{auth, cookie}]),  
-    {ok, connected, #state{sock=Sock, owner=Owner, pending=ets:new(pending, [private])}};
+    ok = auth(Sock, [{auth, cookie}]),
+    {ok, waiting_data, #state{sock=Sock, owner=Owner, pending=ets:new(pending, [private])}};
 
 init([#bus_id{scheme=unix, options=BusOptions}, Options, Owner]) ->
     true = link(Owner),
     {ok, Sock} = dbus_transport_unix:connect(BusOptions, Options),
+    %ok = auth(Sock, [{auth, external}]),
     {ok, connected, #state{sock=Sock, owner=Owner, pending=ets:new(pending, [private])}}.
 
 
@@ -138,8 +139,11 @@ handle_event(Evt, StateName, State) ->
     lager:error("Unhandled event: ~p~n", [Evt]),
     {next_state, StateName, State}.
 
+handle_info({received, <<"DATA ", Line/binary>>}, waiting_initial, #state{sock=Sock, waiting=[{Pid, Header}]}=State) ->
+    lager:info("handle_info DATA disconnected"),
+    {stop, {error, disconnected}, State};
 
-handle_info({received, <<"DATA ", Line/binary>>}, connected, #state{sock=Sock}=State) ->
+handle_info({received, <<"DATA ", Line/binary>>}, authenticated, #state{sock=Sock, waiting=[{Pid, Header}]}=State) ->
     lager:info("connection:handle_info DATA"),
     Bin = dbus_hex:from(strip_eol(Line)),
     case binary:split(Bin, <<$\ >>, [global]) of
@@ -149,29 +153,41 @@ handle_info({received, <<"DATA ", Line/binary>>}, connected, #state{sock=Sock}=S
 		        error ->
 		            {stop, {error, {no_cookie, CookieId}}, State};
 		        {ok, Cookie} ->
-		            Challenge = calc_challenge(),
-		            Response = calc_response(ServerChallenge, Challenge, Cookie),
+		        	Challenge = calc_challenge(),
+		            Response = calc_response(ServerChallenge, Challenge, Cookie), 
 		            ok = dbus_transport:send(Sock, <<"DATA ", Response/binary, "\r\n">>),
-		            {next_state, challenged, State}
+		            Pid ! {authenticated, Pid, Header},
+		            {next_state, waiting_ok, State}	            
 	        end;
 	    _ ->
-	        {stop, {error, invalid_data}, State}
+            {stop, {error, invalid_data}, State}
     end;
 
-handle_info({received, <<"OK", Line/binary>>}, waiting_authentication, #state{sock=Sock, waiting=[{Pid, Tag}]}=State) ->
+handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName, #state{sock=Sock}=State) ->
+    lager:info("handle_info REJECTED disconnected"),
+    {stop, {error, disconnected}, State};
+
+handle_info({received, <<"OK ", Line/binary>>}, waiting_initial, #state{sock=Sock, waiting=[{Pid, Tag}]}=State) ->
     lager:info("connection:handle_info OK Line = ~p", [Line]),
     Guid = strip_eol(Line),
-    lager:debug("GUID ~p~n", [Guid]),
-    ok = dbus_transport:setopts(Sock, [binary, {packet, raw}]),%, {recbuf, 8196}]),
-    ok = dbus_transport:send(Sock, <<"BEGIN\r\n">>),
+    lager:debug("GUID ~p~n", [Guid]),    
+    ok = dbus_transport:setopts(Sock, [binary, {packet, raw}]),
+    ok = dbus_transport:send(Sock, <<"BEGIN \r\n">>),
     Pid ! {authenticated, Pid, Tag},
     {next_state, authenticated, State};
+    
+handle_info({received, <<"OK ", Line/binary>>}, authenticated, #state{sock=Sock, waiting=[{Pid, Header}]}=State) ->
+    lager:info("connection:handle_info OK Line = ~p", [Line]),
+    Guid = strip_eol(Line),
+    lager:debug("GUID ~p~n", [Guid]),    
+    ok = dbus_transport:setopts(Sock, [binary, {packet, raw}]),
+    ok = dbus_transport:send(Sock, <<"BEGIN \r\n">>),
+    Pid ! {authenticated, Pid, Header},
+    {next_state, authenticated, State};
 
-
-handle_info({received, <<"RECEIVED", _Line/binary>>}, challenged, #state{sock=Sock}=State) ->
-    lager:info("connection:handle_info RECEIVED"),
-    ok = dbus_transport:close(Sock),
-    {stop, {error, auth_rejected}, State};
+handle_info({received, <<"ERROR", _Line/binary>>}, StateName, #state{sock=Sock}=State) ->
+    lager:info("connection:handle_info ERROR disconencted"),
+    {stop, {error, disconnected}, State};
 
 handle_info({received, Data}, StateName, #state{buf=Buf}=State) ->
     lager:info("connection:handle_info {recervied,data} Data = ~p, StateName= ~p",[Data,StateName]),
@@ -199,32 +215,43 @@ terminate(_Reason, _StateName, #state{sock=Sock}) ->
 %%% gen_fsm states
 %%%
 
-connected({auth}, {Pid, Tag}, #state{sock=Sock}=State) ->
+connected(auth, {Pid, Tag}, #state{sock=Sock}=State) ->
     case auth(Sock, [{auth, external}]) of
         ok ->
             lager:info("connection:auth_connected ok"),
-            {reply, {Pid, Tag}, waiting_authentication, State#state{waiting=[{Pid, Tag}]}};
+            {reply, {Pid, Tag}, waiting_initial, State#state{waiting=[{Pid, Tag}]}};
         error ->
             lager:info("connection:auth_connected error"),
-            {reply, {error, waiting_authentication}, connected, State}
+            {reply, {error, waiting_initial}, connected, State}
     end;
     
-connected({call, Header}, From, State) ->
-    {reply, {error, waiting_authentication}, connected, State};
-        
+
 connected(_Evt, _From, State) ->
-    lager:info("connection: connected 4"),
+    lager:info("connection: connected error"),
     {reply, {error, waiting_authentication}, connected, State}.
-
-challenged(_Evt, _From, State) ->
-    lager:info("connection: challenged 1"),
-    {reply, {error, waiting_authentication}, challenged, State}.
-
-authenticated({call, #header{}=Header}, _From, #state{sock=Sock, serial=S}=State) ->
-    lager:info("connection:authenticated 1"),
+    
+waiting_initial(auth, {Pid, Tag}, #state{sock=Sock}=State) ->
+    lager:info("connection:waiting_initial auth"),
+    {reply, {Pid, Tag}, waiting_initial, State#state{waiting=[{Pid, Tag}]}};
+    
+waiting_initial({call, Header}, {Pid, _Tag}, #state{sock=Sock}=State) ->
+    lager:info("connection:waiting_initial call"),
+    {reply, {Pid, Header}, waiting_initial, State#state{waiting=[{Pid, Header}]}};
+    
+   
+waiting_initial(_Evt, _From, State) ->
+    lager:info("connection:waiting_initial error"),
+    {reply, {error, waiting_initial}, waiting_initial, State}.
+    
+authenticated({call, #header{}=Header}, {Pid, _Tag}, #state{sock=Sock, serial=S}=State) ->
+    lager:info("connection:authenticated call"),
     {ok, Data} = dbus_marshaller:marshal_message(Header#header{serial=S}),
     ok = dbus_transport:send(Sock, Data),
-    {reply, ok, authenticated, State}.
+    {reply, {Pid, Header}, authenticated, State#state{waiting=[{Pid, Header}]}};
+    
+authenticated(_Evt, _From, State) ->
+    lager:info("connection: authenticated error"),
+    {reply, {error, authenticated}, authenticated, State}.
 
 connected(Evt, #state{waiting=W}=State) ->
     {next_state, connected, State#state{waiting=[Evt|W]}}.
