@@ -76,12 +76,14 @@ code_change(_OldVsn, State, _Extra) ->
 handle_call({get_bus, BusId}, _From, State) when is_record(BusId, bus_id) ->
     Busses = State#state.busses,
     case lists:keysearch(BusId, 1, Busses) of
-	{value, {_, Bus}} ->
-	    {reply, {ok, Bus}, State};
-	false ->
-	    {ok, Bus} = dbus_bus:connect(BusId),
-	    Busses1 = [{BusId, Bus} | Busses],
-	    {reply, {ok, Bus}, State#state{busses=Busses1}}
+	    {value, {_, Bus}} ->
+	        lager:info("bus_reg:get_bus ok"),
+	        {reply, {ok, Bus}, State};
+	    false ->
+            	lager:info("bus_reg:get_bus error"),
+	        {ok, Bus} = dbus_bus:connect(BusId),
+	        Busses1 = [{BusId, Bus} | Busses],
+	        {reply, {ok, Bus}, State#state{busses=Busses1}}
     end;
 
 handle_call({release_bus, Bus}, _From, State) when is_pid(Bus) ->
