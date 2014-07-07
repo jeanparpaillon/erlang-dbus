@@ -1,6 +1,9 @@
 %%
 %% @copyright 2006-2007 Mikael Magnusson
+%% @copyright 2014 Jean Parpaillon
+%%
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @author Jean Parpaillon <jean.parpaillon@free.fr>
 %% @doc message module. Builds error and result messages
 %%
 
@@ -8,90 +11,194 @@
 
 -include("dbus.hrl").
 
-%% api
+-export([call/4,
+	 call/5,
+	 signal/5,
+	 signal/6,
+	 error/3,
+	 return/3]).
 
--export([
-	 header_find/2,
-	 header_fetch/2,
-	 build_error/3,
-	 build_method_return/3,
-	 build_signal/4
-	]).
+-export([get_serial/1,
+	 set_serial/2,
+	 find_field/2,
+	 get_field/2,
+	 get_field_value/2,
+	 set_body/4]).
 
-build_error(Header, ErrorName, ErrorText) ->
-    {_Type2, From} = dbus_message:header_fetch(?HEADER_SENDER, Header),
-    Error = #variant{type=string, value=ErrorName},
-    ReplySerial = #variant{type=uint32, value=Header#header.serial},
+-export([introspect/2]).
 
-    {ok, ReplyBody, _Pos} = 
-	dbus_marshaller:marshal_list([string], [ErrorText]),
-    Headers = [
-	       {?HEADER_ERROR_NAME, Error},
-	       {?HEADER_REPLY_SERIAL, ReplySerial},
- 	       {?HEADER_DESTINATION, From},
-	       {?HEADER_SIGNATURE, #variant{type=signature, value="s"}}
-	      ],
+%%%
+%%% API
+%%%
+-spec call(Destination :: dbus_name(), 
+	   Path        :: dbus_name(), 
+	   Interface   :: dbus_name(),
+	   Member      :: dbus_name()) -> dbus_message().
+call(Destination, Path, Interface, Member) ->
+    call(Destination, Path, Interface, Member, []).
 
-    ReplyHeader = #header{type=?TYPE_ERROR,
-			  serial=Header#header.serial,
-			  headers=Headers,
-			  body=ReplyBody},
-    {ok, ReplyHeader}.
+-spec call(Destination :: dbus_name(), 
+	   Path        :: dbus_name(), 
+	   Interface   :: dbus_name(),
+	   Member      :: dbus_name(),
+	   Opts        :: [dbus_option()]) -> dbus_message().
+call(Destination, Path, Interface, Member, Opts) ->
+    Fields = [
+	      {?HEADER_PATH, #dbus_variant{type=object_path, value=Path}},
+	      {?HEADER_DESTINATION, #dbus_variant{type=string, value=Destination}},
+	      {?HEADER_INTERFACE, #dbus_variant{type=string, value=Interface}},
+	      {?HEADER_MEMBER, #dbus_variant{type=string, value=Member}}
+	     ],
+    Header = #dbus_header{type=?TYPE_METHOD_CALL,
+			  flags=process_flags(Opts),
+			  size=0,
+			  fields=Fields},
+    #dbus_message{header=Header, body= <<>>}.
 
-build_method_return(Header, Types, Body) ->
-    {_Type2, From} = dbus_message:header_fetch(?HEADER_SENDER, Header),
-    ReplySerial = #variant{type=uint32, value=Header#header.serial},
+
+-spec signal(Destination :: dbus_name(),
+	     Path        :: dbus_name(),
+	     Interface   :: dbus_name(),
+	     Signal      :: dbus_signal(),
+	     Args        :: [dbus_arg()]) -> dbus_message().
+signal(Destination, Path, Interface, Signal, Args) ->
+    signal(Destination, Path, Interface, Signal, Args, []).
+
+-spec signal(Destination :: dbus_name(),
+	     Path        :: dbus_name(),
+	     Interface   :: dbus_name(),
+	     Signal      :: dbus_signal(),
+	     Args        :: [dbus_arg()],
+	     Opts        :: [dbus_option()]) -> dbus_message().
+signal(Destination, Path, Interface, 
+       #dbus_signal{name=SigName, out_sig=Signature, out_types=Types}, Args, Opts)
+  when is_list(Args) ->
+    Signature = dbus_marshaller:marshal_signature(Types),
+    {ok, Body, _Pos} = dbus_marshaller:marshal_list(Types, Args),
+    Fields = [
+	      {?HEADER_PATH, #dbus_variant{type=object_path, value=Path}},
+	      {?HEADER_INTERFACE, #dbus_variant{type=string, value=Interface}},
+	      {?HEADER_MEMBER, #dbus_variant{type=string, value=SigName}},
+	      {?HEADER_SIGNATURE, #dbus_variant{type=signature, value=Signature}},
+	      {?HEADER_DESTINATION, #dbus_variant{type=string, value=Destination}}
+	     ],
+    Header = #dbus_header{type=?TYPE_SIGNAL, 
+			  flags=process_flags(Opts),
+			  fields=Fields},
+    {ok, #dbus_message{header=Header, body=Body}}.
+
+
+-spec error(Orig      :: dbus_message(),
+	    ErrName   :: binary(),
+	    ErrText   :: binary()) -> dbus_message().
+error(#dbus_message{}=Orig, ErrName, ErrText) when is_binary(ErrName), 
+						   is_binary(ErrText) ->
+    From = get_field(?HEADER_SENDER, Orig),
+    Error = #dbus_variant{type=string, value=ErrName},
+    Serial = #dbus_variant{type=uint32, value=get_serial(Orig)},
+
+    {ok, Body, _Pos} = dbus_marshaller:marshal_list([string], [ErrText]),
+    Fields = [
+	      {?HEADER_ERROR_NAME, Error},
+	      {?HEADER_REPLY_SERIAL, Serial},
+	      {?HEADER_DESTINATION, From},
+	      {?HEADER_SIGNATURE, #dbus_variant{type=signature, value="s"}}
+	     ],
+    Header = #dbus_header{type=?TYPE_ERROR,
+			  serial=Serial,
+			  fields=Fields},
+    #dbus_message{header=Header, body=Body}.
+
+-spec return(Orig       :: dbus_message(),
+	     Types      :: [dbus_type()],
+	     Body       :: term()) -> dbus_message().
+return(#dbus_message{}=Orig, Types, Body) when is_list(Types),
+					       is_binary(Body) ->
+    From = get_field(?HEADER_SENDER, Orig),
+    Serial = #dbus_variant{type=uint32, value=get_serial(Orig)},
     Signature = dbus_marshaller:marshal_signature(Types),
 
-    {ok, BinBody, _Pos} = 
-	dbus_marshaller:marshal_list(Types, Body),
-    Headers = [
-	       {?HEADER_REPLY_SERIAL, ReplySerial},
- 	       {?HEADER_DESTINATION, From},
-	       {?HEADER_SIGNATURE, #variant{type=signature, value=Signature}}
-	      ],
+    {ok, BinBody, _Pos} = dbus_marshaller:marshal_list(Types, Body),
+    Fields = [
+	      {?HEADER_REPLY_SERIAL, Serial},
+	      {?HEADER_DESTINATION, From},
+	      {?HEADER_SIGNATURE, #dbus_variant{type=signature, value=Signature}}
+	     ],
+    Header = #dbus_header{type=?TYPE_METHOD_RETURN,
+			  serial=Serial,
+			  fields=Fields},
+    #dbus_message{header=Header, body=BinBody}.
 
-    ReplyHeader = #header{type=?TYPE_METHOD_RETURN,
-			  serial=Header#header.serial,
-			  headers=Headers,
-			  body=BinBody},
-    {ok, ReplyHeader}.
+-spec get_serial(dbus_message()) -> integer().
+get_serial(#dbus_message{header=#dbus_header{serial=Serial}}) ->
+    Serial.
 
-build_signal(Path, Iface_name, Signal, Args) when is_atom(Path),
-						  is_atom(Iface_name),
-						  is_record(Signal, signal),
-						  is_list(Args) ->
-    Signal_name = Signal#signal.name,
-    Signature = Signal#signal.out_sig,
-    Types = Signal#signal.out_types,
+-spec set_serial(integer(), dbus_message()) -> dbus_message().
+set_serial(Serial, #dbus_message{header=Header}=Message) ->
+    Message#dbus_message{header=Header#dbus_header{serial=Serial}}.
 
-    Signature = dbus_marshaller:marshal_signature(Types),
+-spec find_field(Code :: integer(), Message :: #dbus_message{}) -> dbus_variant() | undefined.
+find_field(Code, #dbus_message{header=#dbus_header{fields=Fields}}) ->
+    case proplists:get_value(Code, Fields) of
+	undefined -> undefined;
+	Val -> Val
+    end;
+find_field(_, _) ->
+    undefined.
 
-    {ok, Body, _Pos} = 
-	dbus_marshaller:marshal_list(Types, Args),
-    Headers = [
-	       {?HEADER_PATH, #variant{type=object_path, value=Path}},
-	       {?HEADER_INTERFACE, #variant{type=string, value=Iface_name}},
-	       {?HEADER_MEMBER, #variant{type=string, value=Signal_name}},
-	       {?HEADER_SIGNATURE, #variant{type=signature, value=Signature}}
-	      ],
+-spec get_field(Code :: integer(), Message :: #dbus_message{}) -> dbus_variant().
+get_field(Code, #dbus_message{header=#dbus_header{fields=Fields}}) ->
+    case proplists:get_value(Code, Fields) of
+	undefined ->
+	    throw({no_such_field, Code});
+	Val -> 
+	    Val
+    end;
+get_field(Code, _) ->
+    throw({no_such_field, Code}).
 
-    Header = #header{type=?TYPE_SIGNAL,
-		     headers=Headers,
-		     body=Body},
-    {ok, Header}.
+-spec get_field_value(Code :: integer(), Message :: dbus_message()) -> term().
+get_field_value(Code, #dbus_message{}=Msg) ->
+    Field = get_field(Code, Msg),
+    Field#dbus_variant.value.
 
-header_fetch(Code, Header) ->
-    {ok, Field} = header_find(Code, Header),
-    Field.
+-spec set_body(Signature :: binary(),
+	       Types     :: [dbus_type()],
+	       Body      :: term(),
+	       Message   :: dbus_message()) -> dbus_message().
+set_body(Signature, Types, Body, #dbus_message{header=#dbus_header{fields=Fields}=Header}=Message) 
+  when is_binary(Signature) ->
+    try	dbus_marshaller:marshall_list(Types, Body) of
+	{ok, Bin, _Pos} ->
+	    Fields2 = [{?HEADER_SIGNATURE, Signature} | Fields],
+	    Message#dbus_message{header=Header#dbus_header{fields=Fields2},
+				 body=Bin}
+    catch 
+	'EXIT':Err ->
+	    {error, {'org.freedesktop.DBus.InvalidParameters', Err}}
+    end.	
 
-header_find(Code, Header) ->
-    Headers = Header#header.headers,
+%%%
+%%% Common messages
+%%%
+-define(IFACE_INTROSPECTABLE, 'org.freedesktop.DBus.Introspectable').
+-define(IFACE_MEMBER, 'Introspect').
 
-    case lists:keysearch(Code, 1, Headers) of
-	{value, Field} ->
-	    {ok, Field};
-	_ ->
-	    error
-    end.
+-spec introspect(Service :: dbus_name(), Path :: dbus_name()) -> dbus_message().
+introspect(Service, Path) ->
+    dbus_message:call(Service, Path, ?IFACE_INTROSPECTABLE, ?IFACE_MEMBER).
 
+%%%
+%%% Priv
+%%%
+process_flags(Opts) ->
+    process_flags(Opts, 0).
+
+process_flags([], Acc) ->
+    Acc;
+process_flags([no_reply_expected | Opts], Acc) ->
+    process_flags(Opts, Acc bor ?NO_REPLY_EXPECTED);
+process_flags([no_auto_start | Opts], Acc) ->
+    process_flags(Opts, Acc bor ?NO_AUTO_START);
+process_flags([_ | Opts], Acc) ->
+    process_flags(Opts, Acc).

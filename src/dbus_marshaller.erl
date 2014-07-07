@@ -8,30 +8,62 @@
 
 -include("dbus.hrl").
 
--compile([export_all]).
-
 %% api
 -export([
 	 marshal_message/1,
-%% 	 marshal_message/2,
 	 marshal_signature/1,
 	 marshal_list/2,
 	 unmarshal_data/1,
 	 unmarshal_signature/1
 	]).
 
--export([test/0]).
+-define(mod(N,T), N rem T).
 
-test() ->
-    Data = read_test(),
-    unmarshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], Data).
+%%%
+%%% API
+%%%
+marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial=S, fields=Fields}, body=Body}) ->
+    {ok, HeaderData} = marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, size(Body), S, Fields]),
+    {ok, [ HeaderData, Body ]}.
 
-read_test() ->
-    {ok, File} = file:open("/tmp/bytes", [binary, read]),
-    {ok, Data} = file:read(File, 10000),
-    ok = file:close(File),
-    Data.
-    
+
+marshal_signature(byte)        ->   "y";
+marshal_signature(boolean)     ->   "b";
+marshal_signature(int16)       ->   "n";
+marshal_signature(uint16)      ->   "q";
+marshal_signature(int32)       ->   "i";
+marshal_signature(uint32)      ->   "u";
+marshal_signature(int64)       ->   "x";
+marshal_signature(uint64)      ->   "t";
+marshal_signature(double)      ->   "d";
+marshal_signature(string)      ->   "s";
+marshal_signature(object_path) ->   "o";
+marshal_signature(signature)   ->   "g";
+marshal_signature({array, Type}) ->
+    [$a | marshal_signature(Type)];
+marshal_signature({struct, SubTypes}) ->
+    %% TODO use reverse?
+    "(" ++ marshal_struct_signature(SubTypes, []) ++ ")";
+marshal_signature(variant) ->
+    "v";
+marshal_signature({dict, KeyType, ValueType}) ->
+    KeySig = marshal_signature(KeyType),
+    ValueSig = marshal_signature(ValueType),
+
+    %% TODO check length(KeySig) == 1
+
+    %% TODO use reverse?
+    "a{" ++ KeySig ++ ValueSig ++ "}";
+marshal_signature([]) ->
+    "";
+marshal_signature([Type|R]) ->
+    marshal_signature(Type) ++ marshal_signature(R).
+
+
+marshal_list(Types, Value) ->
+    marshal_list(Types, Value, 0, []).
+
+
 unmarshal_data(Data) ->
     unmarshal_data(Data, []).
 
@@ -46,14 +78,56 @@ unmarshal_data(Data, Res) ->
     end.
 
 
-marshal_message(#header{body=Body}=Header) when is_list(Body) ->
-    marshal_message(Header#header{body=list_to_binary(Body)});
+unmarshal_signature(Signature) when is_binary(Signature) ->
+    unmarshal_signature(binary_to_list(Signature));
 
+<<<<<<< HEAD
 marshal_message(#header{type=Type, flags=Flags, body=Body, serial=S, headers=Headers}) ->
     {ok, HeaderData} = marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, size(Body), S, Headers]),
     lager:info("marshaller:marshal_message HeaderData=~p",[HeaderData]),
     {ok, [ HeaderData, Body ]}.
+=======
+unmarshal_signature(Signature) when is_list(Signature) ->
+    {Sig, []} = unmarshal_signature(Signature, []),
+    Sig;
+>>>>>>> be426f068d30132dd61db987e0bbc249fe0b1e49
 
+unmarshal_signature($y) ->
+    byte;
+unmarshal_signature($b) ->
+    boolean;
+unmarshal_signature($n) ->
+    int16;
+unmarshal_signature($q) ->
+    uint16;
+unmarshal_signature($i) ->
+    int32;
+unmarshal_signature($u) ->
+    uint32;
+unmarshal_signature($x) ->
+    int64;
+unmarshal_signature($t) ->
+    uint64;
+unmarshal_signature($d) ->
+    double;
+unmarshal_signature($s) ->
+    string;
+unmarshal_signature($o) ->
+    object_path;
+unmarshal_signature($g) ->
+    signature;
+unmarshal_signature($r) ->
+    struct;
+unmarshal_signature($v) ->
+    variant;
+unmarshal_signature($e) ->
+    dict_entry;
+unmarshal_signature(Signature) ->
+    throw({bad_signature, Signature}).
+
+%%%
+%%% Priv
+%%%
 marshal_header(Header) when is_list(Header) ->
     {ok, Value, Pos} = marshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], 
 				    Header),
@@ -65,40 +139,30 @@ marshal_header(Header) when is_list(Header) ->
 	    {ok, [Value, <<0:Pad>>]}
     end.
 
-
-%% unmarshal_header(Data) when is_list(Data) ->
-%%     unmarshal_header(list_to_binary(Data));
-
-unmarshal_message(Data) ->
+unmarshal_message(Data) when is_binary(Data) ->
     {ok, Header, BinBody, Data1} = unmarshal_header(Data),
     Signature =
-	case dbus_message:header_find(?HEADER_SIGNATURE, Header) of
-	    {ok, {?HEADER_SIGNATURE, #variant{type=signature, value=Signature1}}} ->
+	case dbus_message:find_field(?HEADER_SIGNATURE, Header) of
+	    #dbus_variant{type=signature, value=Signature1} ->
 		Signature1;
-	    error ->
-		""
+	    undefined ->
+		<<"">>
 	end,
     Types = unmarshal_signature(Signature),
     {ok, <<>>, Body, _Pos} = unmarshal_list(Types, BinBody),
-    Header1 = Header#header{body=Body},
-    {ok, Header1, Data1}.
+    {ok, #dbus_message{header=Header, body=Body}, Data1}.
 
 unmarshal_header(Bin) ->
     {ok, Data1, HeaderData, Pos} = unmarshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], Bin),
-    [$l, Type, Flags, ?DBUS_VERSION_MAJOR, Size, Serial, Headers] = HeaderData,
-    Header = #header{type=Type,
-		     flags=Flags,
-		     serial=Serial,
-		     headers=Headers},
+    [$l, Type, Flags, ?DBUS_VERSION_MAJOR, Size, Serial, Fields] = HeaderData,
+    Header = #dbus_header{type=Type,
+			  flags=Flags,
+			  serial=Serial,
+			  fields=Fields},
     Pad = padding(8, Pos),
     <<0:Pad, Body:Size/binary, Data2/binary>> = Data1,
     {ok, Header, Body, Data2}.
-    
 
-%% marshal(Type, Value)
-
-marshal_list(Types, Value) ->
-    marshal_list(Types, Value, 0, []).
 
 marshal_list([], [], Pos, Res) ->
     {ok, Res, Pos};
@@ -160,7 +224,7 @@ marshal({dict, KeyType, ValueType}, Value, Pos) ->
     marshal_dict(KeyType, ValueType, Value, Pos);
 marshal(variant, Value, Pos) when is_binary(Value) ->
     marshal_variant({array, byte}, Value, Pos);
-marshal(variant, #variant{type=Type, value=Value}, Pos) ->
+marshal(variant, #dbus_variant{type=Type, value=Value}, Pos) ->
     marshal_variant(Type, Value, Pos);
 marshal(variant, true=Value, Pos) ->
     marshal_variant(boolean, Value, Pos);
@@ -186,27 +250,11 @@ infer_type(Value) when is_integer(Value), Value >= 0 ->
     infer_uint(Value);
 infer_type(Value) when is_tuple(Value) ->
     infer_struct(tuple_to_list(Value));
-
-%%     case is_dict(Value) of
-%% 	true ->
-%% 	    dict;
-%% 	false ->
-%% 	    infer_struct(tuple_to_list(Value))
-%%     end;
 infer_type(Value) when is_atom(Value)->
     string;
 infer_type(Value) when is_list(Value) ->
-    %% FIXME check if it's a valid (UTF-8) string
     string.
 
-
-is_dict(D) ->
-    case catch dict:to_list(D) of
-      L when is_list(L) ->
-        true;
-      {'EXIT',_} ->
-        false
-    end.
 
 infer_struct(Values) ->
     {struct, infer_struct(Values, [])}.
@@ -252,7 +300,9 @@ marshal_variant(Type, Value, Pos) ->
 
 
 marshal_uint(Len, Value, Pos) when is_integer(Value) ->
+    lager:debug("### marshal_uint(~p, ~p, ~p)~n", [Len, Value, Pos]),
     Pad = padding(Len, Pos),
+    lager:debug("### marshal_uint(~p, ~p, ~p), pad=~p~n", [Len, Value, Pos, Pad]),
     {ok, << 0:Pad, Value:(Len*8)/native-unsigned >>, Pos + Pad div 8 + Len}.
 
 marshal_int(Len, Value, Pos) when is_integer(Value) ->
@@ -303,38 +353,6 @@ marshal_struct([SubType|R], [Value|V], Pos, Res) ->
     {ok, Value1, Pos1} = marshal(SubType, Value, Pos),
     marshal_struct(R, V, Pos1, Res ++ [Value1]).
 
-
-marshal_signature(byte)        ->   "y";
-marshal_signature(boolean)     ->   "b";
-marshal_signature(int16)       ->   "n";
-marshal_signature(uint16)      ->   "q";
-marshal_signature(int32)       ->   "i";
-marshal_signature(uint32)      ->   "u";
-marshal_signature(int64)       ->   "x";
-marshal_signature(uint64)      ->   "t";
-marshal_signature(double)      ->   "d";
-marshal_signature(string)      ->   "s";
-marshal_signature(object_path) ->   "o";
-marshal_signature(signature)   ->   "g";
-marshal_signature({array, Type}) ->
-    [$a | marshal_signature(Type)];
-marshal_signature({struct, SubTypes}) ->
-    %% TODO use reverse?
-    "(" ++ marshal_struct_signature(SubTypes, []) ++ ")";
-marshal_signature(variant) ->
-    "v";
-marshal_signature({dict, KeyType, ValueType}) ->
-    KeySig = marshal_signature(KeyType),
-    ValueSig = marshal_signature(ValueType),
-
-    %% TODO check length(KeySig) == 1
-
-    %% TODO use reverse?
-    "a{" ++ KeySig ++ ValueSig ++ "}";
-marshal_signature([]) ->
-    "";
-marshal_signature([Type|R]) ->
-    marshal_signature(Type) ++ marshal_signature(R).
 
 
 marshal_struct_signature([], Res) ->
@@ -411,7 +429,7 @@ unmarshal(variant, Data, Pos) ->
     {ok, Signature, Data1, Pos1} = unmarshal(signature, Data, Pos),
     [Type] = unmarshal_signature(Signature),
     {ok, Value, Data2, Pos2} = unmarshal(Type, Data1, Pos1),
-    {ok, #variant{type=Type, value=Value}, Data2, Pos2}.
+    {ok, #dbus_variant{type=Type, value=Value}, Data2, Pos2}.
 
 
 unmarshal_uint(Len, Data, Pos) when is_integer(Len) ->
@@ -456,52 +474,13 @@ unmarshal_signature([Signature|R], Res) ->
     unmarshal_signature(R, Res ++ [Type]).
 
 
-unmarshal_struct_signature([$)|R], Res) ->
-    {Res, R};
-unmarshal_struct_signature([Signature|R], Res) ->
-    Type = unmarshal_signature(Signature),
-    unmarshal_struct_signature(R, Res ++ [Type]).
+%unmarshal_struct_signature([$)|R], Res) ->
+%    {Res, R};
+%unmarshal_struct_signature([Signature|R], Res) ->
+%    Type = unmarshal_signature(Signature),
+%    unmarshal_struct_signature(R, Res ++ [Type]).
     
 
-unmarshal_signature(Signature) when is_binary(Signature) ->
-    unmarshal_signature(binary_to_list(Signature));
-
-unmarshal_signature(Signature) when is_list(Signature) ->
-    {Sig, []} = unmarshal_signature(Signature, []),
-    Sig;
-
-unmarshal_signature($y) ->
-    byte;
-unmarshal_signature($b) ->
-    boolean;
-unmarshal_signature($n) ->
-    int16;
-unmarshal_signature($q) ->
-    uint16;
-unmarshal_signature($i) ->
-    int32;
-unmarshal_signature($u) ->
-    uint32;
-unmarshal_signature($x) ->
-    int64;
-unmarshal_signature($t) ->
-    uint64;
-unmarshal_signature($d) ->
-    double;
-unmarshal_signature($s) ->
-    string;
-unmarshal_signature($o) ->
-    object_path;
-unmarshal_signature($g) ->
-    signature;
-%% unmarshal_signature($r) ->
-%%     struct;
-unmarshal_signature($v) ->
-    variant;
-%% unmarshal_signature($e) ->
-%%     dict_entry;
-unmarshal_signature(Signature) ->
-    throw({bad_signature, Signature}).
 
 unmarshal_struct(SubTypes, Data, Pos) ->
     unmarshal_struct(SubTypes, Data, [], Pos).
@@ -547,46 +526,30 @@ unmarshal_string(LenType, Data, Pos) ->
     Pos2 = Pos1 + Length + 1,
     {ok, binary_to_list(String), Data2, Pos2}.
 
-padding(byte) ->
-    1;
-padding(boolean) ->
-    4;
-padding(int16) ->
-    2;
-padding(uint16) ->
-    2;
-padding(int32) ->
-    4;
-padding(uint32) ->
-    4;
-padding(int64) ->
-    8;
-padding(uint64) ->
-    8;
-padding(double) ->
-    8;
-padding(string) ->
-    4;
-padding(object_path) ->
-    4;
-padding(signature) ->
-    1;
-padding({array, _Type}) ->
-    4;
-padding({struct, _Types}) ->
-    8;
-padding(variant) ->
-    1;
-padding(dict) ->
-    4.
+padding(byte)             -> 1;
+padding(boolean)          -> 4;
+padding(int16)            -> 2;
+padding(uint16)           -> 2;
+padding(int32)            -> 4;
+padding(uint32)           -> 4;
+padding(int64)            -> 8;
+padding(uint64)           -> 8;
+padding(double)           -> 8;
+padding(string)           -> 4;
+padding(object_path)      -> 4;
+padding(signature)        -> 1;
+padding({array, _Type})   -> 4;
+padding({struct, _Types}) -> 8;
+padding(variant)          -> 1;
+padding(dict)             -> 4.
 
 padding(Size, Pos) when is_integer(Size) ->
     mod(Size - mod(Pos, Size), Size) * 8;
-padding(Size, Pos) ->
-    padding(padding(Size), Pos).
-
+padding(Type, Pos) when is_atom(Type); 
+			array =:= element(1, Type);
+			struct =:= element(1, Type)->
+    padding(padding(Type), Pos).
 
 mod(N, T) ->
-    D = N div T,
+    D = N * T,
     N - D * T.
-

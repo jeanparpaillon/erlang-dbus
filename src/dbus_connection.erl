@@ -46,7 +46,8 @@
 		waiting  = [],
 		mechs    = [],
 		mech_state,
-		guid
+		guid,
+		owner
 	       }).
 
 -define(TIMEOUT, 10000).
@@ -341,10 +342,10 @@ waiting_for_reject(_Evt, _From, State) ->
 authenticated(auth, _From, State) ->
     {reply, authenticated, authenticated, State};
 
-authenticated({call, #header{}=Header}, {Pid, Tag}, 
+authenticated({call, #dbus_message{}=Msg}, {Pid, Tag}, 
 	      #state{sock=Sock, serial=S, pending=Pending}=State) ->
-    lager:debug("### Sending header: ~p~n", [lager:pr(Header, ?MODULE)]),
-    {ok, Data} = dbus_marshaller:marshal_message(Header#header{serial=S}),
+    lager:debug("### Sending msg: ~p~n", [lager:pr(Msg, ?MODULE)]),
+    {ok, Data} = dbus_marshaller:marshal_message(dbus_message:set_serial(S, Msg)),
     true = ets:insert(Pending, {S, Pid, Tag}),
     ok = dbus_transport:send(Sock, Data),
     {reply, {ok, {self(), Tag}}, authenticated, State#state{serial=S+1}};
@@ -359,20 +360,19 @@ authenticated(_Evt, _From, State) ->
 handle_messages([], State) ->
     {ok, State};
 
-handle_messages([#header{type=Type}=Header | R], State) ->
-    case handle_message(Type, Header, State) of
+handle_messages([#dbus_message{header=#dbus_header{type=Type}}=Msg | R], State) ->
+    case handle_message(Type, Msg, State) of
 	    {ok, State2} ->
 	         handle_messages(R, State2);
 	    {error, Err} ->
 	        {error, Err}
     end.
 
-handle_message(?TYPE_METHOD_RETURN, Header, #state{pending=Pending}=State) ->
-    {_, SerialHdr} = dbus_message:header_fetch(?HEADER_REPLY_SERIAL, Header),
-    Serial = SerialHdr#variant.value,
+handle_message(?TYPE_METHOD_RETURN, #dbus_message{}=Msg, #state{pending=Pending}=State) ->
+    Serial = dbus_message:get_field_value(?HEADER_REPLY_SERIAL, Msg),
     case ets:lookup(Pending, Serial) of
 	    [{Serial, Pid, Tag}] ->
-	        Pid ! {reply, Tag, Header},
+	        Pid ! {reply, Tag, Msg},
 	        ets:delete(Pending, Serial),
 	        {ok, State};
 	    [_] ->
@@ -380,12 +380,11 @@ handle_message(?TYPE_METHOD_RETURN, Header, #state{pending=Pending}=State) ->
 	        {error, unexpected_message, State}
     end;
 
-handle_message(?TYPE_ERROR, Header, #state{pending=Pending}=State) ->
-    {_, SerialHdr} = dbus_message:header_fetch(?HEADER_REPLY_SERIAL, Header),
-    Serial = SerialHdr#variant.value,
+handle_message(?TYPE_ERROR, Msg, #state{pending=Pending}=State) ->
+    Serial = dbus_message:get_field_value(?HEADER_REPLY_SERIAL, Msg),
     case ets:lookup(Pending, Serial) of
 	    [{Serial, Pid, Tag}] ->
-	        Pid ! {error, Tag, Header},
+	        Pid ! {error, Tag, Msg},
 	        ets:delete(Pending, Serial),
 	        {ok, State};
 	    [_] ->
@@ -393,16 +392,16 @@ handle_message(?TYPE_ERROR, Header, #state{pending=Pending}=State) ->
 	        {error, unexpected_message, State}
     end;
 
-handle_message(?TYPE_METHOD_CALL, _Header, State) ->
-    %Owner ! {dbus_method_call, Header, self()},
+handle_message(?TYPE_METHOD_CALL, Msg, #state{owner=Owner}=State) ->
+    Owner ! {dbus_method_call, Msg, self()},
     {ok, State};
 
-handle_message(?TYPE_SIGNAL, _Header, State) ->
-    %Owner ! {dbus_signal, Header, self()},
+handle_message(?TYPE_SIGNAL, Msg, #state{owner=Owner}=State) ->
+    Owner ! {dbus_signal, Msg, self()},
     {ok, State};
 
-handle_message(Type, Header, State) ->
-    lager:debug("Ignore ~p ~p~n", [Type, Header]),
+handle_message(Type, Msg, State) ->
+    lager:debug("Ignore ~p ~p~n", [Type, Msg]),
     {error, unexpected_message, State}.
 
 init_connection(Sock, Mechs) ->

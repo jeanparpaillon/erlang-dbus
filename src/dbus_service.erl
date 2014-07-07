@@ -1,6 +1,10 @@
 %%
 %% @copyright 2006-2007 Mikael Magnusson
+%% @copyright 2014 Jean Parpaillon <jean.parpaillon@free.fr>
+%%
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @author Jean Parpaillon <jean.parpaillon@free.fr.
+%%
 %% @doc Exported D-BUS service gen_server
 %%
 -module(dbus_service).
@@ -78,26 +82,23 @@ handle_call({unregister_object, Object}, _From, State) ->
     end;
 
 handle_call(Request, _From, State) ->
-    error_logger:error_msg("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
+    lager:debug("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
 
 
 handle_cast(stop, State) ->
     {stop, normal, State};
 handle_cast(Request, State) ->
-    error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
+    lager:debug("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
 
 handle_info(setup, State) ->
     {noreply, State};
 
-handle_info({dbus_method_call, Header, Conn}, State) ->
-    {_, PathVar} = dbus_message:header_fetch(?HEADER_PATH, Header),
-    PathStr = PathVar#variant.value,
-    Path = list_to_atom(PathStr),
-
-    handle_method_call(Path, Header, Conn, State);
+handle_info({dbus_method_call, Msg, Conn}, State) ->
+    Path = dbus_message:get_field_value(?HEADER_PATH, Msg),
+    handle_method_call(Path, Msg, Conn, State);
 
 handle_info({'EXIT', Pid, Reason}, State) ->
     case handle_unregister_object(Pid, State) of
@@ -115,7 +116,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     end;
 
 handle_info(Info, State) ->
-    error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
+    lager:debug("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
 
@@ -130,11 +131,11 @@ handle_unregister_object(Object, State) ->
     case lists:keysearch(Object, 2, Objects) of
 	{value, {Path, _}} ->
 	    true = unlink(Object),
-	    error_logger:info_msg("~p: Object terminated ~p ~p~n", [?MODULE, Object, Path]),
+	    lager:debug("~p: Object terminated ~p ~p~n", [?MODULE, Object, Path]),
 	    Objects1 = lists:keydelete(Object, 2, Objects),
 	    if
 		Objects1 == [] ->
-		    error_logger:info_msg("~p: No more objects stopping ~p service~n", [?MODULE, State#state.name]),
+		    lager:debug("~p: No more objects stopping ~p service~n", [?MODULE, State#state.name]),
 		    {stop, State};
 		true ->
 		    {ok, State#state{objects=Objects1}}
@@ -144,42 +145,39 @@ handle_unregister_object(Object, State) ->
     end.
 
 
-handle_method_call('/', Header, Conn, State) ->
-    {_, MemberVar} = dbus_message:header_fetch(?HEADER_MEMBER, Header),
-    MemberStr = MemberVar#variant.value,
-    Member = list_to_atom(MemberStr),
-
-    case Member of
+handle_method_call(<<"/">>, #dbus_message{}=Msg, Conn,
+		   #state{objects=Objects}=State) ->
+    Member = dbus_message:get_field_value(?HEADER_MEMBER, Msg),
+    case dbus_constants:to_atom(Member) of
 	'Introspect' ->
 	    Elements = lists:foldl(fun({Path, _}, Res) ->
 					   [$/ | PathStr] = atom_to_list(Path),
-					   [#node{name=PathStr} | Res]
-				   end, [], State#state.objects),
-	    Node = #node{name="/", elements=Elements},
-	    %%ReplyBody = State#state.xml_body,
+					   [#dbus_node{name=PathStr} | Res]
+				   end, [], Objects),
+	    Node = #dbus_node{name="/", elements=Elements},
 	    ReplyBody = dbus_introspect:to_xml(Node),
 	    lager:debug("Introspect ~p~n", [ReplyBody]),
-	    {ok, Reply} = dbus_message:build_method_return(Header, [string], [ReplyBody]),
+	    {ok, Reply} = dbus_message:return(Msg, [string], [ReplyBody]),
 	    ok = dbus_connection:cast(Conn, Reply),
 	    {noreply, State};
 	_ ->
-	    ErrorName = "org.freedesktop.DBus.Error.UnknownMethod",
-	    ErrorText = "Erlang: Function not found: " ++ MemberStr,
-	    {ok, Reply} = dbus_message:build_error(Header, ErrorName, ErrorText),
+	    ErrorName = 'org.freedesktop.DBus.Error.UnknownMethod',
+	    ErrorText = <<"Erlang: Function not found: ", Member/binary>>,
+	    Reply = dbus_message:error(Msg, ErrorName, ErrorText),
 	    ok = dbus_connection:cast(Conn, Reply),
 	    {noreply, State}
     end;
-handle_method_call(Path, Header, Conn, State) ->
-    case lists:keysearch(Path, 1, State#state.objects) of
-	{value, {Path, Object}} ->
-	    Object ! {dbus_method_call, Header, Conn};
 
-	_ ->
-	    PathStr = atom_to_list(Path),
-	    ErrorName = "org.freedesktop.DBus.Error.UnknownObject",
-	    ErrorText = "Erlang: Object not found: " ++ PathStr,
-	    {ok, Reply} = dbus_message:build_error(Header, ErrorName, ErrorText),
+handle_method_call(Path, #dbus_message{}=Msg, Conn, #state{objects=Objects}=State) 
+  when is_binary(Path) ->
+    case proplists:get_value(Path, Objects) of
+	undefined ->
+	    ErrorName = 'org.freedesktop.DBus.Error.UnknownObject',
+	    ErrorText = <<"Erlang: Object not found: ", Path/binary>>,
+	    Reply = dbus_message:error(Msg, ErrorName, ErrorText),
 	    lager:debug("Reply ~p~n", [Reply]),
-	    ok = dbus_connection:cast(Conn, Reply)
+	    ok = dbus_connection:cast(Conn, Reply);
+	Object ->
+	    Object ! {dbus_method_call, Msg, Conn}
     end,
     {noreply, State}.
