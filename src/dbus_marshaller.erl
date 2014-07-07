@@ -51,6 +51,7 @@ marshal_message(#header{body=Body}=Header) when is_list(Body) ->
 
 marshal_message(#header{type=Type, flags=Flags, body=Body, serial=S, headers=Headers}) ->
     {ok, HeaderData} = marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, size(Body), S, Headers]),
+    lager:info("marshaller:marshal_message HeaderData=~p",[HeaderData]),
     {ok, [ HeaderData, Body ]}.
 
 marshal_header(Header) when is_list(Header) ->

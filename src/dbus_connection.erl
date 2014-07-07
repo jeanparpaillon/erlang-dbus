@@ -148,12 +148,14 @@ handle_info({received, _Bin}, connected, #state{sock=Sock}=State) ->
 handle_info({received, <<"ERROR ", _Line/binary>>}, StateName,
 	   #state{sock=Sock}=State) 
   when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
+    lager:info("connection:handle_info ERROR"),
     ok = dbus_transport:send(Sock, <<"CANCEL \r\n">>),
     {next_state, waiting_for_reject, State};    
 
 handle_info({received, <<"OK ", Line/binary>>}, StateName, 
 	    #state{sock=Sock, waiting=Waiting}=State) 
   when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
+    lager:info("connection:handle_info OK"),
     Guid = strip_eol(Line),
     lager:debug("Authenticated: GUID=~p~n", [Guid]),
     ok = dbus_transport:send(Sock, <<"BEGIN \r\n">>),
@@ -181,6 +183,7 @@ handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName,
 %% STATE: waiting_for_ok
 handle_info({received, <<"DATA ", _Line/binary>>}, waiting_for_ok, 
 	    #state{sock=Sock}=State) ->
+	lager:info("connection:handle_info DATA waiting_for_ok"),
     ok = dbus_transport:send(Sock, <<"CANCEL \r\n">>),
     {next_state, waiting_for_reject, State};
 
@@ -192,6 +195,7 @@ handle_info({received, _Bin}, waiting_for_ok, #state{sock=Sock}=State) ->
 %% STATE: waiting_for_data
 handle_info({received, <<"DATA ", Line/binary>>}, waiting_for_data,
 	    #state{sock=Sock, mech_state={Mech, MechState}}=State) ->
+	lager:info("connection:handle_info DATA waiting_for_data"),
     Bin = dbus_hex:from(strip_eol(Line)),
     case Mech:challenge(Bin, MechState) of
 	{ok, Resp} ->
@@ -216,6 +220,7 @@ handle_info({received, _Bin}, waiting_for_data, #state{sock=Sock}=State) ->
 %% STATE: waiting_for_reject
 handle_info({received, <<"REJECTED ", Line/binary>>}, waiting_for_reject,
 	   #state{sock=Sock}=State) ->
+	lager:info("connection:handle_info REJECTED"),
     case parse_mechs(strip_eol(Line)) of
 	{ok, [Mech|Rest]} ->
 	    case Mech:init() of 
@@ -239,8 +244,12 @@ handle_info({received, _Bin}, waiting_for_reject, State) ->
 
 %% STATE: authenticated
 handle_info({received, Data}, authenticated, #state{buf=Buf}=State) ->
+    lager:info("connection:authenticated handle_info"),
     {ok, Msgs, Rest} = dbus_marshaller:unmarshal_data(<<Buf/binary, Data/binary>>),
-    case handle_messages(Msgs, State#state{buf=Rest}) of
+    lager:info("connection:authenticated handle_info Msgs=~p, Rest=~p",[Msgs,Rest]),
+    R = handle_messages(Msgs, State#state{buf=Rest}),
+    lager:info("connection:authenticated handle_info R=~p",[R]),
+    case R of
 	{ok, State2} ->
 	    {next_state, authenticated, State2};
 	{error, Err, State2} ->
@@ -248,8 +257,9 @@ handle_info({received, Data}, authenticated, #state{buf=Buf}=State) ->
     end;
 
 %% Other
-handle_info(closed, _StateName, State) ->
+handle_info(closed, StateName, State) ->
     lager:error("Connection closed...~n", []),
+    lager:info("connection:close StatName=~p",[StateName]),
     {stop, closed, State};
 
 handle_info(_Evt, StateName, State) ->

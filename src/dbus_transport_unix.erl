@@ -97,6 +97,7 @@ handle_cast({send, Data}, #state{sock=Sock}=State) when is_list(Data) ->
     handle_cast({send, iolist_to_binary(Data)}, #state{sock=Sock}=State);
 
 handle_cast({send, Data}, #state{sock=Sock}=State) when is_binary(Data) ->
+    lager:info("### sending procket Data= ~p",[Data]),
     procket:sendto(Sock, Data, 0, <<>>),
     {noreply, State};
 
@@ -113,6 +114,7 @@ handle_cast(Request, State) ->
 
 
 handle_info({unix, Data}, #state{owner=Owner}=State) ->
+    lager:info("Transport unix:handle_info {received,Data}"),
     Owner ! {received, Data},
     {noreply, State};
 
