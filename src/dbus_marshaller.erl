@@ -42,37 +42,20 @@ unmarshal_data(Data, Res) ->
 	{ok, Header, Data1} ->
 	    unmarshal_data(Data1, Res ++ [Header]);
 	{'EXIT', _Reason} ->
-%% 	    error_logger:info_msg("unmarshal_data: ~p~n", [Reason]),
 	    {ok, Res, Data}
     end.
 
 
-%% marshal_message(Header) ->
-%%     marshal_message(Header, <<>>).
+marshal_message(#header{body=Body}=Header) when is_list(Body) ->
+    marshal_message(Header#header{body=list_to_binary(Body)});
 
-marshal_message(Header) when is_record(Header, header) ->
-    Body = Header#header.body,
-    Body1 =
-	if
-	    is_list(Body) ->
-		list_to_binary(Body);
-	    is_binary(Body) ->
-		Body
-	end,
-	    
-%%     HeaderList = dbus_message:to_list(Header),
-    HeaderList = [$l,
-		  Header#header.type,
-		  Header#header.flags,
-		  ?DBUS_VERSION_MAJOR,
-		  size(Body1),
-		  Header#header.serial,
-		  Header#header.headers],
-    {ok, HeaderData} = marshal_header(HeaderList),
-    {ok, [ HeaderData, Body1 ]}.
+marshal_message(#header{type=Type, flags=Flags, body=Body, serial=S, headers=Headers}) ->
+    {ok, HeaderData} = marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, size(Body), S, Headers]),
+    {ok, [ HeaderData, Body ]}.
 
 marshal_header(Header) when is_list(Header) ->
-    {ok, Value, Pos} = marshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], Header),
+    {ok, Value, Pos} = marshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], 
+				    Header),
     Pad = padding(8, Pos),
     if
 	Pad == 0 ->
@@ -320,30 +303,18 @@ marshal_struct([SubType|R], [Value|V], Pos, Res) ->
     marshal_struct(R, V, Pos1, Res ++ [Value1]).
 
 
-marshal_signature(byte) ->
-    "y";
-marshal_signature(boolean) ->
-    "b";
-marshal_signature(int16) ->
-    "n";
-marshal_signature(uint16) ->
-    "q";
-marshal_signature(int32) ->
-    "i";
-marshal_signature(uint32) ->
-    "u";
-marshal_signature(int64) ->
-    "x";
-marshal_signature(uint64) ->
-    "t";
-marshal_signature(double) ->
-    "d";
-marshal_signature(string) ->
-    "s";
-marshal_signature(object_path) ->
-    "o";
-marshal_signature(signature) ->
-    "g";
+marshal_signature(byte)        ->   "y";
+marshal_signature(boolean)     ->   "b";
+marshal_signature(int16)       ->   "n";
+marshal_signature(uint16)      ->   "q";
+marshal_signature(int32)       ->   "i";
+marshal_signature(uint32)      ->   "u";
+marshal_signature(int64)       ->   "x";
+marshal_signature(uint64)      ->   "t";
+marshal_signature(double)      ->   "d";
+marshal_signature(string)      ->   "s";
+marshal_signature(object_path) ->   "o";
+marshal_signature(signature)   ->   "g";
 marshal_signature({array, Type}) ->
     [$a | marshal_signature(Type)];
 marshal_signature({struct, SubTypes}) ->

@@ -28,44 +28,45 @@
 
 -record(state, {sock, owner}).
 
--define(IS_SERVER, 1).
--define(IS_ABSTRACT, 2).
--define(IS_NULLTERM, 4).
-
 -define(PF_LOCAL, 1).
 -define(UNIX_PATH_MAX, 108).
 -define(BACKLOG, 5).
 
-connect(BusOptions, Options) ->
-    lager:info("transport_unix:connect"),
-    {_Flags, Path} =
-	case lists:keysearch(path, 1, BusOptions) of
-	    {value, {_, Path1}} ->
-		{?IS_NULLTERM, Path1};
-	    _ ->
-		case lists:keysearch(abstract, 1, BusOptions) of
-		    {value, {_, Path2}} ->
-			{?IS_ABSTRACT bor ?IS_NULLTERM, Path2};
-		    _ ->
-			throw(no_path)
-		end
-	end,
-    gen_server:start_link(?MODULE, [Path, Options, self()],[]).
+connect(BusOptions, _Options) ->
+    Path = case proplists:get_value(path, BusOptions) of
+	       undefined ->
+		   case proplists:get_value(abstract, BusOptions) of
+		       undefined ->
+			   throw(no_path);
+		       V ->
+			   {abstract, list_to_binary(V)}
+		   end;
+	       V ->
+		   {path, list_to_binary(V)}
+	   end,
+    gen_server:start_link(?MODULE, [Path, self()],[]).
 
 %%
 %% gen_server callbacks
 %%
-init([Path, _Options, Owner]) when is_pid(Owner), is_list(Path) ->
+init([{Mode, Path}, Owner]) when is_pid(Owner), is_binary(Path) ->
     true = link(Owner),
     case procket:socket(unix, stream, 0) of
 	{ok, Sock} ->
-	    BinPath = list_to_binary(Path),
-	    SockUn = <<?PF_LOCAL:16/native,
-		       BinPath/binary,
-		       0:((?UNIX_PATH_MAX-byte_size(BinPath))*8)>>,
+	    SockUn = case Mode of
+			 path ->
+			     <<?PF_LOCAL:16/native,
+			       Path/binary,
+			       0:((?UNIX_PATH_MAX-byte_size(Path))*8)>>;
+			 abstract ->
+			     <<?PF_LOCAL:16/native,
+			       0:8,
+			       Path/binary,
+			       0:((?UNIX_PATH_MAX-(1+byte_size(Path)))*8)>>
+		     end,
 	    case procket:connect(Sock, SockUn) of
 		ok ->
-		    %process_flag(trap_exit, true),
+		    process_flag(trap_exit, true),
 	 	    lager:info("transport_unix:init connect"),
 		    Res = spawn_link(?MODULE, do_read, [Sock, self()]),
                     lager:info("transport_unix:init Res= ~p",[Res]),
@@ -92,7 +93,9 @@ handle_call(Request, _From, State) ->
 
 
 handle_cast({send, Data}, #state{sock=Sock}=State) when is_list(Data) ->
+    lager:debug("### Sending on DBUS: ~p~n", [Data]),
     handle_cast({send, iolist_to_binary(Data)}, #state{sock=Sock}=State);
+
 handle_cast({send, Data}, #state{sock=Sock}=State) when is_binary(Data) ->
     procket:sendto(Sock, Data, 0, <<>>),
     {noreply, State};
@@ -113,7 +116,8 @@ handle_info({unix, Data}, #state{owner=Owner}=State) ->
     Owner ! {received, Data},
     {noreply, State};
 
-handle_info({unix_closed, Sock}, #state{sock=Sock, owner=Owner}=State) ->
+handle_info({'EXIT', _From, _Reason}, #state{owner=Owner}=State) ->
+    lager:error("Listener has died, who will listen ?~n", []),
     Owner ! closed,
     {stop, normal, State#state{sock=undefined}};
 
@@ -142,7 +146,8 @@ do_read(Sock, Pid) ->
 	    ok;
 	% EOF
 	{ok, <<>>} ->
-	    do_read(Sock, Pid);
+	    %do_read(Sock, Pid);
+	    ok;
 	{ok, Buf} ->
 	    lager:info("transport_unix:do_read ok Buf = ~p ",[Buf]),
 	    Pid ! {unix, Buf},

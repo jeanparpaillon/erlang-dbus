@@ -92,7 +92,7 @@ cast(Bus, Header) ->
 %% gen_server callbacks
 %%
 init([BusId, Owner]) ->
-    case setup(BusId) of
+    case dbus_connection:start_link(BusId, [list, {packet, 0}]) of
 	{ok, Conn} ->
 	    dbus_connection:auth(Conn),
 	    Reg = ets:new(services, [set, private]),
@@ -204,7 +204,7 @@ handle_cast(Request, State) ->
 
 
 handle_info({setup, BusId}, State) ->
-    case setup(BusId)of
+    case dbus_connection:start_link(BusId, [list, {packet, 0}]) of
 	{ok, Conn} -> {noreply, State#state{conn=Conn}};
 	ignore -> {noreply, State};
 	{error, Err} -> {stop, Err, State}
@@ -356,9 +356,3 @@ parse_value(port, Value) ->
     list_to_integer(Value);
 parse_value(_, Value) ->
     Value.
-
-%%%
-%%% Priv
-%%%
-setup(BusId) when is_record(BusId, bus_id) ->
-    dbus_connection:start_link(BusId, [list, {packet, 0}]).

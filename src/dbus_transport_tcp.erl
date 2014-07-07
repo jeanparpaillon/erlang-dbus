@@ -38,7 +38,9 @@ init([Host, Port, Options, Owner]) ->
     true = link(Owner),
     case gen_tcp:connect(Host, Port, Options) of
 	{ok, Sock} ->
-	    ok = inet:setopts(Sock, [{active, once}]),
+	    ok = inet:setopts(Sock, [{keepalive, true},
+				     {active, once}, 
+				     binary]),
 	    {ok, #state{sock=Sock, owner=Owner}};
 	{error, Err} ->
 	    lager:error("Error opening socket: ~p~n", [Err]),
@@ -49,48 +51,46 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
-handle_call({setopts, Options}, _From, State) ->
-    ok = inet:setopts(State#state.sock, Options),
+handle_call({setopts, Options}, _From, #state{sock=Sock}=State) ->
+    ok = inet:setopts(Sock, Options),
     {reply, ok, State};
 
 handle_call(Request, _From, State) ->
-    error_logger:error_msg("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
+    lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
 
 
-handle_cast({send, Data}, State) ->
-    Sock = State#state.sock,
+handle_cast({send, Data}, #state{sock=Sock}=State) ->
     gen_tcp:send(Sock, Data),
     {noreply, State};
 
 handle_cast(close, State) ->
     ok = gen_tcp:close(State#state.sock),
     {stop, normal, State#state{sock=undefined}};
+
 handle_cast(stop, State) ->
     {stop, normal, State};
+
 handle_cast(Request, State) ->
-    error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
+    lager:error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
 
-handle_info({tcp, Sock, Data}, #state{sock=Sock}=State) ->
-    Owner = State#state.owner,
+handle_info({tcp, Sock, Data}, #state{sock=Sock, owner=Owner}=State) ->
     Owner ! {received, Data},
     ok = inet:setopts(Sock, [{active, once}]),
     {noreply, State};
 
-handle_info({tcp_closed, Sock}, #state{sock=Sock}=State) ->
-    Owner = State#state.owner,
+handle_info({tcp_closed, Sock}, #state{sock=Sock, owner=Owner}=State) ->
     Owner ! closed,
-    {stop, normal, State#state{sock=undefined}};
+    {stop, normal, State};
 
 handle_info(Info, State) ->
-    error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
+    lager:error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
 
-terminate(_Reason, State) ->
-    Sock = State#state.sock,
+terminate(_Reason, #state{sock=Sock}) ->
     case Sock of
 	undefined -> ignore;
 	_ -> gen_tcp:close(Sock)
