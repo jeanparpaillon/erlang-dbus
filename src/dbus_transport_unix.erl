@@ -39,9 +39,11 @@ connect(BusOptions, _Options) ->
 		       undefined ->
 			   throw(no_path);
 		       V ->
+			   lager:debug("DBUS socket: {abstract, ~p}~n", [V]),
 			   {abstract, list_to_binary(V)}
 		   end;
 	       V ->
+		   lager:debug("DBUS socket: {path, ~p}~n", [V]),
 		   {path, list_to_binary(V)}
 	   end,
     gen_server:start_link(?MODULE, [Path, self()],[]).
@@ -60,8 +62,7 @@ init([{Mode, Path}, Owner]) when is_pid(Owner), is_binary(Path) ->
 			       0:((?UNIX_PATH_MAX-byte_size(Path))*8)>>;
 			 abstract ->
 			     <<?PF_LOCAL:16/native,
-			       0:8,
-			       Path/binary,
+			       0:8, Path/binary,
 			       0:((?UNIX_PATH_MAX-(1+byte_size(Path)))*8)>>
 		     end,
 	    case procket:connect(Sock, SockUn) of

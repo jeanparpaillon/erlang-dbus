@@ -29,66 +29,95 @@
 -define(DBUS_REQUEST_NAME_REPLY_EXISTS, 3).
 -define(DBUS_REQUEST_NAME_REPLY_ALREADY_OWNER, 4).
 
+-type dbus_name() :: atom() | binary().
+-type dbus_option() :: no_reply_expected | no_auto_start.
+
+-type dbus_type() :: byte | 
+		     boolean |
+		     int16 |
+		     uint16 | 
+		     int32 |
+		     uint32 |
+		     int64 |
+		     uint64 |
+		     double |
+		     string |
+		     object_path |
+		     signature |
+		     struct |
+		     variant |
+		     dict_entry.
+
 -record(bus_id, {
 	  scheme,				% tcp or unix
 	  options				% tcp: address, port
 						% unix: path|abstract
 	 }).
 
--record(message, {
+-record(dbus_message, {
 	  header,
 	  body}).
+-type dbus_message() :: #dbus_message{}.
 
--record(header, {
-	  type,
-	  flags=0,
-	  serial,
-	  headers,
-	  body= <<>>
+-record(dbus_header, {
+	  type                           :: integer(),
+	  flags    = 0                   :: integer(),
+	  version  = ?DBUS_VERSION_MAJOR :: integer(),
+	  size     = 0                   :: integer(),
+	  serial                         :: integer(),
+	  fields                         :: [dbus_variant()]
 	 }).
+-type dbus_header() :: #dbus_header{}.
 
--record(variant, {
-	  type,
-	  value
+-record(dbus_variant, {
+	  type           :: integer(),
+	  value          :: term()
 	 }).
+-type dbus_variant() :: #dbus_variant{}.
 
--record(node, {
-	  name,					% atom()
-	  elements = [],			% [node()]
-	  interfaces = []			% [#interface()] | unknown
+-record(dbus_node, {
+	  name            :: dbus_name(),
+	  elements   = [] :: [dbus_node()],
+	  interfaces = [] :: [dbus_iface()]
 	 }).
+-type dbus_node() :: #dbus_node{}.
 
--record(interface, {
-	  name,					% atom
-	  methods = [],				% [#member]
-	  signals = [],				% [#member]
-	  properties = []			% [#propery]
+-record(dbus_iface, {
+	  name            :: dbus_name(),
+	  methods    = [] :: [dbus_name()],
+	  signals    = [] :: dbus_name(),
+	  properties = [] :: [dbus_property()]
 	  }).
+-type dbus_iface() :: #dbus_iface{}.
 
--record(method, {
-	  name,					% atom
-	  args,					% [#arg]
-	  result,				% #arg | none | undefined
-	  in_sig,				% string()
+-record(dbus_method, {
+	  name            :: dbus_name(),
+	  args            :: [dbus_arg()],
+	  result          :: none | undefined | dbus_arg(),
+	  in_sig          :: binary(),
 	  in_types
 	 }).
+-type dbus_method() :: #dbus_method{}.
 
--record(signal, {
-	  name,					% atom
-	  args,					% [#arg]
-	  result,				% #arg | none
-	  out_sig,				% string()
+-record(dbus_signal, {
+	  name            :: dbus_name(),
+	  args            :: [dbus_arg()],
+	  result          :: none | dbus_arg(),
+	  out_sig         :: binary(),
 	  out_types
 	 }).
+-type dbus_signal() :: #dbus_signal{}.
 
--record(property, {
-	  name,					% atom()
-	  type,					% string()
-	  access				% read | write | readwrite
+-record(dbus_property, {
+	  name            :: dbus_name(),
+	  type            :: binary(),
+	  access          :: read | write | readwrite
 	  }).
+-type dbus_property() :: #dbus_property{}.
 
--record(arg, {
-	  name,					% atom() | none
-	  direction,				% in | out
-	  type					% string()
+-record(dbus_arg, {
+	  name            :: dbus_name(),
+	  direction       :: in | out,
+	  type            :: binary()
 	 }).
+-type dbus_arg() :: #dbus_arg{}.

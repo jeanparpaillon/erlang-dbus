@@ -1,9 +1,11 @@
 %%
 %% @copyright 2006-2007 Mikael Magnusson
+%% @Copyright 2014 Jean Parpaillon
+%%
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @author Jean Parpaillon <jean.parpaillon@free.fr.
 %% @doc introspect support module
 %%
-
 -module(dbus_introspect).
 
 -include_lib("xmerl/include/xmerl.hrl").
@@ -11,7 +13,6 @@
 
 -export([
 	 to_xml/1,
-	 build_introspect/2,
 	 from_xml/1,
 	 from_xml_string/1,
 	 to_xmerl/1,
@@ -20,13 +21,13 @@
 	 fetch_method/2,
 	 find_method/2,
 	 fetch_signal/2,
-	 find_signal/2,
-	 test/0
+	 find_signal/2
 	]).
 
-%% api
-
-to_xml(Node) when is_record(Node, node) ->
+%%%
+%%% API
+%%%
+to_xml(#dbus_node{}=Node) ->
     Prolog = "<?xml version=\"1.0\" encoding=\"utf-8\" ?><!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\" \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">",
     lists:flatten(xmerl:export_simple([to_xmerl(Node)], xmerl_xml, [{prolog, Prolog}])).
 
@@ -35,28 +36,28 @@ to_xmerl(undefined) ->
 to_xmerl(List) when is_list(List) ->
     lists:map(fun(Elem) -> to_xmerl(Elem) end, List);
 
-to_xmerl(Elem) when is_record(Elem, node) ->
+to_xmerl(#dbus_node{}=Elem) ->
     {node,
-     case Elem#node.name of
+     case Elem#dbus_node.name of
 	 undefined ->
 	     [];
 	 Name ->
 	     [{name, Name}]
      end,
-     to_xmerl(Elem#node.elements) ++
-     to_xmerl(Elem#node.interfaces)
+     to_xmerl(Elem#dbus_node.elements) ++
+     to_xmerl(Elem#dbus_node.interfaces)
     };
 
-to_xmerl(Elem) when is_record(Elem, interface) ->
+to_xmerl(#dbus_iface{}=Elem) ->
     {interface,
-     [{name, Elem#interface.name}],
-     to_xmerl(Elem#interface.methods) ++
-     to_xmerl(Elem#interface.signals) ++
-     to_xmerl(Elem#interface.properties)};
+     [{name, Elem#dbus_iface.name}],
+     to_xmerl(Elem#dbus_iface.methods) ++
+     to_xmerl(Elem#dbus_iface.signals) ++
+     to_xmerl(Elem#dbus_iface.properties)};
 
-to_xmerl(Elem) when is_record(Elem, method) ->
+to_xmerl(#dbus_method{}=Elem) ->
     Result =
-	case Elem#method.result of
+	case Elem#dbus_method.result of
 	    none ->
 		[];
 	    undefined ->
@@ -65,18 +66,17 @@ to_xmerl(Elem) when is_record(Elem, method) ->
 		[to_xmerl(Arg)]
 	end,
     {method,
-     case Elem#method.name of
+     case Elem#dbus_method.name of
 	 undefined ->
 	     [];
 	 Name ->
 	     [{name, Name}]
      end,
-     to_xmerl(Elem#method.args) ++ 
-     Result};
+     to_xmerl(Elem#dbus_method.args) ++ Result};
 
-to_xmerl(Elem) when is_record(Elem, signal) ->
+to_xmerl(#dbus_signal{}=Elem) ->
     Result =
-	case Elem#signal.result of
+	case Elem#dbus_signal.result of
 	    none ->
 		[];
 	    undefined ->
@@ -85,38 +85,23 @@ to_xmerl(Elem) when is_record(Elem, signal) ->
 		[to_xmerl(Arg)]
 	end,
     {signal,
-     case Elem#signal.name of
+     case Elem#dbus_signal.name of
 	 undefined ->
 	     [];
 	 Name ->
 	     [{name, Name}]
      end,
-     to_xmerl(Elem#signal.args) ++ 
-     Result};
+     to_xmerl(Elem#dbus_signal.args) ++ Result};
 
-to_xmerl(Elem) when is_record(Elem, arg) ->
+to_xmerl(#dbus_arg{}=Elem) ->
     {arg, 
-     case Elem#arg.name of
+     case Elem#dbus_arg.name of
 	 undefined ->
 	     [];
 	 Name ->
 	     [{name, Name}]
      end ++
-     [{direction, Elem#arg.direction},
-      {type, Elem#arg.type}], []}.
-
-build_introspect(Service, Path) ->
-    Headers = [
-	       {?HEADER_PATH, #variant{type=object_path, value=Path}},
-	       {?HEADER_DESTINATION, #variant{type=string, value=Service}},
-	       {?HEADER_INTERFACE, #variant{type=string, value="org.freedesktop.DBus.Introspectable"}},
-	       {?HEADER_MEMBER, #variant{type=string, value="Introspect"}}
-	      ],
-
-    #header{type=?TYPE_METHOD_CALL,
-	    headers=Headers}.
-
-
+     [{direction, Elem#dbus_arg.direction}, {type, Elem#dbus_arg.type}], []}.
 
 from_xml_string(Data) when is_list(Data) ->
     {Xml, _Misc} = xmerl_scan:string(Data),
@@ -139,9 +124,9 @@ xml(#xmlElement{name=node}=Element) ->
     Interfaces = filter_content(interface, Content),
 
     %% FIXME subnodes
-    #node{name=Name,
-%% 	  elements=Content,
-	  interfaces=Interfaces};
+    #dbus_node{name=Name,
+	       %% 	  elements=Content,
+	       interfaces=Interfaces};
 
 xml(#xmlElement{name=interface}=Element) ->
     Name = fetch_attribute(name, Element),
@@ -150,7 +135,7 @@ xml(#xmlElement{name=interface}=Element) ->
     Signals = filter_content(signal, Content),
     Properties = filter_content(property, Content),
 
-    #interface{name=Name#xmlAttribute.value,
+    #dbus_iface{name=Name#xmlAttribute.value,
 	       methods=Methods,
 	       signals=Signals,
 %% 	       signals=Content,
@@ -162,25 +147,21 @@ xml(#xmlElement{name=method}=Element) ->
     Args = filter_content(arg, Content),
     CmpDir = fun(A) ->
 		  case A of
-		      #arg{direction=in} -> true;
-		      #arg{direction=undefined} -> true;
+		      #dbus_arg{direction=in} -> true;
+		      #dbus_arg{direction=undefined} -> true;
 		      _ -> false
 		  end
 	  end,
-		  
     OutArgs = lists:filter(CmpDir, Args),
-
     BuildSig = fun(Arg, Acc) ->
-		       Arg#arg.type ++ Acc
+		       Arg#dbus_arg.type ++ Acc
 	       end,
-
     Signature = lists:foldr(BuildSig, "", OutArgs),
     Types = dbus_marshaller:unmarshal_signature(Signature),
-
-    #method{name=Name#xmlAttribute.value,
-	    args=Args,
-	    in_sig=Signature, 
-	    in_types=Types};
+    #dbus_method{name=Name#xmlAttribute.value,
+		 args=Args,
+		 in_sig=Signature, 
+		 in_types=Types};
 
 xml(#xmlElement{name=signal}=Element) ->
     Name = fetch_attribute(name, Element),
@@ -188,24 +169,20 @@ xml(#xmlElement{name=signal}=Element) ->
     Args = filter_content(arg, Content),
     CmpDir = fun(A) ->
 		  case A of
-		      #arg{direction=out} -> true;
-		      #arg{direction=undefined} -> true
+		      #dbus_arg{direction=out} -> true;
+		      #dbus_arg{direction=undefined} -> true
 		  end
 	  end,
-		  
     OutArgs = lists:filter(CmpDir, Args),
-
     BuildSig = fun(Arg, Acc) ->
-		       Arg#arg.type ++ Acc
+		       Arg#dbus_arg.type ++ Acc
 	       end,
-
     Signature = lists:foldr(BuildSig, "", OutArgs),
     Types = dbus_marshaller:unmarshal_signature(Signature),
-
-    #signal{name=Name#xmlAttribute.value,
-	    args=Args,
-	    out_sig=Signature, 
-	    out_types=Types};
+    #dbus_signal{name=Name#xmlAttribute.value,
+		 args=Args,
+		 out_sig=Signature, 
+		 out_types=Types};
 
 xml(#xmlElement{name=arg}=Element) ->
     Name =
@@ -215,7 +192,6 @@ xml(#xmlElement{name=arg}=Element) ->
 	    error ->
 		none
 	end,
-
     Direction =
 	    case find_attribute(direction, Element) of
 		{ok, #xmlAttribute{value="in"}} ->
@@ -225,10 +201,8 @@ xml(#xmlElement{name=arg}=Element) ->
 		error ->
 		    undefined
 	    end,
-
     Type = fetch_attribute(type, Element),
-
-    #arg{name=Name, direction=Direction, type=Type#xmlAttribute.value};
+    #dbus_arg{name=Name, direction=Direction, type=Type#xmlAttribute.value};
 
 xml(Element) when is_record(Element, xmlText) ->
     ignore;
@@ -274,82 +248,66 @@ filter_content(Name, Content) ->
 	  end,
     lists:filter(Fun, Content).
 
-fetch_interface(IfaceName, Node) when is_record(Node, node) ->
+fetch_interface(IfaceName, #dbus_node{}=Node) ->
     {ok, Iface} = find_interface(IfaceName, Node),
     Iface.
 
 find_interface(IfaceName, Node) when is_atom(IfaceName) ->
     find_interface(atom_to_list(IfaceName), Node);
-find_interface(IfaceName, Node) when is_record(Node, node) ->
+find_interface(IfaceName, #dbus_node{}=Node) ->
     Fun = fun(E) ->
 		  case E of
-		      #interface{name=IfaceName} -> true;
+		      #dbus_iface{name=IfaceName} -> true;
 		      _ -> false
 		  end
 	  end,
-    case lists:filter(Fun, Node#node.interfaces) of
+    case lists:filter(Fun, Node#dbus_node.interfaces) of
 	[Iface|_] ->
 	    {ok, Iface};
 	[] ->
 	    error
     end.
 
-fetch_method(MethodName, Node) when is_record(Node, interface) ->
+fetch_method(MethodName, #dbus_iface{}=Node) ->
     {ok, Method} = find_method(MethodName, Node),
     Method.
 
 find_method(MethodName, Iface) when is_atom(MethodName) ->
     find_method(atom_to_list(MethodName), Iface);
-find_method(MethodName, Iface) when is_record(Iface, interface) ->
+find_method(MethodName, #dbus_iface{}=Iface) ->
     Fun = fun(E) ->
 		  case E of
-		      #method{name=MethodName} -> true;
+		      #dbus_method{name=MethodName} -> true;
 		      _ -> false
 		  end
 	  end,
-    case lists:filter(Fun, Iface#interface.methods) of
+    case lists:filter(Fun, Iface#dbus_iface.methods) of
 	[Method|_] ->
 	    {ok, Method};
 	[] ->
 	    error
     end.
 
-fetch_signal(Signal_name, Node) when is_record(Node, interface) ->
+fetch_signal(Signal_name, #dbus_iface{}=Node) ->
     {ok, Signal} = find_signal(Signal_name, Node),
     Signal.
 
 find_signal(Signal_name, Iface) when is_atom(Signal_name) ->
     find_signal(atom_to_list(Signal_name), Iface);
-find_signal(Signal_name, Iface) when is_record(Iface, interface) ->
+find_signal(Signal_name, #dbus_iface{}=Iface) ->
     Fun = fun(E) ->
 		  case E of
-		      #signal{name=Signal_name} -> true;
+		      #dbus_signal{name=Signal_name} -> true;
 		      _ -> false
 		  end
 	  end,
-    case lists:filter(Fun, Iface#interface.signals) of
+    case lists:filter(Fun, Iface#dbus_iface.signals) of
 	[Signal|_] ->
 	    {ok, Signal};
 	[] ->
 	    error
     end.
 
-%% Tests
-test() ->
-    Data = default_dbus_node(),
-    Data1 = Data,
-    lists:flatten(xmerl:export_simple([to_xmerl(Data1)], xmerl_xml)).
-
-default_dbus_node() ->
-    HelloMethod = #method{name="Hello", args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
-    AddMatch = #method{name="AddMatch", args=[#arg{direction=in, type="s"}], in_sig="s", in_types=[string]},
-    RequestName = #method{name="RequestName", args=[#arg{direction=in, type="s"}, #arg{direction=in, type="u"}, #arg{direction=out, type="u"}], in_sig="su", in_types=[string,uint32]},
-    ReleaseName = #method{name="ReleaseName", args=[#arg{direction=in, type="s"}, #arg{direction=out, type="u"}], in_sig="s", in_types=[string]},
-    DBusIface = #interface{name="org.freedesktop.DBus", methods=[HelloMethod, AddMatch, RequestName, ReleaseName]},
-
-    IntrospectMethod = #method{name="Introspect", args=[], result=#arg{direction=out, type="s"}, in_sig="", in_types=[]},
-    DBusIntrospectableIface = #interface{name="org.freedesktop.DBus.Introspectable", methods=[IntrospectMethod]},
-
-    DBusRootNode = #node{elements=[], interfaces=[DBusIface, DBusIntrospectableIface]},
-    DBusRootNode.
-
+%%%
+%%% Priv
+%%%
