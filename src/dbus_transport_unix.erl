@@ -26,7 +26,9 @@
 % Needed for spawn_link
 -export([do_read/2]).
 
--record(state, {sock, owner}).
+-record(state, {sock, 
+		owner,
+		raw      :: boolean()}).
 
 -define(PF_LOCAL, 1).
 -define(UNIX_PATH_MAX, 108).
@@ -51,7 +53,9 @@ connect(BusOptions, _Options) ->
 %%
 %% gen_server callbacks
 %%
-init([{Mode, Path}, Owner]) when is_pid(Owner), is_binary(Path) ->
+init([{Mode, Path}, Owner]) when is_pid(Owner), 
+				 is_binary(Path),
+				 byte_size(Path) < ?UNIX_PATH_MAX ->
     true = link(Owner),
     case procket:socket(unix, stream, 0) of
 	{ok, Sock} ->
@@ -63,7 +67,7 @@ init([{Mode, Path}, Owner]) when is_pid(Owner), is_binary(Path) ->
 			 abstract ->
 			     <<?PF_LOCAL:16/native,
 			       0:8, Path/binary,
-			       0:((?UNIX_PATH_MAX-(1+byte_size(Path)))*8)>>
+			       0:((?UNIX_PATH_MAX-1-byte_size(Path))*8)>>
 		     end,
 	    case procket:connect(Sock, SockUn) of
 		ok ->
@@ -79,14 +83,19 @@ init([{Mode, Path}, Owner]) when is_pid(Owner), is_binary(Path) ->
 	{error, Err} ->
 	    lager:error("Error creating socket: ~p~n", [Err]),
 	    {error, Err}
-    end.
+    end;
+init(_) ->
+    lager:error("Invalid argument in UNIX transport init~n", []),
+    {error, invalid_argument}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-handle_call({setopts, _Options}, _From, State) ->
-    % TODO ?
-    {reply, ok, State};
+handle_call(support_unix_fd, _From, State) ->
+    {reply, true, State};
+
+handle_call({set_raw, Raw}, _From, State) ->
+    {reply, ok, State#state{raw=Raw}};
 
 handle_call(Request, _From, State) ->
     lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),

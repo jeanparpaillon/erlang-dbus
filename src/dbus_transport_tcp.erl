@@ -51,8 +51,8 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
-handle_call({setopts, Options}, _From, #state{sock=Sock}=State) ->
-    ok = inet:setopts(Sock, Options),
+handle_call({set_raw, true}, _From, #state{sock=Sock}=State) ->
+    ok = inet:setopts(Sock, [{packet, raw}]),
     {reply, ok, State};
 
 handle_call(Request, _From, State) ->

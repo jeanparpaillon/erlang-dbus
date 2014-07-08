@@ -55,7 +55,6 @@
 	 }).
 
 -define(DEFAULT_BUS_SYSTEM, #bus_id{scheme=unix,options=[{path, "/var/run/dbus/system_bus_socket"}]}).
-%-define(DEFAULT_BUS_SYSTEM, #bus_id{scheme=unix,options=[{path, "/tmp/dbus-system"}]}).
 -define(SESSION_ENV, "DBUS_SESSION_BUS_ADDRESS").
 -define(SERVER_DELIM, $;).
 -define(TRANSPORT_DELIM, $:).
