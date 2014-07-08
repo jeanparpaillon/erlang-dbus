@@ -38,7 +38,7 @@
 	 waiting_for_reject/3,
 	 authenticated/3]).
 
--record(state, {serial   = 0,
+-record(state, {serial   = 1,
 		mod,
 		sock,
 		buf      = <<>>,
@@ -147,10 +147,15 @@ handle_info({received, _Bin}, connected, #state{sock=Sock}=State) ->
 
 %% STATE: waiting_for_ok OR waiting_for_data
 handle_info({received, <<"ERROR ", _Line/binary>>}, StateName,
-	   #state{sock=Sock}=State) 
+	   #state{mechs=[]}=State) 
+  when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
+    {stop, disconnect, State};
+
+handle_info({received, <<"ERROR ", _Line/binary>>}, StateName,
+	   #state{sock=Sock, mechs=[_|Mechs]}=State) 
   when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
     ok = dbus_transport:send(Sock, <<"CANCEL \r\n">>),
-    {next_state, waiting_for_reject, State};    
+    {next_state, waiting_for_reject, #state{mechs=Mechs}=State};    
 
 handle_info({received, <<"OK ", Line/binary>>}, StateName, 
 	    #state{sock=Sock, waiting=Waiting}=State) 
@@ -163,6 +168,11 @@ handle_info({received, <<"OK ", Line/binary>>}, StateName,
 		  end, Waiting),
     ok = dbus_transport:setopts(Sock, [{packet, raw}]),
     {next_state, authenticated, State#state{waiting=[], guid=Guid}};
+
+handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName,
+	   #state{mechs=[]}=State) 
+  when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
+    {stop, disconnect, State};
 
 handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName,
 	   #state{sock=Sock, mechs=[Mech|Rest]}=State) 
@@ -334,8 +344,7 @@ authenticated(auth, _From, State) ->
 
 authenticated({call, #dbus_message{}=Msg}, {Pid, Tag}, 
 	      #state{sock=Sock, serial=S, pending=Pending}=State) ->
-    lager:debug("### Sending msg: ~p~n", [lager:pr(Msg, ?MODULE)]),
-    {ok, Data} = dbus_marshaller:marshal_message(dbus_message:set_serial(S, Msg)),
+    Data = dbus_marshaller:marshal_message(dbus_message:set_serial(S, Msg)),
     true = ets:insert(Pending, {S, Pid, Tag}),
     ok = dbus_transport:send(Sock, Data),
     {reply, {ok, {self(), Tag}}, authenticated, State#state{serial=S+1}};
