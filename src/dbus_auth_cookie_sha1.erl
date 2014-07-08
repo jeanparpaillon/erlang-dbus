@@ -17,7 +17,7 @@
 init() ->
     lager:debug("Init DBUS_AUTH_COOKIE_SHA1 authentication~n", []),
     User = os:getenv("USER"),
-    HexUser = dbus_hex:to(User),
+    HexUser = dbus_hex:to(list_to_binary(User)),
     {continue, <<"AUTH DBUS_COOKIE_SHA1 ", HexUser/binary, "\r\n">>, waiting_challenge}.
 
 challenge(Chall, waiting_challenge) ->
