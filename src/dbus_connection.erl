@@ -67,17 +67,10 @@ start_link(BusId, Options) when is_record(BusId, bus_id),
 close(Conn) ->
     gen_fsm:send_all_state_event(Conn, close).
 
-<<<<<<< HEAD
--spec call(pid(), term()) -> {ok, term()} | {error, term()}.
-call(Conn, Header) ->
-    R = gen_fsm:sync_send_event(Conn, {call, Header}),
-    lager:info("connection:call R= ~p",[R]),
-    case  R of
-=======
+
 -spec call(pid(), dbus_message()) -> {ok, term()} | {error, term()}.
 call(Conn, #dbus_message{}=Msg) ->
     case gen_fsm:sync_send_event(Conn, {call, Msg}) of
->>>>>>> 2a7ee64d9acac23127225043b81a457cb60f855d
 	{ok, Tag} ->
 	    receive
 		{reply, Tag, Res} ->

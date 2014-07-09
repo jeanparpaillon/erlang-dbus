@@ -74,10 +74,13 @@ unmarshal_data(Data) ->
     unmarshal_data(Data, []).
 
 unmarshal_data(<<>>, Res) ->
+    lager:info("unmarshal_data 1"),
     {Res, <<>>};
 unmarshal_data(Data, Res) ->
+    lager:info("unmarshal_data 2"),
     try unmarshal_message(Data) of
 	    {Header, Data1} ->
+	        lager:info("unmarshal_data 2 Header=~p,Data1=~p",[Header,Data1]),
 	        unmarshal_data(Data1, Res ++ [Header])
     catch
 	    {'EXIT', _Reason} ->
@@ -86,11 +89,14 @@ unmarshal_data(Data, Res) ->
 
 
 unmarshal_signature(Signature) when is_binary(Signature) ->
+    lager:info("unmarshal_signature/1  1"),
     unmarshal_signature(binary_to_list(Signature));
 
 
 unmarshal_signature(Signature) when is_list(Signature) ->
+    lager:info("unmarshal_signature/1  2"),
     {Sig, []} = unmarshal_signature(Signature, []),
+    lager:info("unmarshal_signature/1  2 Sig=~p",[Sig]),
     Sig;
 
 
@@ -129,7 +135,9 @@ marshal_header(Header) when is_list(Header) ->
     end.
 
 unmarshal_message(Data) when is_binary(Data) ->
+    lager:info("unmarshal_message 1 "),
     {Header, BinBody, Data1} = unmarshal_header(Data),
+    lager:info("unmarshal_message 2"),
     Signature =
 	    case dbus_message:find_field(?HEADER_SIGNATURE, Header) of
 	        #dbus_variant{type=signature, value=Signature1} ->
@@ -142,6 +150,7 @@ unmarshal_message(Data) when is_binary(Data) ->
     {#dbus_message{header=Header, body=Body}, Data1}.
 
 unmarshal_header(Bin) ->
+    lager:info("unmarshal_header 1 "),
     {Data1, HeaderData, Pos} = unmarshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], Bin),
     [$l, Type, Flags, ?DBUS_VERSION_MAJOR, Size, Serial, Fields] = HeaderData,
     Header = #dbus_header{type=Type,
@@ -418,12 +427,15 @@ marshal_struct_signature([SubType|R], Res) ->
 %% unmarshal(Type, Binary) ->
 
 unmarshal(Type, <<>>, _Pos) ->
+    lager:info("unmarshal 1"),
     throw({error, Type});
 unmarshal(byte, Data, Pos) ->
+    lager:info("unmarshal 2"),
     << Value:8, Data1/binary >> = Data,
     {Value, Data1, Pos + 1};
 
 unmarshal(boolean, Data, Pos) ->
+    lager:info("unmarshal 3"),
     {Int, Data1, Pos1} = unmarshal(uint32, Data, Pos),
     Bool =
 	    case Int of
@@ -433,42 +445,54 @@ unmarshal(boolean, Data, Pos) ->
     {Bool, Data1, Pos1};
 
 unmarshal(uint16, Data, Pos) ->
+    lager:info("unmarshal 4"),
     unmarshal_uint(2, Data, Pos);
 
 unmarshal(uint32, Data, Pos) ->
+    lager:info("unmarshal 5"),
     unmarshal_uint(4, Data, Pos);
 
 unmarshal(uint64, Data, Pos) ->
+    lager:info("unmarshal 6"),
     unmarshal_uint(8, Data, Pos);
 
 unmarshal(int16, Data, Pos) ->
+    lager:info("unmarshal 7"),
     unmarshal_int(2, Data, Pos);
 
 unmarshal(int32, Data, Pos) ->
+    lager:info("unmarshal 8"),
     unmarshal_int(4, Data, Pos);
 
 unmarshal(int64, Data, Pos) ->
+    lager:info("unmarshal 9"),
     unmarshal_int(8, Data, Pos);
 
 unmarshal(double, Data, Pos) ->
+    lager:info("unmarshal 10"),
     Pad = pad(8, Pos),
     << 0:Pad, Value:64/native-float, Data1/binary >> = Data,
     Pos1 = Pos + Pad div 8 + 8,
     {Value, Data1, Pos1};
 
 unmarshal(signature, Data, Pos) ->
+    lager:info("unmarshal 11"),
     unmarshal_string(byte, Data, Pos);
 
 unmarshal(string, Data, Pos) ->
+    lager:info("unmarshal 12"),
     unmarshal_string(uint32, Data, Pos);
 
 unmarshal(object_path, Data, Pos) ->
+    lager:info("unmarshal 13"),
     unmarshal_string(uint32, Data, Pos);
 
 unmarshal({array, SubType}, Data, Pos) when true ->
+    lager:info("unmarshal 14"),
     {Length, Data1, Pos1} = unmarshal(uint32, Data, Pos),
     unmarshal_array(SubType, Length, Data1, Pos1);
 unmarshal({struct, SubTypes}, Data, Pos) ->
+    lager:info("unmarshal 15"),
     Pad = pad(8, Pos),
     << 0:Pad, Data1/binary >> = Data,
     Pos1 = Pos + Pad div 8,
@@ -476,20 +500,26 @@ unmarshal({struct, SubTypes}, Data, Pos) ->
     {list_to_tuple(Res), Data2, Pos2};
 
 unmarshal({dict, KeyType, ValueType}, Data, Pos) ->
+    lager:info("unmarshal 16"),
     {Length, Data1, Pos1} = unmarshal(uint32, Data, Pos),
     {Res, Data2, Pos2} = unmarshal_array({struct, [KeyType, ValueType]}, Length, Data1, Pos1),
     {Res, Data2, Pos2};
 
 unmarshal(variant, Data, Pos) ->
+    lager:info("unmarshal 17"),
     {Signature, Data1, Pos1} = unmarshal(signature, Data, Pos),
     [Type] = unmarshal_signature(Signature),
+    lager:info("unmarshal 17 Type=~p",[Type]),
     {Value, Data2, Pos2} = unmarshal(Type, Data1, Pos1),
+    lager:info("unmarshal 17 Type=~p,Data1=~p,Pos1=~p",[Type,Data,Pos]),
     {#dbus_variant{type=Type, value=Value}, Data2, Pos2}.
 
 
 unmarshal_uint(Len, Data, Pos) when is_integer(Len) ->
+    lager:info("unmarshal_uint 1"),
     Bitlen = Len * 8,
     Pad = pad(Len, Pos),
+    lager:info("unmarshal_uint 1 Pad=~p",[Pad]),
     << 0:Pad, Value:Bitlen/native-unsigned, Data1/binary >> = Data,
     Pos1 = Pos + Pad div 8 + Len,
     {Value, Data1, Pos1}.
@@ -502,29 +532,37 @@ unmarshal_int(Len, Data, Pos) ->
     {Value, Data1, Pos1}.
 
 unmarshal_signature([], Res) ->
+    lager:info("unmarshal_signature 1 Res=~p",[Res]),
     {Res, []};
 
 unmarshal_signature([$a, ${, KeySig|R], Res) ->
+    lager:info("unmarshal_signature 2"),
     KeyType = unmarshal_signature(KeySig),
     {[ValueType], Sig} = unmarshal_signature(R, []),
     unmarshal_signature(Sig, [Res, {dict, KeyType, ValueType}]);
 
 unmarshal_signature([$a|R], Res) ->
+    lager:info("unmarshal_signature 3"),
     {[Type | Types], []} = unmarshal_signature(R, []),
     {[Res, [{array, Type}], Types], []};
 
 unmarshal_signature([$(|R], Res) ->
+    lager:info("unmarshal_signature 4"),
     {Types, Rest} = unmarshal_signature(R, []),
     unmarshal_signature(Rest, [Res, {struct, Types}]);
 
 unmarshal_signature([$)|R], Res) ->
+    lager:info("unmarshal_signature 5"),
     {Res, R};
 
 unmarshal_signature([$}|R], Res) ->
+    lager:info("unmarshal_signature 6"),
     {Res, R};
 
 unmarshal_signature([Signature|R], Res) ->
+    lager:info("unmarshal_signature 7 Res=~p",[Res]),
     Type = unmarshal_signature(Signature),
+    lager:info("unmarshal_signature 7 Type=~p",[Type]),
     unmarshal_signature(R, [Res, Type]).
 
 
@@ -537,46 +575,58 @@ unmarshal_signature([Signature|R], Res) ->
 
 
 unmarshal_struct(SubTypes, Data, Pos) ->
+    lager:info("unmarshal_struct 1"),
     unmarshal_struct(SubTypes, Data, [], Pos).
 
 
-unmarshal_struct([], Data, Res, Pos) ->
+unmarshal_struct([], Data, Res, Pos) ->    
+    lager:info("unmarshal_struct 2"),
     {Res, Data, Pos};
 
 unmarshal_struct([SubType|S], Data, Res, Pos) ->
+    lager:info("unmarshal_struct 3"),
     {Value, Data1, Pos1} = unmarshal(SubType, Data, Pos),
     unmarshal_struct(S, Data1, [Res, Value], Pos1).
 
 unmarshal_array(SubType, Length, Data, Pos) ->
+    lager:info("unmarshal_array 1"),
     Pad = pad(padding(SubType), Pos),
     << 0:Pad, Data1/binary >> = Data,
     Pos1 = Pos + Pad div 8,
     unmarshal_array(SubType, Length, Data1, [], Pos1).
 
 unmarshal_array(_SubType, 0, Data, Res, Pos) ->
+    lager:info("unmarshal_array 2"),
     {Res, Data, Pos};
 unmarshal_array(SubType, Length, Data, Res, Pos) when is_integer(Length), Length > 0 ->
+    lager:info("unmarshal_array 3"),
     {Value, Data1, Pos1} = unmarshal(SubType, Data, Pos),
     Size = Pos1 - Pos,
     unmarshal_array(SubType, Length - Size, Data1, Res ++ [Value], Pos1).
 
 unmarshal_list(Types, Data) when is_list(Types), is_binary(Data) ->
+    lager:info("unmarshal_list 1 "),
     unmarshal_list(Types, Data, 0).
 
 unmarshal_list(Types, Data, Pos) when is_list(Types) ->
+    lager:info("unmarshal_list 2 "),
     unmarshal_list(Types, Data, [], Pos).
 
 unmarshal_list([], Data, Res, Pos) ->
+    lager:info("unmarshal_list 3 "),
     {Data, Res, Pos};
 unmarshal_list([Type|T], Data, Res, Pos) ->
+    lager:info("unmarshal_list 4 "),
     {Value, Data1, Pos1} = unmarshal(Type, Data, Pos),
     unmarshal_list(T, Data1, [Res, Value], Pos1).
 
 
 unmarshal_string(LenType, Data, Pos) ->
+    lager:info("unmarshal_string 1"),
     {Length, Data1, Pos1} = unmarshal(LenType, Data, Pos),
     << String:Length/binary, 0, Data2/binary >> = Data1,
     Pos2 = Pos1 + Length + 1,
+    lager:info("unmarshal_string 1 Pos2=~p,Data2=~p",[Pos2,Data2]),
     {String, Data2, Pos2}.
 
 padding(byte)             -> 1;
@@ -597,8 +647,10 @@ padding(variant)          -> 1;
 padding(dict)             -> 4.
 
 pad(Size, Pos) when is_integer(Size) ->
+    lager:info("pad 1"),
     ((Size - (Pos rem Size)) rem Size) * 8;
 pad(Type, Pos) when is_atom(Type); 
 		            array =:= element(1, Type);
 		            struct =:= element(1, Type)->
+    lager:info("pad 2"),
     pad(padding(Type), Pos).
