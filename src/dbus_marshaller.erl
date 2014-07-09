@@ -36,7 +36,7 @@ marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial
     BinBody = iolist_to_binary(Body),
     [ marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, byte_size(BinBody), S, Fields]), BinBody ].
 
-
+-spec marshal_signature(dbus_signature()) -> iolist().
 marshal_signature(byte)        ->   "y";
 marshal_signature(boolean)     ->   "b";
 marshal_signature(int16)       ->   "n";
@@ -65,14 +65,17 @@ marshal_signature([Type|R]) ->
     [marshal_signature(Type), marshal_signature(R)].
 
 
+-spec marshal_list(dbus_signature(), term()) -> iolist().
 marshal_list(Types, Value) ->
     lager:info("marshal_list 2"),
     marshal_list(Types, Value, 0, []).
 
 
+-spec unmarshal_data(binary()) -> {term(), binary()}.
 unmarshal_data(Data) ->
     unmarshal_data(Data, []).
 
+<<<<<<< HEAD
 unmarshal_data(<<>>, Res) ->
     lager:info("unmarshal_data 1"),
     {Res, <<>>};
@@ -117,9 +120,20 @@ unmarshal_signature($v) -> variant;
 unmarshal_signature($e) -> dict_entry;
 unmarshal_signature(Signature) ->
     throw({bad_signature, Signature}).
+=======
+
+-spec unmarshal_signature(binary()) -> dbus_signature().
+unmarshal_signature(<<>>) -> 
+    [];
+unmarshal_signature(<<C>>) ->
+    unmarshal_type(<<C>>);
+unmarshal_signature(Bin) when is_binary(Bin) ->
+    {Signature, <<>>} = unmarshal_signature(Bin, []),
+    Signature.
+>>>>>>> 6724b4b84878ed57521e1481daa05226d0d2b963
 
 %%%
-%%% Priv
+%%% Priv marshalling
 %%%
 marshal_header(Header) when is_list(Header) ->
     lager:info("marshal_header ~p", [Header]),
@@ -134,6 +148,7 @@ marshal_header(Header) when is_list(Header) ->
 	        [Value, <<0:Pad>>]
     end.
 
+<<<<<<< HEAD
 unmarshal_message(Data) when is_binary(Data) ->
     lager:info("unmarshal_message 1 "),
     {Header, BinBody, Data1} = unmarshal_header(Data),
@@ -160,6 +175,8 @@ unmarshal_header(Bin) ->
     Pad = pad(8, Pos),
     <<0:Pad, Body:Size/binary, Data2/binary>> = Data1,
     {Header, Body, Data2}.
+=======
+>>>>>>> 6724b4b84878ed57521e1481daa05226d0d2b963
 
 
 marshal_list([], [], Pos, Res) ->
@@ -424,7 +441,38 @@ marshal_struct_signature([], Res) ->
 marshal_struct_signature([SubType|R], Res) ->
     marshal_struct_signature(R, [Res, marshal_signature(SubType)]).
 
-%% unmarshal(Type, Binary) ->
+%%%
+%%% Private unmarshaling
+%%%
+unmarshal_data(<<>>, Acc) ->
+    {Acc, <<>>};
+unmarshal_data(Data, Acc) ->
+    try unmarshal_message(Data) of
+	{Header, Rest} -> unmarshal_data(Rest, [Acc, Header])
+    catch
+	{'EXIT', _Reason} -> {Acc, Data}
+    end.
+
+
+unmarshal_message(Data) when is_binary(Data) ->
+    {Header, BinBody, Data1} = unmarshal_header(Data),
+    Signature =
+	case dbus_message:find_field(?HEADER_SIGNATURE, Header) of
+	    #dbus_variant{type=signature, value=Signature1} -> Signature1;
+	    undefined -> <<>>
+	end,
+    Types = unmarshal_signature(Signature),
+    {<<>>, Body, _Pos} = unmarshal_list(Types, BinBody),
+    {#dbus_message{header=Header, body=Body}, Data1}.
+
+unmarshal_header(Bin) ->
+    {Data1, HeaderData, Pos} = unmarshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], Bin),
+    [$l, Type, Flags, ?DBUS_VERSION_MAJOR, Size, Serial, Fields] = HeaderData,
+    Header = #dbus_header{type=Type, flags=Flags, serial=Serial, fields=Fields},
+    Pad = pad(8, Pos),
+    <<0:Pad, Body:Size/binary, Data2/binary>> = Data1,
+    {Header, Body, Data2}.
+
 
 unmarshal(Type, <<>>, _Pos) ->
     lager:info("unmarshal 1"),
@@ -531,6 +579,7 @@ unmarshal_int(Len, Data, Pos) ->
     Pos1 = Pos + Pad div 8 + Len,
     {Value, Data1, Pos1}.
 
+<<<<<<< HEAD
 unmarshal_signature([], Res) ->
     lager:info("unmarshal_signature 1 Res=~p",[Res]),
     {Res, []};
@@ -565,6 +614,50 @@ unmarshal_signature([Signature|R], Res) ->
     lager:info("unmarshal_signature 7 Type=~p",[Type]),
     unmarshal_signature(R, [Res, Type]).
 
+=======
+unmarshal_signature(<<>>, Acc) ->
+    {Acc, <<>>};
+
+unmarshal_signature(<<$a, ${, KeySig, Rest/bits>>, Acc) ->
+    {KeyType, <<>>} = unmarshal_signature(KeySig),
+    {[ValueType], Rest2} = unmarshal_signature(Rest, []),
+    unmarshal_signature(Rest2, [Acc, {dict, KeyType, ValueType}]);
+
+unmarshal_signature(<<$a, Rest/bits>>, Acc) ->
+    {[Type | Types], <<>>} = unmarshal_signature(Rest, []),
+    {[Acc, [{array, Type}], Types], <<>>};
+
+unmarshal_signature(<<$(, Rest/bits>>, Acc) ->
+    {Types, Rest2} = unmarshal_signature(Rest, []),
+    unmarshal_signature(Rest2, [Acc, {struct, Types}]);
+
+unmarshal_signature(<<$), Rest/bits>>, Acc) ->
+    {Acc, Rest};
+
+unmarshal_signature(<<$}, Rest/bits>>, Acc) ->
+    {Acc, Rest};
+
+unmarshal_signature(<<C, Rest/bits>>, Acc) ->
+    Type = unmarshal_type(C),
+    unmarshal_signature(Rest, [Acc, Type]).
+
+unmarshal_type(<<$y>>) -> byte;
+unmarshal_type(<<$b>>) -> boolean;
+unmarshal_type(<<$n>>) -> int16;
+unmarshal_type(<<$q>>) -> uint16;
+unmarshal_type(<<$i>>) -> int32;
+unmarshal_type(<<$u>>) -> uint32;
+unmarshal_type(<<$x>>) -> int64;
+unmarshal_type(<<$t>>) -> uint64;
+unmarshal_type(<<$d>>) -> double;
+unmarshal_type(<<$s>>) -> string;
+unmarshal_type(<<$o>>) -> object_path;
+unmarshal_type(<<$g>>) -> type;
+unmarshal_type(<<$r>>) -> struct;
+unmarshal_type(<<$v>>) -> variant;
+unmarshal_type(<<$e>>) -> dict_entry;
+unmarshal_type(_C)      -> throw({error, {bad_type, _C}}).
+>>>>>>> 6724b4b84878ed57521e1481daa05226d0d2b963
 
 %unmarshal_struct_signature([$)|R], Res) ->
 %    {Res, R};
@@ -629,6 +722,9 @@ unmarshal_string(LenType, Data, Pos) ->
     lager:info("unmarshal_string 1 Pos2=~p,Data2=~p",[Pos2,Data2]),
     {String, Data2, Pos2}.
 
+%%%
+%%% Priv common
+%%%
 padding(byte)             -> 1;
 padding(boolean)          -> 4;
 padding(int16)            -> 2;

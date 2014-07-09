@@ -157,7 +157,7 @@ xml(#xmlElement{name=method}=Element) ->
 		       Arg#dbus_arg.type ++ Acc
 	       end,
     Signature = lists:foldr(BuildSig, "", OutArgs),
-    Types = dbus_marshaller:unmarshal_signature(Signature),
+    Types = dbus_marshaller:unmarshal_signature(list_to_binary(Signature)),
     #dbus_method{name=Name#xmlAttribute.value,
 		 args=Args,
 		 in_sig=Signature, 
@@ -178,7 +178,7 @@ xml(#xmlElement{name=signal}=Element) ->
 		       Arg#dbus_arg.type ++ Acc
 	       end,
     Signature = lists:foldr(BuildSig, "", OutArgs),
-    Types = dbus_marshaller:unmarshal_signature(Signature),
+    Types = dbus_marshaller:unmarshal_signature(list_to_binary(Signature)),
     #dbus_signal{name=Name#xmlAttribute.value,
 		 args=Args,
 		 out_sig=Signature, 
