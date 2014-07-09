@@ -67,9 +67,9 @@ start_link(BusId, Options) when is_record(BusId, bus_id),
 close(Conn) ->
     gen_fsm:send_all_state_event(Conn, close).
 
--spec call(pid(), term()) -> {ok, term()} | {error, term()}.
-call(Conn, Header) ->
-    case gen_fsm:sync_send_event(Conn, {call, Header}) of
+-spec call(pid(), dbus_message()) -> {ok, term()} | {error, term()}.
+call(Conn, #dbus_message{}=Msg) ->
+    case gen_fsm:sync_send_event(Conn, {call, Msg}) of
 	{ok, Tag} ->
 	    receive
 		{reply, Tag, Res} ->
@@ -86,9 +86,9 @@ call(Conn, Header) ->
 	    throw({error, Err})
     end.
 
--spec cast(pid(), term()) -> ok | {error, term()}.
-cast(Conn, Header) ->
-    gen_fsm:send_event(Conn, Header).
+-spec cast(pid(), dbus_message()) -> ok | {error, term()}.
+cast(Conn, #dbus_message{}=Msg) ->
+    gen_fsm:send_event(Conn, Msg).
 
 -spec auth(pid()) -> ok | {error, term()}.
 auth(Conn) ->

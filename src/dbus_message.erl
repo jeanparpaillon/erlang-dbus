@@ -166,13 +166,15 @@ get_field_value(Code, #dbus_message{}=Msg) ->
 	       Types     :: [dbus_type()],
 	       Body      :: term(),
 	       Message   :: dbus_message()) -> dbus_message().
-set_body(Signature, Types, Body, #dbus_message{header=#dbus_header{fields=Fields}=Header}=Message) 
-  when is_binary(Signature) ->
-    try	dbus_marshaller:marshall_list(Types, Body) of
-	{ok, Bin, _Pos} ->
-	    Fields2 = [{?HEADER_SIGNATURE, Signature} | Fields],
-	    Message#dbus_message{header=Header#dbus_header{fields=Fields2},
-				 body=Bin}
+set_body(Signature, Types, Body, #dbus_message{header=#dbus_header{fields=Fields}=Header}=Message) ->
+    try	dbus_marshaller:marshal_list(Types, Body) of
+	{Bin, _Pos} ->
+	    Fields2 = case Signature of
+			  <<>> -> Fields;
+			  undefined -> Fields;
+			  O -> [{?HEADER_SIGNATURE, O} | Fields]
+		      end,
+	    Message#dbus_message{header=Header#dbus_header{fields=Fields2}, body=Bin}
     catch 
 	'EXIT':Err ->
 	    {error, {'org.freedesktop.DBus.InvalidParameters', Err}}

@@ -252,8 +252,6 @@ fetch_interface(IfaceName, #dbus_node{}=Node) ->
     {ok, Iface} = find_interface(IfaceName, Node),
     Iface.
 
-find_interface(IfaceName, Node) when is_atom(IfaceName) ->
-    find_interface(atom_to_list(IfaceName), Node);
 find_interface(IfaceName, #dbus_node{}=Node) ->
     Fun = fun(E) ->
 		  case E of
@@ -272,8 +270,6 @@ fetch_method(MethodName, #dbus_iface{}=Node) ->
     {ok, Method} = find_method(MethodName, Node),
     Method.
 
-find_method(MethodName, Iface) when is_atom(MethodName) ->
-    find_method(atom_to_list(MethodName), Iface);
 find_method(MethodName, #dbus_iface{}=Iface) ->
     Fun = fun(E) ->
 		  case E of
