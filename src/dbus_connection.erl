@@ -355,6 +355,7 @@ authenticated(auth, _From, State) ->
 authenticated({call, #dbus_message{}=Msg}, {Pid, Tag}, 
 	      #state{sock=Sock, serial=S, pending=Pending}=State) ->
     Data = dbus_marshaller:marshal_message(dbus_message:set_serial(S, Msg)),
+    lager:info("connection:authenticated call Data=~p",[Data]),
     true = ets:insert(Pending, {S, Pid, Tag}),
     ok = dbus_transport:send(Sock, Data),
     {reply, {ok, {self(), Tag}}, authenticated, State#state{serial=S+1}};

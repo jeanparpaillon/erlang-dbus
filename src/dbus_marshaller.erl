@@ -29,7 +29,8 @@ marshal_message(#dbus_message{header=#dbus_header{serial=0}}=_Msg) ->
     throw({error, invalid_serial});
 marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial=S, fields=Fields}, body= <<>>}=_Msg) ->
     lager:debug("<1>Serializing message: ~p~n", [lager:pr(_Msg, ?MODULE)]),
-    marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, 0, S, Fields]);
+    R = marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, 0, S, Fields]),
+    lager:info("marshal_message :header R=~p",[R]);
 marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial=S, fields=Fields}, body=Body}=_Msg) ->
     lager:debug("<2>Serializing message: ~p~n", [lager:pr(_Msg, ?MODULE)]),
     [ marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, size(Body), S, Fields]), Body ].
@@ -64,6 +65,7 @@ marshal_signature([Type|R]) ->
 
 
 marshal_list(Types, Value) ->
+    lager:info("marshal_list 2"),
     marshal_list(Types, Value, 0, []).
 
 
@@ -74,11 +76,11 @@ unmarshal_data(<<>>, Res) ->
     {Res, <<>>};
 unmarshal_data(Data, Res) ->
     try unmarshal_message(Data) of
-	{Header, Data1} ->
-	    unmarshal_data(Data1, Res ++ [Header])
+	    {Header, Data1} ->
+	        unmarshal_data(Data1, Res ++ [Header])
     catch
-	{'EXIT', _Reason} ->
-	    {Res, Data}
+	    {'EXIT', _Reason} ->
+	        {Res, Data}
     end.
 
 
@@ -113,25 +115,27 @@ unmarshal_signature(Signature) ->
 %%% Priv
 %%%
 marshal_header(Header) when is_list(Header) ->
+    lager:info("marshal_header ~p", [Header]),
     {Value, Pos} = marshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], 
 				Header),
     Pad = pad(8, Pos),
+    lager:info("marshal_header Pad=~p",[Pad]),
     if
-	Pad == 0 ->
-	    Value;
-	Pad > 0 ->
-	    [Value, <<0:Pad>>]
+	    Pad == 0 ->
+	        Value;
+	    Pad > 0 ->
+	        [Value, <<0:Pad>>]
     end.
 
 unmarshal_message(Data) when is_binary(Data) ->
     {Header, BinBody, Data1} = unmarshal_header(Data),
     Signature =
-	case dbus_message:find_field(?HEADER_SIGNATURE, Header) of
-	    #dbus_variant{type=signature, value=Signature1} ->
-		Signature1;
-	    undefined ->
-		<<"">>
-	end,
+	    case dbus_message:find_field(?HEADER_SIGNATURE, Header) of
+	        #dbus_variant{type=signature, value=Signature1} ->
+		        Signature1;
+	        undefined ->
+		        <<"">>
+	    end,
     Types = unmarshal_signature(Signature),
     {<<>>, Body, _Pos} = unmarshal_list(Types, BinBody),
     {#dbus_message{header=Header, body=Body}, Data1}.
@@ -140,69 +144,86 @@ unmarshal_header(Bin) ->
     {Data1, HeaderData, Pos} = unmarshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], Bin),
     [$l, Type, Flags, ?DBUS_VERSION_MAJOR, Size, Serial, Fields] = HeaderData,
     Header = #dbus_header{type=Type,
-			  flags=Flags,
-			  serial=Serial,
-			  fields=Fields},
+			              flags=Flags,
+			              serial=Serial,
+			              fields=Fields},
     Pad = pad(8, Pos),
     <<0:Pad, Body:Size/binary, Data2/binary>> = Data1,
     {Header, Body, Data2}.
 
 
 marshal_list([], [], Pos, Res) ->
+    lager:info("marshal_list 111   Pos=~p,Res=~p",[Pos, Res]),
     {Res, Pos};
 marshal_list([Type | T], [Value | V], Pos, Res) ->
     {Res1, Pos1} = marshal(Type, Value, Pos),
+    lager:info("marshal_list 222 Pos1=~p,Res1=~p",[Pos1, Res1]),
     marshal_list(T, V, Pos1, [Res, Res1]).
 
 marshal(byte, Value, Pos) ->
+    lager:info("marshal 1"),
     marshal_uint(1, Value, Pos);
 
 marshal(boolean, Value, Pos) ->
+    lager:info("marshal 2"),
     Int =
-	case Value of
-	    true -> 1;
-	    false -> 0
-	end,
+	    case Value of
+	        true -> 1;
+	        false -> 0
+	    end,
     marshal(uint32, Int, Pos);
 
 marshal(int16, Value, Pos) ->
+    lager:info("marshal 3"),
     marshal_int(2, Value, Pos);
 
 marshal(uint16, Value, Pos) ->
+    lager:info("marshal 4"),
     marshal_uint(2, Value, Pos);
 
 marshal(int32, Value, Pos) ->
+    lager:info("marshal 5"),
     marshal_int(4, Value, Pos);
 
 marshal(uint32, Value, Pos) ->
+    lager:info("marshal 6"),
     marshal_uint(4, Value, Pos);
 
 marshal(int64, Value, Pos) ->
+    lager:info("marshal 7"),
     marshal_int(8, Value, Pos);
 
 marshal(uint64, Value, Pos) ->
+    lager:info("marshal 8"),
     marshal_uint(8, Value, Pos);
 
 marshal(double, Value, Pos) when is_float(Value) ->
     Pad = pad(8, Pos),
+    lager:info("marshal 8 Pad=~p",[Pad]),
     {<< 0:Pad, Value:64/native-float >>, Pos + Pad div 8+ 8};
 
 marshal(string, Value, Pos) when is_atom(Value) ->
+    lager:info("marshal 9"),
     marshal(string, atom_to_binary(Value, utf8), Pos);
 
 marshal(string, Value, Pos) when is_binary(Value) ->
+    lager:info("marshal 10"),
     marshal_string(uint32, Value, Pos);
 
 marshal(object_path, Value, Pos) ->
+    lager:info("marshal 11"),
     marshal(string, Value, Pos);
 
 marshal(signature, Value, Pos) ->
+    lager:info("marshal 12"),
     marshal_string(byte, Value, Pos);
 
 marshal({array, byte}=Type, Value, Pos) when is_binary(Value) ->
+    lager:info("marshal 13"),
     marshal(Type, binary_to_list(Value), Pos);
 
 marshal({array, SubType}, Value, Pos) when is_list(Value) ->
+    lager:info("marshal 14"),
     Pad = pad(uint32, Pos),
     Pos0 = Pos + Pad div 8,
     Pos1 = Pos0 + 4,
@@ -211,36 +232,47 @@ marshal({array, SubType}, Value, Pos) when is_list(Value) ->
     {Value2, Pos2} = marshal_array(SubType, Value, Pos1b),
     Length = Pos2 - Pos1b,
     {Value1, Pos1} = marshal(uint32, Length, Pos0),
+    lager:info("marshal Value1=~p, Pos1=~p",[Value,Pos]),
     {[<<0:Pad>>, Value1, <<0:Pad1>>, Value2], Pos2};
 
 marshal({struct, _SubTypes}=Type, Value, Pos) when is_tuple(Value) ->
+    lager:info("marshal 15"),
     marshal(Type, tuple_to_list(Value), Pos);
 
 marshal({struct, SubTypes}, Value, Pos) when is_list(Value) ->
+    lager:info("marshal 16"),
     marshal_struct(SubTypes, Value, Pos);
 
 marshal({dict, KeyType, ValueType}, Value, Pos) ->
+    lager:info("marshal 17"),
     marshal_dict(KeyType, ValueType, Value, Pos);
 
 marshal(variant, Value, Pos) when is_binary(Value) ->
+    lager:info("marshal 18"),
     marshal_variant({array, byte}, Value, Pos);
 
 marshal(variant, #dbus_variant{type=Type, value=Value}, Pos) ->
+    lager:info("marshal 19"),
     marshal_variant(Type, Value, Pos);
 
 marshal(variant, true=Value, Pos) ->
+    lager:info("marshal 20"),
     marshal_variant(boolean, Value, Pos);
 
 marshal(variant, false=Value, Pos) ->
+    lager:info("marshal 21"),
     marshal_variant(boolean, Value, Pos);
 
 marshal(variant, Value, Pos) when is_integer(Value), Value < 0 ->
+    lager:info("marshal 22"),
     marshal_int_variant(Value, Pos);
 
 marshal(variant, Value, Pos) when is_integer(Value), Value >= 0 ->
+    lager:info("marshal 23"),
     marshal_uint_variant(Value, Pos);
 
 marshal(variant, Value, Pos) when is_tuple(Value) ->
+    lager:info("marshal 24"),
     Type = infer_type(Value),
     marshal_variant(Type, Value, Pos).
 
@@ -346,17 +378,20 @@ marshal_dict(KeyType, ValueType, Value, Pos) when is_list(Value) ->
 marshal_struct(SubTypes, Values, Pos) ->
     Pad = pad(8, Pos),
     {Values1, Pos1} = marshal_struct(SubTypes, Values, Pos + Pad div 8, []),
+    lager:info("marshal_struct 1 Values1=~p, Pos1=~p",[Values1,Pos1]),
     if
-	Pad == 0 ->
-	    {Values1, Pos1};
-	Pad > 0 ->
-	    {[<< 0:Pad >>, Values1], Pos1}
+	    Pad == 0 ->
+	        {Values1, Pos1};
+	    Pad > 0 ->
+	        {[<< 0:Pad >>, Values1], Pos1}
     end.
 
 marshal_struct([], [], Pos, Res) ->
+    lager:info("marshal_struct 2"),
     {Res, Pos};
 marshal_struct([SubType|R], [Value|V], Pos, Res) ->
     {Value1, Pos1} = marshal(SubType, Value, Pos),
+    lager:info("marshal_struct 3 Value1=~p, Pos1=~p",[Value1,Pos1]),
     marshal_struct(R, V, Pos1, [Res, Value1]).
 
 
@@ -377,10 +412,10 @@ unmarshal(byte, Data, Pos) ->
 unmarshal(boolean, Data, Pos) ->
     {Int, Data1, Pos1} = unmarshal(uint32, Data, Pos),
     Bool =
-	case Int of
-	    1 -> true;
-	    0 -> false
-	end,
+	    case Int of
+	        1 -> true;
+	        0 -> false
+	    end,
     {Bool, Data1, Pos1};
 
 unmarshal(uint16, Data, Pos) ->
@@ -550,6 +585,6 @@ padding(dict)             -> 4.
 pad(Size, Pos) when is_integer(Size) ->
     ((Size - (Pos rem Size)) rem Size) * 8;
 pad(Type, Pos) when is_atom(Type); 
-		    array =:= element(1, Type);
-		    struct =:= element(1, Type)->
+		            array =:= element(1, Type);
+		            struct =:= element(1, Type)->
     pad(padding(Type), Pos).
