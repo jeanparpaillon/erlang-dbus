@@ -289,12 +289,17 @@ handle_info({received, _Bin}, waiting_for_agree, State) ->
 
 %% STATE: authenticated
 handle_info({received, Data}, authenticated, #state{buf=Buf}=State) ->
+<<<<<<< HEAD
     lager:info("connection:authenticated handle_info"),
     {ok, Msgs, Rest} = dbus_marshaller:unmarshal_data(<<Buf/binary, Data/binary>>),
     lager:info("connection:authenticated handle_info Msgs=~p, Rest=~p",[Msgs,Rest]),
     R = handle_messages(Msgs, State#state{buf=Rest}),
     lager:info("connection:authenticated handle_info R=~p",[R]),
     case R of
+=======
+    {Msgs, Rest} = dbus_marshaller:unmarshal_data(<<Buf/binary, Data/binary>>),
+    case handle_messages(Msgs, State#state{buf=Rest}) of
+>>>>>>> 751d7c75caeb4cb4bcb83b698bcc9b43cd7ae486
 	{ok, State2} ->
 	    {next_state, authenticated, State2};
 	{error, Err, State2} ->
@@ -426,10 +431,10 @@ handle_messages([#dbus_message{header=#dbus_header{type=Type}}=Msg | R], State) 
     end.
 
 handle_message(?TYPE_METHOD_RETURN, #dbus_message{}=Msg, #state{pending=Pending}=State) ->
-    Serial = dbus_message:get_field_value(?HEADER_REPLY_SERIAL, Msg),
+    Serial = dbus_message:get_field_value(?FIELD_REPLY_SERIAL, Msg),
     case ets:lookup(Pending, Serial) of
 	    [{Serial, Pid, Tag}] ->
-	        Pid ! {reply, Tag, Msg},
+	        Pid ! {reply, {self(), Tag}, Msg},
 	        ets:delete(Pending, Serial),
 	        {ok, State};
 	    [_] ->
@@ -438,7 +443,7 @@ handle_message(?TYPE_METHOD_RETURN, #dbus_message{}=Msg, #state{pending=Pending}
     end;
 
 handle_message(?TYPE_ERROR, Msg, #state{pending=Pending}=State) ->
-    Serial = dbus_message:get_field_value(?HEADER_REPLY_SERIAL, Msg),
+    Serial = dbus_message:get_field_value(?FIELD_REPLY_SERIAL, Msg),
     case ets:lookup(Pending, Serial) of
 	    [{Serial, Pid, Tag}] ->
 	        Pid ! {error, Tag, Msg},
@@ -449,12 +454,12 @@ handle_message(?TYPE_ERROR, Msg, #state{pending=Pending}=State) ->
 	        {error, unexpected_message, State}
     end;
 
-handle_message(?TYPE_METHOD_CALL, Msg, #state{owner=Owner}=State) ->
-    Owner ! {dbus_method_call, Msg, self()},
+handle_message(?TYPE_METHOD_CALL, _Msg, #state{owner=_Owner}=State) ->
+    %Owner ! {dbus_method_call, Msg, self()},
     {ok, State};
 
-handle_message(?TYPE_SIGNAL, Msg, #state{owner=Owner}=State) ->
-    Owner ! {dbus_signal, Msg, self()},
+handle_message(?TYPE_SIGNAL, _Msg, #state{owner=_Owner}=State) ->
+    %Owner ! {dbus_signal, Msg, self()},
     {ok, State};
 
 handle_message(Type, Msg, State) ->

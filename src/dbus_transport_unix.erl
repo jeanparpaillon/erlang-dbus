@@ -97,8 +97,11 @@ handle_cast({send, Data}, State) when is_list(Data) ->
     handle_cast({send, iolist_to_binary(Data)}, State);
 
 handle_cast({send, Data}, #state{sock=Sock}=State) when is_binary(Data) ->
+<<<<<<< HEAD
 
     lager:debug("### Sending on DBUS: ~p~n", [Data]),
+=======
+>>>>>>> 751d7c75caeb4cb4bcb83b698bcc9b43cd7ae486
     procket:sendto(Sock, Data, 0, <<>>),
     {noreply, State};
 

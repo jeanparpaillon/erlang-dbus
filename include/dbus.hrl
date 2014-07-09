@@ -7,15 +7,15 @@
 -define(TYPE_ERROR, 3).
 -define(TYPE_SIGNAL, 4).
 
--define(HEADER_INVALID, 0).
--define(HEADER_PATH, 1).
--define(HEADER_INTERFACE, 2).
--define(HEADER_MEMBER, 3).
--define(HEADER_ERROR_NAME, 4).
--define(HEADER_REPLY_SERIAL, 5).
--define(HEADER_DESTINATION, 6).
--define(HEADER_SENDER, 7).
--define(HEADER_SIGNATURE, 8).
+-define(FIELD_INVALID, 0).
+-define(FIELD_PATH, 1).
+-define(FIELD_INTERFACE, 2).
+-define(FIELD_MEMBER, 3).
+-define(FIELD_ERROR_NAME, 4).
+-define(FIELD_REPLY_SERIAL, 5).
+-define(FIELD_DESTINATION, 6).
+-define(FIELD_SENDER, 7).
+-define(FIELD_SIGNATURE, 8).
 
 -define(NO_REPLY_EXPECTED, 1).
 -define(NO_AUTO_START, 2).
@@ -72,7 +72,7 @@
 -type dbus_header() :: #dbus_header{}.
 
 -record(dbus_variant, {
-	  type           :: integer(),
+	  type           :: dbus_type(),
 	  value          :: term()
 	 }).
 -type dbus_variant() :: #dbus_variant{}.
@@ -97,7 +97,7 @@
 	  args            :: [dbus_arg()],
 	  result          :: none | undefined | dbus_arg(),
 	  in_sig          :: binary(),
-	  in_types
+	  in_types        :: dbus_signature()
 	 }).
 -type dbus_method() :: #dbus_method{}.
 
@@ -106,7 +106,7 @@
 	  args            :: [dbus_arg()],
 	  result          :: none | dbus_arg(),
 	  out_sig         :: binary(),
-	  out_types
+	  out_types       :: dbus_signature()
 	 }).
 -type dbus_signal() :: #dbus_signal{}.
 

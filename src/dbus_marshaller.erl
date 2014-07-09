@@ -20,19 +20,23 @@
 	 unmarshal_signature/1
 	]).
 
+-define(HEADER_SIGNATURE, [byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}]).
+
 %%%
 %%% API
 %%%
 -spec marshal_message(dbus_message()) -> iolist().
 marshal_message(#dbus_message{header=#dbus_header{serial=0}}=_Msg) ->
-    lager:debug("Invalid message: serial=0~n", []),
     throw({error, invalid_serial});
 marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial=S, fields=Fields}, body= <<>>}=_Msg) ->
+<<<<<<< HEAD
     lager:debug("<1>Serializing message: ~p~n", [lager:pr(_Msg, ?MODULE)]),
     R = marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, 0, S, Fields]),
     lager:info("marshal_message :header R=~p",[R]);
+=======
+    marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, 0, S, Fields]);
+>>>>>>> 751d7c75caeb4cb4bcb83b698bcc9b43cd7ae486
 marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial=S, fields=Fields}, body=Body}=_Msg) ->
-    lager:debug("<2>Serializing message: ~p~n", [lager:pr(_Msg, ?MODULE)]),
     BinBody = iolist_to_binary(Body),
     [ marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, byte_size(BinBody), S, Fields]), BinBody ].
 
@@ -96,9 +100,13 @@ unmarshal_signature(Bin) when is_binary(Bin) ->
 %%% Priv marshalling
 %%%
 marshal_header(Header) when is_list(Header) ->
+<<<<<<< HEAD
     lager:info("marshal_header ~p", [Header]),
     {Value, Pos} = marshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], 
 				Header),
+=======
+    {Value, Pos} = marshal_list(?HEADER_SIGNATURE, Header),
+>>>>>>> 751d7c75caeb4cb4bcb83b698bcc9b43cd7ae486
     Pad = pad(8, Pos),
     lager:info("marshal_header Pad=~p",[Pad]),
     if
@@ -375,16 +383,21 @@ marshal_struct_signature([SubType|R], Res) ->
 %%% Private unmarshaling
 %%%
 unmarshal_data(<<>>, Acc) ->
-    {Acc, <<>>};
+    {lists:reverse(Acc), <<>>};
 unmarshal_data(Data, Acc) ->
     try unmarshal_message(Data) of
-	{Header, Rest} -> unmarshal_data(Rest, [Acc, Header])
+	{#dbus_message{}=Msg, Rest} -> unmarshal_data(Rest, [Msg | Acc]);
+	_ ->
+	    lager:error("Error parsing data~n", []),
+	    throw({error, dbus_parse_error})
     catch
-	{'EXIT', _Reason} -> {Acc, Data}
+	{'EXIT', Err} -> 
+	    throw({error, {dbus_parse_error, Err}})
     end.
 
 
 unmarshal_message(Data) when is_binary(Data) ->
+<<<<<<< HEAD
     {Header, BinBody, Data1} = unmarshal_header(Data),
     lager:info("unmarshal_message Header=~p, BinBody=~p, Data1=~p",[Header,BinBody,Data1]),
     Signature =
@@ -409,6 +422,35 @@ unmarshal_header(Bin) ->
     lager:info("unmarshal_list ~p ~p ~p ~p", [Pos, Pad, Size, size(Data1)]),
     <<0:Pad, Body:Size/binary, Data2/binary>> = Data1,
     {Header, Body, Data2}.
+=======
+    {Header, BodyBin, Rest} = unmarshal_header(Data),
+    BodySig =
+	case dbus_message:find_field(?FIELD_SIGNATURE, Header) of
+	    #dbus_variant{type=signature, value=Val} ->
+		unmarshal_signature(Val);
+	    undefined -> 
+		[]
+	end,
+    case unmarshal_list(BodySig, BodyBin) of
+	{Body, <<>>, _Pos} ->
+	    {#dbus_message{header=Header, body=Body}, Rest};
+	{_Body, Rest2, _Pos} ->
+	    lager:error("Garbage parsing message body: ~p~n", [Rest2]),
+	    throw({error, body_parse_error})
+    end.
+
+unmarshal_header(Bin) ->
+    case unmarshal_list(?HEADER_SIGNATURE, Bin) of
+	{[$l, Type, Flags, ?DBUS_VERSION_MAJOR, Size, Serial, Fields], Rest, Pos} ->
+	    Header = #dbus_header{type=Type, flags=Flags, serial=Serial, fields=Fields},
+	    Pad = pad(8, Pos),
+	    <<0:Pad, Body:Size/binary, Rest2/binary>> = Rest,
+	    {Header, Body, Rest2};
+	{Term, _Rest, _Pos} ->
+	    lager:error("Error parsing header data: ~p~n", [Term]),
+	    throw({error, malformed_header})
+    end.
+>>>>>>> 751d7c75caeb4cb4bcb83b698bcc9b43cd7ae486
 
 
 unmarshal(Type, <<>>, _Pos) ->
@@ -473,9 +515,15 @@ unmarshal(object_path, Data, Pos) ->
     unmarshal_string(uint32, Data, Pos);
 
 unmarshal({array, SubType}, Data, Pos) when true ->
+<<<<<<< HEAD
     lager:info("unmarshal 14"),
     {Length, Data1, Pos1} = unmarshal(uint32, Data, Pos),
     unmarshal_array(SubType, Length, Data1, Pos1);
+=======
+    {Length, Rest, NewPos} = unmarshal(uint32, Data, Pos),
+    unmarshal_array(SubType, Length, Rest, NewPos);
+
+>>>>>>> 751d7c75caeb4cb4bcb83b698bcc9b43cd7ae486
 unmarshal({struct, SubTypes}, Data, Pos) ->
     lager:info("unmarshal 15"),
     Pad = pad(8, Pos),
@@ -493,9 +541,13 @@ unmarshal({dict, KeyType, ValueType}, Data, Pos) ->
 unmarshal(variant, Data, Pos) ->
     lager:info("unmarshal 17"),
     {Signature, Data1, Pos1} = unmarshal(signature, Data, Pos),
+<<<<<<< HEAD
     lager:info("unmarshal Signature=~p, Data1=~p, Pos1=~p",[Signature,Data, Pos]),
     Type = unmarshal_signature(Signature),
     lager:info("unmarshal 17 Type=~p",[Type]),
+=======
+    Type = unmarshal_signature(Signature),
+>>>>>>> 751d7c75caeb4cb4bcb83b698bcc9b43cd7ae486
     {Value, Data2, Pos2} = unmarshal(Type, Data1, Pos1),
     lager:info("unmarshal 17 Value=~p,Data1=~p,Pos1=~p",[Value,Data,Pos]),
     {#dbus_variant{type=Type, value=Value}, Data2, Pos2}.
@@ -576,21 +628,28 @@ unmarshal_struct(SubTypes, Data, Pos) ->
     unmarshal_struct(SubTypes, Data, [], Pos).
 
 
+<<<<<<< HEAD
 unmarshal_struct([], Data, Res, Pos) ->    
     lager:info("unmarshal_struct 2"),
     {Res, Data, Pos};
 
 unmarshal_struct([SubType|S], Data, Res, Pos) ->
     lager:info("unmarshal_struct 3"),
+=======
+unmarshal_struct([], Data, Acc, Pos) ->
+    {lists:reverse(Acc), Data, Pos};
+
+unmarshal_struct([SubType|S], Data, Acc, Pos) ->
+>>>>>>> 751d7c75caeb4cb4bcb83b698bcc9b43cd7ae486
     {Value, Data1, Pos1} = unmarshal(SubType, Data, Pos),
-    unmarshal_struct(S, Data1, [Res, Value], Pos1).
+    unmarshal_struct(S, Data1, [Value | Acc], Pos1).
 
 unmarshal_array(SubType, Length, Data, Pos) ->
     lager:info("unmarshal_array 1"),
     Pad = pad(padding(SubType), Pos),
-    << 0:Pad, Data1/binary >> = Data,
-    Pos1 = Pos + Pad div 8,
-    unmarshal_array(SubType, Length, Data1, [], Pos1).
+    << 0:Pad, Rest/binary >> = Data,
+    NewPos = Pos + Pad div 8,
+    unmarshal_array(SubType, Length, Rest, [], NewPos).
 
 unmarshal_array(_SubType, 0, Data, Res, Pos) ->
     lager:info("unmarshal_array 2"),
@@ -601,7 +660,10 @@ unmarshal_array(SubType, Length, Data, Res, Pos) when is_integer(Length), Length
     Size = Pos1 - Pos,
     unmarshal_array(SubType, Length - Size, Data1, Res ++ [Value], Pos1).
 
+unmarshal_list(Type, Data) when is_atom(Type), is_binary(Data) ->
+    unmarshal(Type, Data, 0);
 unmarshal_list(Types, Data) when is_list(Types), is_binary(Data) ->
+<<<<<<< HEAD
     lager:info("unmarshal_list 1 "),
     unmarshal_list(Types, Data, 0).
 
@@ -617,6 +679,15 @@ unmarshal_list([Type|T], Data, Res, Pos) ->
     {Value, Data1, Pos1} = unmarshal(Type, Data, Pos),
     lager:info("unmarshal_list 4 TYPE=~p",[Type]),
     unmarshal_list(T, Data1, [Res, Value], Pos1).
+=======
+    unmarshal_list(Types, Data, [], 0).
+
+unmarshal_list([], Rest, Acc, Pos) ->
+    {lists:reverse(Acc), Rest, Pos};
+unmarshal_list([Type|T], Data, Acc, Pos) ->
+    {Value, Rest, Pos1} = unmarshal(Type, Data, Pos),
+    unmarshal_list(T, Rest, [Value | Acc], Pos1).
+>>>>>>> 751d7c75caeb4cb4bcb83b698bcc9b43cd7ae486
 
 
 unmarshal_string(LenType, Data, Pos) ->

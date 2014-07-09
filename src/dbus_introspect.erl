@@ -103,8 +103,8 @@ to_xmerl(#dbus_arg{}=Elem) ->
      end ++
      [{direction, Elem#dbus_arg.direction}, {type, Elem#dbus_arg.type}], []}.
 
-from_xml_string(Data) when is_list(Data) ->
-    {Xml, _Misc} = xmerl_scan:string(Data),
+from_xml_string(Data) when is_binary(Data) ->
+    {Xml, _Misc} = xmerl_scan:string(binary_to_list(Data)),
     xml(Xml).
 
 from_xml(FileName) ->
@@ -289,7 +289,7 @@ fetch_signal(Signal_name, #dbus_iface{}=Node) ->
     Signal.
 
 find_signal(Signal_name, Iface) when is_atom(Signal_name) ->
-    find_signal(atom_to_list(Signal_name), Iface);
+    find_signal(Signal_name, Iface);
 find_signal(Signal_name, #dbus_iface{}=Iface) ->
     Fun = fun(E) ->
 		  case E of
