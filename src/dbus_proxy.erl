@@ -19,7 +19,6 @@
 	 interface/2,
 	 call/2,
 	 call/3,
-	 call/4,
 	 cast/3,
 	 connect_signal/3
 	]).
@@ -42,7 +41,7 @@
 	 }).
 
 -define(DBUS_HELLO_METHOD, #dbus_method{name='Hello', args=[], result=#dbus_arg{direction=out, type = <<"s">>}, 
-					in_sig = <<"">>, in_types=[]}).
+					in_sig = <<>>, in_types=[]}).
 -define(DBUS_ADD_MATCH, #dbus_method{name='AddMatch', args=[#dbus_arg{direction=in, type= <<"s">>}], 
 				     in_sig = <<"s">>, in_types=[string]}).
 -define(DBUS_REQUEST_NAME, #dbus_method{name='RequestName', args=[#dbus_arg{direction=in, type = <<"s">>}, 
@@ -57,7 +56,7 @@
 					 ?DBUS_REQUEST_NAME, ?DBUS_RELEASE_NAME]}).
 
 -define(DBUS_INTROSPECT_METHOD, #dbus_method{name= 'Introspect', args=[], result=#dbus_arg{direction=out, type = <<"s">>}, 
-					     in_sig = <<"">>, in_types=[]}).
+					     in_sig = <<>>, in_types=[]}).
 -define(DBUS_INTROSPECTABLE_IFACE, #dbus_iface{name='org.freedesktop.DBus.Introspectable', 
 					       methods=[?DBUS_INTROSPECT_METHOD]}).
 
@@ -72,9 +71,7 @@ start_link(Bus, Conn, Service, Path) when is_pid(Conn),
 stop(Proxy) ->
     gen_server:cast(Proxy, stop).
 
-interface(Proxy, IfaceName) when is_pid(Proxy), is_list(IfaceName) ->
-    interface(Proxy, list_to_atom(IfaceName));
-interface(Proxy, IfaceName) when is_pid(Proxy), is_atom(IfaceName) ->
+interface(Proxy, IfaceName) when is_pid(Proxy) ->
     Iface = {interface, Proxy, IfaceName},
     {ok, Iface}.
 
@@ -82,11 +79,8 @@ interface(Proxy, IfaceName) when is_pid(Proxy), is_atom(IfaceName) ->
 call(Interface, MethodName) ->
     call(Interface, MethodName, []).
 
-call(Interface, MethodName, Args) ->
-    call(Interface, MethodName, Args, []).
-
-call({interface, Proxy, IfaceName}, MethodName, Args, Options) ->
-    case gen_server:call(Proxy, {method, IfaceName, MethodName, Args, Options}) of
+call({interface, Proxy, IfaceName}, MethodName, Args) ->
+    case gen_server:call(Proxy, {method, IfaceName, MethodName, Args}) of
 	ok ->
 	    ok;
 	{ok, Result} ->
@@ -107,6 +101,7 @@ connect_signal({interface, Proxy, IfaceName}, SignalName, Tag) ->
 %%
 init([Bus, Conn, 'org.freedesktop.DBus', <<"/">>]) ->
     {ok, #state{bus=Bus, conn=Conn, service='org.freedesktop.DBus', path= <<"/">>, node=?DEFAULT_DBUS_NODE}};
+
 init([Bus, Conn, Service, Path]) ->
     Node = do_introspect(Conn, Service, Path),
     {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path, node=Node}}.
@@ -116,8 +111,8 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
-handle_call({method, IfaceName, MethodName, Args, Options}, From, #state{node=Node}=State) ->
-    lager:debug("in gen_server call ~p~n", [MethodName]),
+handle_call({method, IfaceName, MethodName, Args}, _From, #state{node=Node}=State) ->
+    lager:debug("calling ~p.~p~n", [IfaceName, MethodName]),
     Method =
 	case dbus_introspect:find_interface(IfaceName, Node) of
 	    {ok, Iface} ->
@@ -135,7 +130,7 @@ handle_call({method, IfaceName, MethodName, Args, Options}, From, #state{node=No
 	{error, _}=Error ->
 	    {reply, Error, State}; 
 	_ ->
-	    do_method(IfaceName, Method, Args, Options, From, State)
+	    do_method(IfaceName, Method, Args, State)
     end;
 
 handle_call(Request, _From, State) ->
@@ -145,6 +140,7 @@ handle_call(Request, _From, State) ->
 
 handle_cast(stop, State) ->
     {stop, normal, State};
+
 handle_cast({connect_signal, IfaceName, SignalName, Tag, Pid}, State) ->
     Match = [{type, signal},
 	     {sender, State#state.service},
@@ -153,8 +149,8 @@ handle_cast({connect_signal, IfaceName, SignalName, Tag, Pid}, State) ->
 	     {path, State#state.path}],
 
     bus:add_match(State#state.bus, Match, Tag, Pid),
-
     {noreply, State};
+
 handle_cast(Request, State) ->
     lager:error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
@@ -188,18 +184,11 @@ reply(From, Reply, Options) ->
 
 do_method(IfaceName, 
 	  #dbus_method{name=Name, in_sig=Signature, in_types=Types}, 
-	  Args, Options, From, 
-	  #state{service=Service, conn=Conn, path=Path}=State) ->
+	  Args, #state{service=Service, conn=Conn, path=Path}=State) ->
     Msg = dbus_message:call(Service, Path, IfaceName, Name),
     case dbus_message:set_body(Signature, Types, Args, Msg) of
 	#dbus_message{}=M2 ->
-	    ok = dbus_connection:call(Conn, M2, {tag, From, Options}),
-	    case proplists:get_value(reply, Options) of
-		undefined ->
-		    {noreply, State};
-		{reply, _Pid, _Ref} ->
-		    {reply, ok, State}
-	    end;
+	    {reply, dbus_connection:call(Conn, M2), State};
 	{error, Err} ->
 	    {reply, {error, Err}, State}
     end.

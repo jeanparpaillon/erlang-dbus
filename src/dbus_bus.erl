@@ -19,7 +19,6 @@
 	]).
 
 -export([
-	 wait_ready/1,
 	 add_match/4,
 	 export_service/2,
 	 unexport_service/2,
@@ -36,16 +35,11 @@
 	 handle_info/2,
 	 terminate/2]).
 
--export([get_bus_id/1,
-         env_to_bus_id/0,
-	 str_to_bus_id/1,
-	 parse_params/1,
-	 parse_param/1]).
+-export([get_bus_id/1]).
 
 -record(state, {
 	  conn,
 	  state,
-	  waiting           = [],
 	  hello_ref,
 	  id,
 	  dbus_object,
@@ -67,9 +61,6 @@ connect(BusId) when is_record(BusId, bus_id) ->
 stop(Bus) ->
     gen_server:cast(Bus, stop).
 
-wait_ready(Bus) ->
-    gen_server:call(Bus, wait_ready).
-
 add_match(Bus, Match, Tag, Pid) ->
     gen_server:cast(Bus, {add_match, Match, Tag, Pid}).
 
@@ -85,8 +76,8 @@ get_service(Bus, ServiceName) ->
 release_service(Bus, Service) ->
     gen_server:call(Bus, {release_service, Service}).
 
-cast(Bus, Header) ->
-    gen_server:cast(Bus, {cast, Header}).
+cast(Bus, #dbus_message{}=Msg) ->
+    gen_server:cast(Bus, Msg).
 
 %%
 %% gen_server callbacks
@@ -95,6 +86,7 @@ init([BusId, Owner]) ->
     case dbus_connection:start_link(BusId, [list, {packet, 0}]) of
 	{ok, Conn} ->
 	    dbus_connection:auth(Conn),
+	    say_hello(Conn),
 	    Reg = ets:new(services, [set, private]),
 	    {ok, #state{owner=Owner, conn=Conn, services=Reg}};
 	ignore ->
@@ -107,14 +99,6 @@ init([BusId, Owner]) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-
-handle_call(wait_ready, _From, #state{state=up}=State) ->
-    {reply, ok, State};
-
-handle_call(wait_ready, From, State) ->
-    Waiting = [ From | State#state.waiting ],
-    lager:debug("wait_ready received ~p~n", [Waiting]),
-    {noreply, State#state{waiting=Waiting}};
 
 handle_call({export_service, ServiceName}, _From, State) ->
     BusObj = State#state.dbus_object,
@@ -184,7 +168,7 @@ handle_cast({add_match, Match, Tag, Pid}, State) ->
 
     MatchStr = lists:foldl(Fold, "", Match),
 
-    {ok, DBusIFace} = dbus_proxy:interface(DBusObj, "org.freedesktop.DBus"),
+    {ok, DBusIFace} = dbus_proxy:interface(DBusObj, 'org.freedesktop.DBus'),
     ok = dbus_proxy:call(DBusIFace, 'AddMatch', [MatchStr], [{reply, self(), add_match}]),
 
     Signal_handlers = State#state.signal_handlers,
@@ -193,9 +177,8 @@ handle_cast({add_match, Match, Tag, Pid}, State) ->
 handle_cast(stop, State) ->
     {stop, normal, State};
 
-handle_cast({cast, Header}, State) ->
-    Conn = State#state.conn,
-    dbus_connection:cast(Conn, Header),
+handle_cast(#dbus_message{}=Msg, #state{conn=Conn}=State) ->
+    dbus_connection:cast(Conn, Msg),
     {noreply, State};
 
 handle_cast(Request, State) ->
@@ -210,17 +193,10 @@ handle_info({setup, BusId}, State) ->
 	{error, Err} -> {stop, Err, State}
     end;
 
-handle_info({auth_ok, Conn}, #state{conn=Conn, owner=Owner}=State) ->
-    {ok, DBusObj} = dbus_proxy:start_link(self(), Conn, "org.freedesktop.DBus", "/"),
-    {ok, DBusIfaceObj} = dbus_proxy:interface(DBusObj, "org.freedesktop.DBus"),
-    ok = dbus_proxy:call(DBusIfaceObj, 'Hello', [], [{reply, self(), hello}]),
-    Owner ! {bus_ready, self()},
-    {noreply, State#state{state=up, dbus_object=DBusObj}};
-
 handle_info({reply, hello, {ok, Reply}}, State) ->
     lager:debug("Hello reply ~p~n", [Reply]),
     [Id] = Reply,
-    reply_waiting(ok, State),
+    %reply_waiting(ok, State),
     {noreply, State#state{id=Id}};
 
 handle_info({reply, Ref, {error, Reason}}, #state{hello_ref=Ref}=State) ->
@@ -274,14 +250,6 @@ terminate(_Reason, _State) ->
     terminated.
 
 
-reply_waiting(Reply, State) ->
-    Fun = fun(From) ->
-		  lager:debug("reply_waiting ~p~n", [From]),
-		  gen_server:reply(From, Reply)
-	    end,
-    lists:foreach(Fun, State#state.waiting).
-
-
 handle_release_all_services(Pid, _State) ->
     lager:error("~p: handle_release_all_services ~p~n", [?MODULE, Pid]),
     throw(unimplemented).
@@ -315,6 +283,14 @@ get_bus_id(session) ->
     BusId;
 get_bus_id(system) ->
     ?DEFAULT_BUS_SYSTEM.
+
+%%%
+%%% Priv
+%%%
+say_hello(Conn) ->
+    {ok, DBusObj} = dbus_proxy:start_link(self(), Conn, 'org.freedesktop.DBus', <<"/">>),
+    {ok, DBusIfaceObj} = dbus_proxy:interface(DBusObj, 'org.freedesktop.DBus'),
+    dbus_proxy:call(DBusIfaceObj, 'Hello', []).
 
 env_to_bus_id() ->
     str_to_bus_id(os:getenv(?SESSION_ENV)).

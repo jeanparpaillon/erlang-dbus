@@ -33,7 +33,8 @@ marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial
     lager:info("marshal_message :header R=~p",[R]);
 marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial=S, fields=Fields}, body=Body}=_Msg) ->
     lager:debug("<2>Serializing message: ~p~n", [lager:pr(_Msg, ?MODULE)]),
-    [ marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, size(Body), S, Fields]), Body ].
+    BinBody = iolist_to_binary(Body),
+    [ marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, byte_size(BinBody), S, Fields]), BinBody ].
 
 
 marshal_signature(byte)        ->   "y";
