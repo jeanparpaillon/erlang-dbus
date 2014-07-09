@@ -117,9 +117,9 @@ setup(DBus_config, State) ->
 
     {Iface, Interfaces} = lists:foldl(Fun, {undefined, dict:new()},
                                            DBus_config),
-    Node = #node{name=State1#state.path,
+    Node = #dbus_node{name=State1#state.path,
                  interfaces=lists:map(fun({Key, {Methods, Signals}}) ->
-                                              #interface{name=Key,
+                                              #dbus_iface{name=Key,
                                                          methods=Methods,
                                                          signals=Signals}
                                       end, dict:to_list(Interfaces))},
@@ -204,7 +204,7 @@ handle_cast(Request, State) ->
 handle_info({dbus_method_call, Header, Conn}, State) ->
     Module = State#state.module,
     {_, MemberVar} = dbus_message:header_fetch(?HEADER_MEMBER, Header),
-    MemberStr = MemberVar#variant.value,
+    MemberStr = MemberVar#dbus_variant.value,
     Member = list_to_atom(MemberStr),
 
     case Member of
@@ -268,7 +268,7 @@ do_signal(Iface_name, Signal, Args, _Options, State) ->
 do_method_call(Module, Member, Header, Conn, Sub) ->
     From =
 	if
-	    Header#header.flags band ?NO_REPLY_EXPECTED ->
+	    Header#dbus_header.flags band ?NO_REPLY_EXPECTED ->
 		none;
 	    true ->
 		make_ref()
@@ -282,7 +282,7 @@ do_method_call(Module, Member, Header, Conn, Sub) ->
                 []
         end,
 
-    case {Module:Member(Header#header.body, {self(), From}, Sub), From} of
+    case {Module:Member(Header#dbus_header.fields , {self(), From}, Sub), From} of
 	{{dbus_error, Iface, Msg, Sub1}, _} ->
 	    {ok, Reply} = dbus_message:build_error(Header, Iface, Msg),
 	    ok = dbus_connection:cast(Conn, Reply),
@@ -356,11 +356,11 @@ member_info(Member_type, Member, State) ->
 
                 case Member_type of
                     method ->
-                        #method{name = Member,
+                        #dbus_method{name = Member,
                                 args = Args_xml,
                                 result = Results_arg};
                     signal ->
-                        #signal{name = Member,
+                        #dbus_signal{name = Member,
                                 args = Args_xml,
                                 result = Results_arg}
                 end;
@@ -378,5 +378,5 @@ args_build_introspect([Arg | Rest], Dir, Acc) ->
     args_build_introspect(Rest, Dir, [arg_build_introspect(Arg, Dir)| Acc]).
 
 arg_build_introspect(Arg, Dir) ->
-    #arg{direction=Dir,
+    #dbus_arg{direction=Dir,
 	 type=dbus_marshaller:marshal_signature(Arg)}.

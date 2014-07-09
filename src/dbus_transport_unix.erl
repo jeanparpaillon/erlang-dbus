@@ -93,12 +93,12 @@ handle_call(Request, _From, State) ->
     {reply, ok, State}.
 
 
-handle_cast({send, Data}, #state{sock=Sock}=State) when is_list(Data) ->
-    lager:debug("### Sending on DBUS: ~p~n", [Data]),
-    handle_cast({send, iolist_to_binary(Data)}, #state{sock=Sock}=State);
+handle_cast({send, Data}, State) when is_list(Data) ->
+    handle_cast({send, iolist_to_binary(Data)}, State);
 
 handle_cast({send, Data}, #state{sock=Sock}=State) when is_binary(Data) ->
-    lager:info("### sending procket Data= ~p",[Data]),
+
+    lager:debug("### Sending on DBUS: ~p~n", [Data]),
     procket:sendto(Sock, Data, 0, <<>>),
     {noreply, State};
 
