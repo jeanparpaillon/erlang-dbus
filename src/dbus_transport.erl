@@ -13,7 +13,7 @@
 -module(dbus_transport).
 
 %% api
--export([send/2, setopts/2, stop/1, close/1]).
+-export([send/2, set_raw/2, stop/1, close/1, support_unix_fd/1]).
 
 close(Conn) ->
     gen_server:cast(Conn, close).
@@ -21,8 +21,17 @@ close(Conn) ->
 send(Conn, Data) -> 
     gen_server:cast(Conn, {send, Data}).
 
-setopts(Conn, Options) ->
-    gen_server:call(Conn, {setopts, Options}).
+set_raw(Conn, Raw) ->
+    gen_server:call(Conn, {set_raw, Raw}).
 
 stop(Conn) ->
     gen_server:cast(Conn, stop).
+
+support_unix_fd(Conn) ->
+    try gen_server:call(Conn, support_unix_fd) of
+	true -> true;
+	false -> false
+    catch
+	_:_ ->
+	    false
+    end.

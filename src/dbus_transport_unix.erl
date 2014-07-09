@@ -24,12 +24,14 @@
 	 terminate/2]).
 
 % Needed for spawn_link
--export([do_read/2]).
+-export([do_read/3]).
 
--record(state, {sock, owner}).
+-record(state, {sock, 
+		owner,
+		raw      :: boolean()}).
 
--define(PF_LOCAL, 1).
--define(UNIX_PATH_MAX, 108).
+-define(AF_UNIX, 1).
+-define(SOCK_STREAM, 1).
 -define(BACKLOG, 5).
 
 connect(BusOptions, _Options) ->
@@ -40,37 +42,30 @@ connect(BusOptions, _Options) ->
 			   throw(no_path);
 		       V ->
 			   lager:debug("DBUS socket: {abstract, ~p}~n", [V]),
-			   {abstract, list_to_binary(V)}
+			   list_to_binary([0 | V])
 		   end;
 	       V ->
 		   lager:debug("DBUS socket: {path, ~p}~n", [V]),
-		   {path, list_to_binary(V)}
+		   list_to_binary(V)
 	   end,
     gen_server:start_link(?MODULE, [Path, self()],[]).
 
 %%
 %% gen_server callbacks
 %%
-init([{Mode, Path}, Owner]) when is_pid(Owner), is_binary(Path) ->
+init([Path, Owner]) when is_pid(Owner), is_binary(Path) ->
     true = link(Owner),
-    case procket:socket(unix, stream, 0) of
+    lager:debug("Connecting to UNIX socket: ~p~n", [Path]),
+    case procket:socket(?AF_UNIX, ?SOCK_STREAM, 0) of
 	{ok, Sock} ->
-	    SockUn = case Mode of
-			 path ->
-			     <<?PF_LOCAL:16/native,
-			       Path/binary,
-			       0:((?UNIX_PATH_MAX-byte_size(Path))*8)>>;
-			 abstract ->
-			     <<?PF_LOCAL:16/native,
-			       0:8, Path/binary,
-			       0:((?UNIX_PATH_MAX-(1+byte_size(Path)))*8)>>
-		     end,
+	    SockUn = <<?AF_UNIX:16/native,
+		       Path/binary,
+		       0:((procket:unix_path_max()-byte_size(Path))*8)>>,
 	    case procket:connect(Sock, SockUn) of
 		ok ->
 		    process_flag(trap_exit, true),
-	 	    lager:info("transport_unix:init connect"),
-		    Res = spawn_link(?MODULE, do_read, [Sock, self()]),
-                    lager:info("transport_unix:init Res= ~p",[Res]),
+		    PollID = inert:start(),
+		    spawn_link(?MODULE, do_read, [PollID, Sock, self()]),
 		    {ok, #state{sock=Sock, owner=Owner}};
 		{error, Err} ->
 		    lager:error("Error connecting socket: ~p~n", [Err]),
@@ -79,14 +74,19 @@ init([{Mode, Path}, Owner]) when is_pid(Owner), is_binary(Path) ->
 	{error, Err} ->
 	    lager:error("Error creating socket: ~p~n", [Err]),
 	    {error, Err}
-    end.
+    end;
+init(_) ->
+    lager:error("Invalid argument in UNIX transport init~n", []),
+    {error, invalid_argument}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-handle_call({setopts, _Options}, _From, State) ->
-    % TODO ?
-    {reply, ok, State};
+handle_call(support_unix_fd, _From, State) ->
+    {reply, true, State};
+
+handle_call({set_raw, Raw}, _From, State) ->
+    {reply, ok, State#state{raw=Raw}};
 
 handle_call(Request, _From, State) ->
     lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
@@ -139,20 +139,17 @@ terminate(_Reason, #state{sock=Sock}) ->
 %%%
 %%% Priv
 %%%
-do_read(Sock, Pid) ->
+do_read(PollID, Sock, Pid) ->
     case procket:recvfrom(Sock, 16#FFFF) of
 	{error, eagain} ->
-	    timer:sleep(10),
-	    do_read(Sock, Pid);
-	{error, Err} ->
-	    lager:debug("UNIX socket listener died: ~p~n", [Err]),
+	    ok = inert:poll(PollID, Sock),
+	    do_read(PollID, Sock, Pid);
+	{error, _Err} ->
 	    ok;
 	% EOF
 	{ok, <<>>} ->
-	    %do_read(Sock, Pid);
 	    ok;
 	{ok, Buf} ->
-	    lager:info("transport_unix:do_read ok Buf = ~p ",[Buf]),
 	    Pid ! {unix, Buf},
-	    do_read(Sock, Pid)
+	    do_read(PollID, Sock, Pid)
     end.

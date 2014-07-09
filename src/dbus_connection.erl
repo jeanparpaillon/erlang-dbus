@@ -36,6 +36,7 @@
 	 waiting_for_ok/3,
 	 waiting_for_data/3,
 	 waiting_for_reject/3,
+	 waiting_for_agree/3,
 	 authenticated/3]).
 
 -record(state, {serial   = 1,
@@ -47,7 +48,8 @@
 		mechs    = [],
 		mech_state,
 		guid,
-		owner
+		owner,
+		unix_fd           :: boolean()
 	       }).
 
 -define(TIMEOUT, 10000).
@@ -164,12 +166,18 @@ handle_info({received, <<"OK ", Line/binary>>}, StateName,
     lager:info("connection:handle_info OK"),
     Guid = strip_eol(Line),
     lager:debug("Authenticated: GUID=~p~n", [Guid]),
-    ok = dbus_transport:send(Sock, <<"BEGIN \r\n">>),
-    lists:foreach(fun ({Pid, Tag}) ->
-			  Pid ! {authenticated, {self(), Tag}}
-		  end, Waiting),
-    ok = dbus_transport:setopts(Sock, [{packet, raw}]),
-    {next_state, authenticated, State#state{waiting=[], guid=Guid}};
+    case dbus_transport:support_unix_fd(Sock) of
+	true ->
+	    ok = dbus_transport:send(Sock, <<"NEGOTIATE_UNIX_FD \r\n">>),
+	    {next_state, waiting_for_agree, State#state{guid=Guid}};
+	false ->
+	    ok = dbus_transport:send(Sock, <<"BEGIN \r\n">>),
+	    lists:foreach(fun ({Pid, Tag}) ->
+				  Pid ! {authenticated, {self(), Tag}}
+			  end, Waiting),
+	    ok = dbus_transport:set_raw(Sock, true),
+	    {next_state, authenticated, State#state{waiting=[], guid=Guid, unix_fd=false}}
+    end;
 
 handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName,
 	   #state{mechs=[]}=State) 
@@ -250,6 +258,29 @@ handle_info({received, <<"REJECTED ", Line/binary>>}, waiting_for_reject,
     end;
 
 handle_info({received, _Bin}, waiting_for_reject, State) ->
+    lager:error("Unexpected info: ~p", [_Bin]),
+    {stop, disconnect, State};
+
+%% STATE: waiting_for_agree
+handle_info({received, <<"AGREE_UNIX_FD\r\n">>}, waiting_for_agree,
+	   #state{sock=Sock, waiting=Waiting}=State) ->
+    ok = dbus_transport:send(Sock, <<"BEGIN \r\n">>),
+    lists:foreach(fun ({Pid, Tag}) ->
+			  Pid ! {authenticated, {self(), Tag}}
+		  end, Waiting),
+    ok = dbus_transport:set_raw(Sock, true),
+    {next_state, authenticated, State#state{unix_fd=true, waiting=[]}};
+
+handle_info({received, <<"ERROR ", _Line/binary>>}, waiting_for_agree,
+	    #state{sock=Sock, waiting=Waiting}=State) ->
+    ok = dbus_transport:send(Sock, <<"BEGIN \r\n">>),
+    lists:foreach(fun ({Pid, Tag}) ->
+			  Pid ! {authenticated, {self(), Tag}}
+		  end, Waiting),
+    ok = dbus_transport:set_raw(Sock, true),
+    {next_state, authenticated, State#state{unix_fd=false, waiting=[]}};    
+
+handle_info({received, _Bin}, waiting_for_agree, State) ->
     lager:error("Unexpected info: ~p", [_Bin]),
     {stop, disconnect, State};
 
@@ -347,6 +378,17 @@ waiting_for_reject(auth, {_Pid, Tag}=From, #state{waiting=Waiting}=State) ->
 waiting_for_reject(_Evt, _From, State) ->
     lager:debug("Unexpected event: ~p~n", [_Evt]),
     {reply, {error, invalid_event}, waiting_for_reject, State}.
+
+
+waiting_for_agree({call, _}, _From, State) ->
+    {reply, {error, authentication_needed}, waiting_for_agree, State};
+
+waiting_for_agree(auth, {_Pid, Tag}=From, #state{waiting=Waiting}=State) ->
+    {reply, {ok, {self(), Tag}}, waiting_for_agree, 
+     State#state{waiting=[From|Waiting]}};
+waiting_for_agree(_Evt, _From, State) ->
+    lager:debug("Unexpected event: ~p~n", [_Evt]),
+    {reply, {error, invalid_event}, waiting_for_agree, State}.
 
 
 authenticated(auth, _From, State) ->
