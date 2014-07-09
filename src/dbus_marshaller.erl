@@ -75,62 +75,22 @@ marshal_list(Types, Value) ->
 unmarshal_data(Data) ->
     unmarshal_data(Data, []).
 
-<<<<<<< HEAD
-unmarshal_data(<<>>, Res) ->
-    lager:info("unmarshal_data 1"),
-    {Res, <<>>};
-unmarshal_data(Data, Res) ->
-    lager:info("unmarshal_data 2"),
-    try unmarshal_message(Data) of
-	    {Header, Data1} ->
-	        lager:info("unmarshal_data 2 Header=~p,Data1=~p",[Header,Data1]),
-	        unmarshal_data(Data1, Res ++ [Header])
-    catch
-	    {'EXIT', _Reason} ->
-	        {Res, Data}
-    end.
-
-
-unmarshal_signature(Signature) when is_binary(Signature) ->
-    lager:info("unmarshal_signature/1  1"),
-    unmarshal_signature(binary_to_list(Signature));
-
-
-unmarshal_signature(Signature) when is_list(Signature) ->
-    lager:info("unmarshal_signature/1  2"),
-    {Sig, []} = unmarshal_signature(Signature, []),
-    lager:info("unmarshal_signature/1  2 Sig=~p",[Sig]),
-    Sig;
-
-
-unmarshal_signature($y) -> byte;
-unmarshal_signature($b) -> boolean;
-unmarshal_signature($n) -> int16;
-unmarshal_signature($q) -> uint16;
-unmarshal_signature($i) -> int32;
-unmarshal_signature($u) -> uint32;
-unmarshal_signature($x) -> int64;
-unmarshal_signature($t) -> uint64;
-unmarshal_signature($d) -> double;
-unmarshal_signature($s) -> string;
-unmarshal_signature($o) -> object_path;
-unmarshal_signature($g) -> signature;
-unmarshal_signature($r) -> struct;
-unmarshal_signature($v) -> variant;
-unmarshal_signature($e) -> dict_entry;
-unmarshal_signature(Signature) ->
-    throw({bad_signature, Signature}).
-=======
 
 -spec unmarshal_signature(binary()) -> dbus_signature().
 unmarshal_signature(<<>>) -> 
+    lager:info("unmarshal_signature/1  1"),
     [];
 unmarshal_signature(<<C>>) ->
-    unmarshal_type(<<C>>);
+    lager:info("unmarshal_signature/1  2"),
+    Type = unmarshal_type(<<C>>),
+    lager:info("TTTTTTYPE= ~p",[Type]),
+    Type;
 unmarshal_signature(Bin) when is_binary(Bin) ->
+    lager:info("unmarshal_signature/1  3"),
     {Signature, <<>>} = unmarshal_signature(Bin, []),
+    lager:info("unmarshal_signature/1  3 Signature=~p",[Signature]),
     Signature.
->>>>>>> 6724b4b84878ed57521e1481daa05226d0d2b963
+
 
 %%%
 %%% Priv marshalling
@@ -147,36 +107,6 @@ marshal_header(Header) when is_list(Header) ->
 	    Pad > 0 ->
 	        [Value, <<0:Pad>>]
     end.
-
-<<<<<<< HEAD
-unmarshal_message(Data) when is_binary(Data) ->
-    lager:info("unmarshal_message 1 "),
-    {Header, BinBody, Data1} = unmarshal_header(Data),
-    lager:info("unmarshal_message 2"),
-    Signature =
-	    case dbus_message:find_field(?HEADER_SIGNATURE, Header) of
-	        #dbus_variant{type=signature, value=Signature1} ->
-		        Signature1;
-	        undefined ->
-		        <<"">>
-	    end,
-    Types = unmarshal_signature(Signature),
-    {<<>>, Body, _Pos} = unmarshal_list(Types, BinBody),
-    {#dbus_message{header=Header, body=Body}, Data1}.
-
-unmarshal_header(Bin) ->
-    lager:info("unmarshal_header 1 "),
-    {Data1, HeaderData, Pos} = unmarshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], Bin),
-    [$l, Type, Flags, ?DBUS_VERSION_MAJOR, Size, Serial, Fields] = HeaderData,
-    Header = #dbus_header{type=Type,
-			              flags=Flags,
-			              serial=Serial,
-			              fields=Fields},
-    Pad = pad(8, Pos),
-    <<0:Pad, Body:Size/binary, Data2/binary>> = Data1,
-    {Header, Body, Data2}.
-=======
->>>>>>> 6724b4b84878ed57521e1481daa05226d0d2b963
 
 
 marshal_list([], [], Pos, Res) ->
@@ -456,20 +386,27 @@ unmarshal_data(Data, Acc) ->
 
 unmarshal_message(Data) when is_binary(Data) ->
     {Header, BinBody, Data1} = unmarshal_header(Data),
+    lager:info("unmarshal_message Header=~p, BinBody=~p, Data1=~p",[Header,BinBody,Data1]),
     Signature =
-	case dbus_message:find_field(?HEADER_SIGNATURE, Header) of
-	    #dbus_variant{type=signature, value=Signature1} -> Signature1;
-	    undefined -> <<>>
-	end,
+	    case dbus_message:find_field(?HEADER_SIGNATURE, Header) of
+	        #dbus_variant{type=signature, value=Signature1} -> Signature1;
+	        undefined -> <<>>
+	    end,
     Types = unmarshal_signature(Signature),
+    lager:info("unmarshal_message Signature=~p, Types=~p",[Signature,Types]),
     {<<>>, Body, _Pos} = unmarshal_list(Types, BinBody),
     {#dbus_message{header=Header, body=Body}, Data1}.
 
 unmarshal_header(Bin) ->
     {Data1, HeaderData, Pos} = unmarshal_list([byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}], Bin),
-    [$l, Type, Flags, ?DBUS_VERSION_MAJOR, Size, Serial, Fields] = HeaderData,
-    Header = #dbus_header{type=Type, flags=Flags, serial=Serial, fields=Fields},
+    lager:info("unmarshal_header Data1=~p, HeaderData=~p, Pos=~p",[Data1,HeaderData,Pos]),
+    [[[[[[[[],$l], Type], Flags], ?DBUS_VERSION_MAJOR], Size], Serial], Fields] = HeaderData,
+    Fields1 = lists:flatmap(fun({[[], Code], Content}) -> [{Code, Content}] end, Fields),
+    lager:info("unmarshal_header   Fields1 = ~p",[Fields1]),
+    Header = #dbus_header{type=Type, flags=Flags, serial=Serial, fields=Fields1},
+    lager:info("unmarshal_header  Header=~p",[Header]),
     Pad = pad(8, Pos),
+    lager:info("unmarshal_list ~p ~p ~p ~p", [Pos, Pad, Size, size(Data1)]),
     <<0:Pad, Body:Size/binary, Data2/binary>> = Data1,
     {Header, Body, Data2}.
 
@@ -556,10 +493,11 @@ unmarshal({dict, KeyType, ValueType}, Data, Pos) ->
 unmarshal(variant, Data, Pos) ->
     lager:info("unmarshal 17"),
     {Signature, Data1, Pos1} = unmarshal(signature, Data, Pos),
-    [Type] = unmarshal_signature(Signature),
+    lager:info("unmarshal Signature=~p, Data1=~p, Pos1=~p",[Signature,Data, Pos]),
+    Type = unmarshal_signature(Signature),
     lager:info("unmarshal 17 Type=~p",[Type]),
     {Value, Data2, Pos2} = unmarshal(Type, Data1, Pos1),
-    lager:info("unmarshal 17 Type=~p,Data1=~p,Pos1=~p",[Type,Data,Pos]),
+    lager:info("unmarshal 17 Value=~p,Data1=~p,Pos1=~p",[Value,Data,Pos]),
     {#dbus_variant{type=Type, value=Value}, Data2, Pos2}.
 
 
@@ -579,42 +517,7 @@ unmarshal_int(Len, Data, Pos) ->
     Pos1 = Pos + Pad div 8 + Len,
     {Value, Data1, Pos1}.
 
-<<<<<<< HEAD
-unmarshal_signature([], Res) ->
-    lager:info("unmarshal_signature 1 Res=~p",[Res]),
-    {Res, []};
 
-unmarshal_signature([$a, ${, KeySig|R], Res) ->
-    lager:info("unmarshal_signature 2"),
-    KeyType = unmarshal_signature(KeySig),
-    {[ValueType], Sig} = unmarshal_signature(R, []),
-    unmarshal_signature(Sig, [Res, {dict, KeyType, ValueType}]);
-
-unmarshal_signature([$a|R], Res) ->
-    lager:info("unmarshal_signature 3"),
-    {[Type | Types], []} = unmarshal_signature(R, []),
-    {[Res, [{array, Type}], Types], []};
-
-unmarshal_signature([$(|R], Res) ->
-    lager:info("unmarshal_signature 4"),
-    {Types, Rest} = unmarshal_signature(R, []),
-    unmarshal_signature(Rest, [Res, {struct, Types}]);
-
-unmarshal_signature([$)|R], Res) ->
-    lager:info("unmarshal_signature 5"),
-    {Res, R};
-
-unmarshal_signature([$}|R], Res) ->
-    lager:info("unmarshal_signature 6"),
-    {Res, R};
-
-unmarshal_signature([Signature|R], Res) ->
-    lager:info("unmarshal_signature 7 Res=~p",[Res]),
-    Type = unmarshal_signature(Signature),
-    lager:info("unmarshal_signature 7 Type=~p",[Type]),
-    unmarshal_signature(R, [Res, Type]).
-
-=======
 unmarshal_signature(<<>>, Acc) ->
     {Acc, <<>>};
 
@@ -652,12 +555,13 @@ unmarshal_type(<<$t>>) -> uint64;
 unmarshal_type(<<$d>>) -> double;
 unmarshal_type(<<$s>>) -> string;
 unmarshal_type(<<$o>>) -> object_path;
-unmarshal_type(<<$g>>) -> type;
+unmarshal_type(<<$g>>) -> signature;
 unmarshal_type(<<$r>>) -> struct;
 unmarshal_type(<<$v>>) -> variant;
 unmarshal_type(<<$e>>) -> dict_entry;
+unmarshal_type(<<$a>>) -> array;
 unmarshal_type(_C)      -> throw({error, {bad_type, _C}}).
->>>>>>> 6724b4b84878ed57521e1481daa05226d0d2b963
+
 
 %unmarshal_struct_signature([$)|R], Res) ->
 %    {Res, R};
@@ -711,6 +615,7 @@ unmarshal_list([], Data, Res, Pos) ->
 unmarshal_list([Type|T], Data, Res, Pos) ->
     lager:info("unmarshal_list 4 "),
     {Value, Data1, Pos1} = unmarshal(Type, Data, Pos),
+    lager:info("unmarshal_list 4 TYPE=~p",[Type]),
     unmarshal_list(T, Data1, [Res, Value], Pos1).
 
 
