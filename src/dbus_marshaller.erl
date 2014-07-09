@@ -211,7 +211,7 @@ marshal(string, Value, Pos) when is_binary(Value) ->
     marshal_string(uint32, Value, Pos);
 
 marshal(object_path, Value, Pos) ->
-    lager:info("marshal 11"),
+    lager:info("marshal 11 Value=~p,Pos=~p",[Value,Pos]),
     marshal(string, Value, Pos);
 
 marshal(signature, Value, Pos) ->
@@ -230,9 +230,10 @@ marshal({array, SubType}, Value, Pos) when is_list(Value) ->
     Pad1 = pad(SubType, Pos1),
     Pos1b = Pos1 + Pad1 div 8,
     {Value2, Pos2} = marshal_array(SubType, Value, Pos1b),
+    lager:info("marshal  14 Valu2=~p, Pos2= ~p",[Value,Pos]),
     Length = Pos2 - Pos1b,
     {Value1, Pos1} = marshal(uint32, Length, Pos0),
-    lager:info("marshal Value1=~p, Pos1=~p",[Value,Pos]),
+    lager:info("marshal 14 Value1=~p, Pos1=~p",[Value,Pos]),
     {[<<0:Pad>>, Value1, <<0:Pad1>>, Value2], Pos2};
 
 marshal({struct, _SubTypes}=Type, Value, Pos) when is_tuple(Value) ->
@@ -332,13 +333,18 @@ marshal_uint_variant(Value, Pos) ->
     marshal_variant(uint64, Value, Pos).
 
 marshal_variant(Type, Value, Pos) ->
+    lager:info("marshal_variant "),
     {Value1, Pos1} = marshal(signature, marshal_signature(Type), Pos),
+    lager:info("marshal_variant 1 Value1=~p,Pos1=~p", [Value1,Pos1]),
     {Value2, Pos2} = marshal(Type, Value, Pos1),
+    lager:info("marshal_string 2 Value2=~p,Pos2=~p", [Value2,Pos2]),
     {[Value1, Value2], Pos2}.
 
 
 marshal_uint(Len, Value, Pos) when is_integer(Value) ->
+    
     Pad = pad(Len, Pos),
+    lager:info("marshal_uint Pad=~p",[Pad]),
     {<< 0:Pad, Value:(Len*8)/native-unsigned >>, Pos + Pad div 8 + Len}.
 
 marshal_int(Len, Value, Pos) when is_integer(Value) ->
@@ -349,21 +355,27 @@ marshal_int(Len, Value, Pos) when is_integer(Value) ->
 marshal_string(LenType, Value, Pos) when is_list(Value) ->
     Length = length(Value),
     {Value1, Pos1} = marshal(LenType, Length, Pos),
+    lager:info("marshal_string 1 Value1=~p,Pos1=~p", [Value1,Pos1]),
     {[Value1, Value, 0], Pos1 + Length + 1};
 
 marshal_string(LenType, Value, Pos) when is_binary(Value) ->
     Length = size(Value),
     {Value1, Pos1} = marshal(LenType, Length, Pos),
+    lager:info("marshal_string 2 Value1=~p,Pos1=~p", [Value1,Pos1]),
     {[Value1, Value, 0], Pos1 + Length + 1}.
 
 
 marshal_array(SubType, Array, Pos) ->
+    lager:info("marshal_array 1"),
     marshal_array(SubType, Array, Pos, []).
 
 marshal_array(_SubType, [], Pos, Res) ->
+    lager:info("marshal_array 2"),
     {Res, Pos};
 marshal_array(SubType, [Value|R], Pos, Res) ->
+    lager:info("marshal_array 3"),
     {Value1, Pos1} = marshal(SubType, Value, Pos),
+    lager:info("marshal_array 3 Value1=~p, Pos1=~p",[Value,Pos]),
     marshal_array(SubType, R, Pos1, [Res, Value1]).
 
 
@@ -390,6 +402,7 @@ marshal_struct([], [], Pos, Res) ->
     lager:info("marshal_struct 2"),
     {Res, Pos};
 marshal_struct([SubType|R], [Value|V], Pos, Res) ->
+    lager:info("marshal_struct 3"),
     {Value1, Pos1} = marshal(SubType, Value, Pos),
     lager:info("marshal_struct 3 Value1=~p, Pos1=~p",[Value1,Pos1]),
     marshal_struct(R, V, Pos1, [Res, Value1]).
