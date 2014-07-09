@@ -103,8 +103,13 @@ init([Bus, Conn, 'org.freedesktop.DBus', <<"/">>]) ->
     {ok, #state{bus=Bus, conn=Conn, service='org.freedesktop.DBus', path= <<"/">>, node=?DEFAULT_DBUS_NODE}};
 
 init([Bus, Conn, Service, Path]) ->
-    Node = do_introspect(Conn, Service, Path),
-    {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path, node=Node}}.
+    case do_introspect(Conn, Service, Path) of
+	{ok, Node} ->
+	    {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path, node=Node}};
+	{error, Err} ->
+	    lager:error("Error introspecting object ~p: ~p~n", [Path, Err]),
+	    {error, Err}
+    end.
 
 
 code_change(_OldVsn, State, _Extra) ->
@@ -161,7 +166,7 @@ handle_info({reply, #dbus_message{body=Body}, {tag, From, Options}}, State) ->
     {noreply, State};
 
 handle_info({error, #dbus_message{body=Body}=Msg, {tag, From, Options}}, State) ->
-    ErrName = dbus_message:get_field_value(?HEADER_ERROR_NAME, Msg),
+    ErrName = dbus_message:get_field_value(?FIELD_ERROR_NAME, Msg),
     reply(From, {error, {ErrName, Body}}, Options),
     {noreply, State};
 
@@ -196,9 +201,15 @@ do_method(IfaceName,
 do_introspect(Conn, Service, Path) ->
     lager:debug("Introspecting: ~p:~p~n", [Service, Path]),
     case dbus_connection:call(Conn, dbus_message:introspect(Service, Path)) of
-	{ok, #dbus_message{body=[XmlBody]}} ->
-	    {ok, dbus_introspect:from_xml_string(XmlBody)};
+	{ok, #dbus_message{body=Body}} ->
+	    try dbus_introspect:from_xml_string(Body) of
+		#dbus_node{}=Node -> {ok, Node}
+	    catch
+		_:Err ->
+		    lager:error("Error parsing introspection infos: ~p~n", [Err]),
+		    {error, parse_error}
+	    end;
 	{error, #dbus_message{body=Body}=Msg} ->
-	    Err = dbus_message:get_field_value(?HEADER_ERROR_NAME, Msg),
+	    Err = dbus_message:get_field_value(?FIELD_ERROR_NAME, Msg),
 	    {error, {Err, Body}}
     end.

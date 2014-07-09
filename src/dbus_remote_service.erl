@@ -52,19 +52,22 @@ init([Bus, Conn, ServiceName]) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-handle_call({get_object, Path}, {Pid, _Tag}, #state{objects=Reg}=State) ->
-    Obj = case ets:lookup(Reg, Path) of
-	      [{Path, Object, Pids}] ->
-		  ets:insert(Reg, {Path, Object, sets:add_element(Pid, Pids)}),
-		  Object;
-	      [] ->
-		  {ok, Object} = dbus_proxy:start_link(State#state.bus, 
-						       State#state.conn,
-						       State#state.name, 
-						       Path),
-		  Object
-	  end,
-    {reply, {ok, Obj}, State};
+handle_call({get_object, Path}, {Pid, _Tag}, 
+	    #state{objects=Reg, bus=Bus, conn=Conn, name=Name}=State) ->
+    case ets:lookup(Reg, Path) of
+	[{Path, Object, Pids}] ->
+	    ets:insert(Reg, {Path, Object, sets:add_element(Pid, Pids)}),
+	    {reply, {ok, Object}, State};
+	[] ->
+	    case dbus_proxy:start_link(Bus, Conn, Name, Path) of
+		{ok, Object} ->
+		    ets:insert(Reg, {Path, Object, sets:from_list([Pid])}),
+		    {reply, {ok, Object}, State};
+		{error, Err} ->
+		    lager:error("Error starting object ~p: ~p~n", [Path, Err]),
+		    {reply, {error, Err}, State}
+	    end
+    end;
 
 handle_call({release_object, Object}, {Pid, _}, State) ->
     case handle_release_object(Object, Pid, State) of
