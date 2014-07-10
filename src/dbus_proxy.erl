@@ -117,7 +117,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 handle_call({method, IfaceName, MethodName, Args}, _From, #state{node=Node}=State) ->
-    lager:debug("calling ~p.~p~n", [IfaceName, MethodName]),
+    lager:debug("Calling ~p.~p on ~p~n", [IfaceName, MethodName, State#state.path]),
     Method =
 	case dbus_introspect:find_interface(IfaceName, Node) of
 	    {ok, Iface} ->

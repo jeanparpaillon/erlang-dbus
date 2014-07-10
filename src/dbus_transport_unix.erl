@@ -12,6 +12,8 @@
 
 -behaviour(gen_server).
 
+-include_lib("procket/include/procket.hrl").
+
 %% api
 -export([connect/2]).
 
@@ -30,10 +32,6 @@
 		owner,
 		raw      :: boolean()}).
 
--define(AF_UNIX, 1).
--define(SOCK_STREAM, 1).
--define(BACKLOG, 5).
-
 connect(BusOptions, _Options) ->
     Path = case proplists:get_value(path, BusOptions) of
 	       undefined ->
@@ -41,26 +39,22 @@ connect(BusOptions, _Options) ->
 		       undefined ->
 			   throw(no_path);
 		       V ->
-			   lager:debug("DBUS socket: {abstract, ~p}~n", [V]),
-			   list_to_binary([0 | V])
+			   {abstract, list_to_binary(V)}
 		   end;
 	       V ->
-		   lager:debug("DBUS socket: {path, ~p}~n", [V]),
-		   list_to_binary(V)
+		   {path, list_to_binary(V)}
 	   end,
     gen_server:start_link(?MODULE, [Path, self()],[]).
 
 %%
 %% gen_server callbacks
 %%
-init([Path, Owner]) when is_pid(Owner), is_binary(Path) ->
+init([{Mode, Path}, Owner]) when is_pid(Owner), is_binary(Path) ->
     true = link(Owner),
     lager:debug("Connecting to UNIX socket: ~p~n", [Path]),
-    case procket:socket(?AF_UNIX, ?SOCK_STREAM, 0) of
+    case procket:socket(?PF_LOCAL, ?SOCK_STREAM, 0) of
 	{ok, Sock} ->
-	    SockUn = <<?AF_UNIX:16/native,
-		       Path/binary,
-		       0:((procket:unix_path_max()-byte_size(Path))*8)>>,
+	    SockUn = get_sock_un(Mode, Path),
 	    case procket:connect(Sock, SockUn) of
 		ok ->
 		    process_flag(trap_exit, true),
@@ -150,3 +144,13 @@ do_read(PollID, Sock, Pid) ->
 	    Pid ! {unix, Buf},
 	    do_read(PollID, Sock, Pid)
     end.
+
+get_sock_un(abstract, Path) when byte_size(Path) < ?UNIX_PATH_MAX-1 ->
+    Len = byte_size(Path),
+    <<(procket:sockaddr_common(?PF_LOCAL, Len))/binary,
+      0, Path/binary>>;
+get_sock_un(path, Path) when byte_size(Path) < ?UNIX_PATH_MAX ->
+    Len = byte_size(Path),
+    <<(procket:sockaddr_common(?PF_LOCAL, Len))/binary,
+      Path/binary, 
+      0:((procket:unix_path_max()-Len)*8)>>.
