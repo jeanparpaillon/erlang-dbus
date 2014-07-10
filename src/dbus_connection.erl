@@ -118,12 +118,10 @@ init([#bus_id{scheme=tcp,options=BusOptions}, Options]) ->
 		   end,
 
     {ok, Sock} = dbus_transport_tcp:connect(Host, Port, Options),
-    lager:info("connection:init tcp  "),
     init_connection(Sock, ?auth_mechs_tcp);
 
 init([#bus_id{scheme=unix, options=BusOptions}, Options]) ->
     {ok, Sock} = dbus_transport_unix:connect(BusOptions, Options),
-     lager:info("connection:init unix  "),
     init_connection(Sock, ?auth_mechs_unix).
 
 
@@ -159,14 +157,12 @@ handle_info({received, <<"ERROR ", _Line/binary>>}, StateName,
 handle_info({received, <<"ERROR ", _Line/binary>>}, StateName,
 	   #state{sock=Sock, mechs=[_|Mechs]}=State) 
   when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
-    lager:info("connection:handle_info ERROR"),
     ok = dbus_transport:send(Sock, <<"CANCEL \r\n">>),
     {next_state, waiting_for_reject, #state{mechs=Mechs}=State};    
 
 handle_info({received, <<"OK ", Line/binary>>}, StateName, 
 	    #state{sock=Sock, waiting=Waiting}=State) 
   when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
-    lager:info("connection:handle_info OK"),
     Guid = strip_eol(Line),
     lager:debug("Authenticated: GUID=~p~n", [Guid]),
     case dbus_transport:support_unix_fd(Sock) of
@@ -205,7 +201,6 @@ handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName,
 %% STATE: waiting_for_ok
 handle_info({received, <<"DATA ", _Line/binary>>}, waiting_for_ok, 
 	    #state{sock=Sock}=State) ->
-	lager:info("connection:handle_info DATA waiting_for_ok"),
     ok = dbus_transport:send(Sock, <<"CANCEL \r\n">>),
     {next_state, waiting_for_reject, State};
 
@@ -217,7 +212,6 @@ handle_info({received, _Bin}, waiting_for_ok, #state{sock=Sock}=State) ->
 %% STATE: waiting_for_data
 handle_info({received, <<"DATA ", Line/binary>>}, waiting_for_data,
 	    #state{sock=Sock, mech_state={Mech, MechState}}=State) ->
-	lager:info("connection:handle_info DATA waiting_for_data"),
     Bin = dbus_hex:from(strip_eol(Line)),
     case Mech:challenge(Bin, MechState) of
 	{ok, Resp} ->
@@ -242,7 +236,6 @@ handle_info({received, _Bin}, waiting_for_data, #state{sock=Sock}=State) ->
 %% STATE: waiting_for_reject
 handle_info({received, <<"REJECTED ", Line/binary>>}, waiting_for_reject,
 	   #state{sock=Sock}=State) ->
-	lager:info("connection:handle_info REJECTED"),
     case parse_mechs(strip_eol(Line)) of
 	{ok, [Mech|Rest]} ->
 	    case Mech:init() of 
@@ -289,27 +282,17 @@ handle_info({received, _Bin}, waiting_for_agree, State) ->
 
 %% STATE: authenticated
 handle_info({received, Data}, authenticated, #state{buf=Buf}=State) ->
-<<<<<<< HEAD
-    lager:info("connection:authenticated handle_info"),
     {ok, Msgs, Rest} = dbus_marshaller:unmarshal_data(<<Buf/binary, Data/binary>>),
-    lager:info("connection:authenticated handle_info Msgs=~p, Rest=~p",[Msgs,Rest]),
-    R = handle_messages(Msgs, State#state{buf=Rest}),
-    lager:info("connection:authenticated handle_info R=~p",[R]),
-    case R of
-=======
-    {Msgs, Rest} = dbus_marshaller:unmarshal_data(<<Buf/binary, Data/binary>>),
     case handle_messages(Msgs, State#state{buf=Rest}) of
->>>>>>> 751d7c75caeb4cb4bcb83b698bcc9b43cd7ae486
-	{ok, State2} ->
-	    {next_state, authenticated, State2};
-	{error, Err, State2} ->
-	    {stop, {error, Err}, State2}
+	    {ok, State2} ->
+	        {next_state, authenticated, State2};
+	    {error, Err, State2} ->
+	        {stop, {error, Err}, State2}
     end;
 
 %% Other
 handle_info(closed, StateName, State) ->
     lager:error("Connection closed...~n", []),
-    lager:info("connection:close StatName=~p",[StateName]),
     {stop, closed, State};
 
 handle_info(_Evt, StateName, State) ->
@@ -404,10 +387,7 @@ authenticated(auth, _From, State) ->
 
 authenticated({call, #dbus_message{}=Msg}, {Pid, Tag}, 
 	      #state{sock=Sock, serial=S, pending=Pending}=State) ->
-	R = dbus_message:set_serial(S, Msg),
-	lager:info("connection:authenticated call R = ~p",[R]),
-    Data = dbus_marshaller:marshal_message(R),
-    lager:info("connection:authenticated call Data=~p",[Data]),
+    Data = dbus_marshaller:marshal_message(dbus_message:set_serial(S, Msg)),
     true = ets:insert(Pending, {S, Pid, Tag}),
     ok = dbus_transport:send(Sock, Data),
     {reply, {ok, {self(), Tag}}, authenticated, State#state{serial=S+1}};
