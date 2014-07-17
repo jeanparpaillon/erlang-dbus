@@ -8,7 +8,7 @@
 %%
 
 -module(dbus_message).
-
+-compile({parse_transform, lager_transform}).
 -include("dbus.hrl").
 
 -export([call/4,
@@ -174,11 +174,15 @@ set_body(Signature, Types, Body, #dbus_message{header=#dbus_header{fields=Fields
     try	dbus_marshaller:marshal_list(Types, Body) of
 	{Bin, _Pos} ->
 	    Fields2 = case Signature of
-			  <<>> -> Fields;
-			  undefined -> Fields;
-			  O -> [{?FIELD_SIGNATURE, O} | Fields]
+			  <<>> -> 
+				Fields;
+			  undefined -> 
+				Fields;
+			  [] -> Fields;
+			  O ->
+				[{?FIELD_SIGNATURE, O} | Fields]
 		      end,
-	    Message#dbus_message{header=Header#dbus_header{fields=Fields2}, body=Bin}
+	    Message#dbus_message{header=Header#dbus_header{fields=(Fields2)}, body=list_to_binary(Bin)}
     catch 
 	'EXIT':Err ->
 	    {error, {'org.freedesktop.DBus.InvalidParameters', Err}}

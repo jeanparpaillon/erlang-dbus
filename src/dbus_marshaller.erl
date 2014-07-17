@@ -144,7 +144,7 @@ marshal(string, Value, Pos) when is_binary(Value) ->
     marshal_string(uint32, Value, Pos);
     
 marshal(string, Value, Pos) when is_list(Value) ->
-	marshal(string, list_to_binary(Value), Pos);
+    marshal(string, list_to_binary(Value), Pos);
 
 marshal(object_path, Value, Pos) ->
     marshal(string, Value, Pos);
@@ -195,7 +195,10 @@ marshal(variant, Value, Pos) when is_integer(Value), Value >= 0 ->
 
 marshal(variant, Value, Pos) when is_tuple(Value) ->
     Type = infer_type(Value),
-    marshal_variant(Type, Value, Pos).
+    marshal_variant(Type, Value, Pos);
+
+marshal(variant, Value, Pos) when is_list(Value) ->
+    marshal(variant, list_to_binary(Value), Pos).
 
 infer_type(Value) when is_binary(Value)->
     {array, byte};
@@ -259,7 +262,6 @@ marshal_variant(Type, Value, Pos) ->
 
 
 marshal_uint(Len, Value, Pos) when is_integer(Value) ->
-    
     Pad = pad(Len, Pos),
     {<< 0:Pad, Value:(Len*8)/native-unsigned >>, Pos + Pad div 8 + Len}.
 

@@ -7,6 +7,7 @@
 %% @doc introspect support module
 %%
 -module(dbus_introspect).
+-compile([{parse_transform, lager_transform}]).
 
 -include_lib("xmerl/include/xmerl.hrl").
 -include("dbus.hrl").
@@ -38,7 +39,7 @@ to_xmerl(List) when is_list(List) ->
 
 to_xmerl(#dbus_node{}=Elem) ->
     {node,
-     case Elem#dbus_node.name of
+     case list_to_binary(Elem#dbus_node.name) of
 	 undefined ->
 	     [];
 	 Name ->
@@ -50,7 +51,7 @@ to_xmerl(#dbus_node{}=Elem) ->
 
 to_xmerl(#dbus_iface{}=Elem) ->
     {interface,
-     [{name, Elem#dbus_iface.name}],
+     [{name, list_to_binary(Elem#dbus_iface.name)}],
      to_xmerl(Elem#dbus_iface.methods) ++
      to_xmerl(Elem#dbus_iface.signals) ++
      to_xmerl(Elem#dbus_iface.properties)};
@@ -66,11 +67,11 @@ to_xmerl(#dbus_method{}=Elem) ->
 		[to_xmerl(Arg)]
 	end,
     {method,
-     case Elem#dbus_method.name of
-	 undefined ->
-	     [];
-	 Name ->
-	     [{name, Name}]
+     case list_to_binary(Elem#dbus_method.name) of
+	    undefined ->
+	        [];
+	    Name ->
+	        [{name, Name}]
      end,
      to_xmerl(Elem#dbus_method.args) ++ Result};
 
@@ -85,26 +86,27 @@ to_xmerl(#dbus_signal{}=Elem) ->
 		[to_xmerl(Arg)]
 	end,
     {signal,
-     case Elem#dbus_signal.name of
-	 undefined ->
-	     [];
-	 Name ->
-	     [{name, Name}]
+     case list_to_binary(Elem#dbus_signal.name) of
+	    undefined ->
+	        [];
+	    Name ->
+	        [{name, Name}]
      end,
      to_xmerl(Elem#dbus_signal.args) ++ Result};
 
 to_xmerl(#dbus_arg{}=Elem) ->
     {arg, 
-     case Elem#dbus_arg.name of
-	 undefined ->
-	     [];
-	 Name ->
-	     [{name, Name}]
+     case list_to_binary(Elem#dbus_arg.name) of
+	    undefined ->
+	        [];
+	    Name ->
+	        [{name, Name}]
      end ++
-     [{direction, Elem#dbus_arg.direction}, {type, Elem#dbus_arg.type}], []}.
+     [{direction, Elem#dbus_arg.direction}, {type, Elem#dbus_arg.type}],  []}.
 
-from_xml_string(Data) when is_binary(Data) ->
-    {Xml, _Misc} = xmerl_scan:string(binary_to_list(Data)),
+from_xml_string(Data) when is_binary(Data) ->    
+    R = binary_to_list(Data),
+    {Xml, _Misc} = xmerl_scan:string(R),
     xml(Xml).
 
 from_xml(FileName) ->
@@ -116,30 +118,28 @@ xml(Content) when is_list(Content) ->
 
 xml(#xmlElement{name=node}=Element) ->
     Name =
-	case find_attribute(name, Element) of
-	    {ok, Attrib} -> Attrib#xmlAttribute.value;
-	    error -> undefined
-	end,
+	    case find_attribute(name, Element) of
+	        {ok, Attrib} -> Attrib#xmlAttribute.value;
+	        error -> undefined
+	    end,
     Content = xml(Element#xmlElement.content),
-    Interfaces = filter_content(interface, Content),
-
+    Interfaces = filter_content(dbus_iface, Content),
     %% FIXME subnodes
     #dbus_node{name=Name,
 	       %% 	  elements=Content,
-	       interfaces=Interfaces};
+	            interfaces=Interfaces};
 
 xml(#xmlElement{name=interface}=Element) ->
     Name = fetch_attribute(name, Element),
     Content = xml(Element#xmlElement.content),
-    Methods = filter_content(method, Content),
-    Signals = filter_content(signal, Content),
-    Properties = filter_content(property, Content),
-
+    Methods = filter_content(dbus_method, Content),
+    Signals = filter_content(dbus_signal, Content),
+    Properties = filter_content(dbus_property, Content),
     #dbus_iface{name=Name#xmlAttribute.value,
-	       methods=Methods,
-	       signals=Signals,
-%% 	       signals=Content,
-	       properties=Properties};
+	            methods=Methods,
+	            signals=Signals,
+%% 	            signals=Content,
+	            properties=Properties};
 
 xml(#xmlElement{name=method}=Element) ->
     Name = fetch_attribute(name, Element),
@@ -168,11 +168,11 @@ xml(#xmlElement{name=signal}=Element) ->
     Content = xml(Element#xmlElement.content),
     Args = filter_content(arg, Content),
     CmpDir = fun(A) ->
-		  case A of
-		      #dbus_arg{direction=out} -> true;
-		      #dbus_arg{direction=undefined} -> true
-		  end
-	  end,
+		        case A of
+		            #dbus_arg{direction=out} -> true;
+		            #dbus_arg{direction=undefined} -> true
+		        end
+	         end,
     OutArgs = lists:filter(CmpDir, Args),
     BuildSig = fun(Arg, Acc) ->
 		       Arg#dbus_arg.type ++ Acc
@@ -202,10 +202,47 @@ xml(#xmlElement{name=arg}=Element) ->
 		    undefined
 	    end,
     Type = fetch_attribute(type, Element),
+    
     #dbus_arg{name=Name, direction=Direction, type=Type#xmlAttribute.value};
+    
+xml(#xmlElement{name=annotation}=Element) ->
+    Name =
+	    case find_attribute(name, Element) of
+	        {ok, Attribute} ->
+		        Attribute#xmlAttribute.value;
+	        error ->
+		        none
+	    end,
+    Content = xml(Element#xmlElement.content),
+    Value = filter_content(value, Content),
+    #dbus_annotation{name=Name, value=Value};
+    
 
+xml(#xmlElement{name=property}=Element) ->
+    Name =
+	case find_attribute(name, Element) of
+	    {ok, Attribute} ->
+		    Attribute#xmlAttribute.value;
+	    error ->
+		    none
+	end,
+    Access =
+	    case find_attribute(access, Element) of
+		    {ok, #xmlAttribute{value="read"}} ->
+		        read;
+		    {ok, #xmlAttribute{value="write"}} ->
+		        write;
+		    {ok, #xmlAttribute{value="readwrite"}} ->
+		        readwrite;
+		    error ->
+		        undefined
+	    end,
+    Type = fetch_attribute(type, Element),
+    #dbus_property{name=Name, type=Type#xmlAttribute.value, access=Access};
+    
 xml(Element) when is_record(Element, xmlText) ->
     ignore;
+
 xml(Element) ->
     throw({badarg, Element}).
 
@@ -227,19 +264,19 @@ find_attribute(Name, Element) ->
     Fun = fun(E) ->
 		  case E of
 		      #xmlAttribute{name=Name} ->
-			  true;
+			    true;
 		      _ ->
-			  false
+			    false
 		  end
 	  end,
 			  
     case lists:filter(Fun, Element#xmlElement.attributes) of
-	[Attribute] ->
-	    {ok, Attribute};
-	[_Attribute|_] ->
-	    error;
-	[] ->
-	    error
+	    [Attribute] ->
+	        {ok, Attribute};
+	    [_Attribute|_] ->
+	        error;
+	    [] ->
+	        error
     end.
 
 filter_content(Name, Content) ->
@@ -253,17 +290,19 @@ fetch_interface(IfaceName, #dbus_node{}=Node) ->
     Iface.
 
 find_interface(IfaceName, #dbus_node{}=Node) ->
-    Fun = fun(E) ->
-		  case E of
-		      #dbus_iface{name=IfaceName} -> true;
-		      _ -> false
-		  end
-	  end,
+    Fun = fun(E) ->         
+		    case E of
+		      #dbus_iface{name=IfaceName} ->		 
+			       true;
+		      _ ->  
+		           false
+		    end
+	      end, 
     case lists:filter(Fun, Node#dbus_node.interfaces) of
-	[Iface|_] ->
-	    {ok, Iface};
-	[] ->
-	    error
+	    [Iface|_] -> 
+	        {ok, Iface};
+	    [] ->
+	        error
     end.
 
 fetch_method(MethodName, #dbus_iface{}=Node) ->
@@ -276,7 +315,7 @@ find_method(MethodName, #dbus_iface{}=Iface) ->
 		      #dbus_method{name=MethodName} -> true;
 		      _ -> false
 		  end
-	  end,
+	   end,
     case lists:filter(Fun, Iface#dbus_iface.methods) of
 	[Method|_] ->
 	    {ok, Method};

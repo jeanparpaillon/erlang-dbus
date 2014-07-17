@@ -123,3 +123,9 @@
 	  type            :: binary()
 	 }).
 -type dbus_arg() :: #dbus_arg{}.
+
+-record(dbus_annotation, {
+	  name            :: dbus_name(),
+	  value           :: binary()
+	  }).
+-type dbus_annotation() :: #dbus_annotation{}.

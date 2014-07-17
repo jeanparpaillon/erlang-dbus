@@ -288,9 +288,9 @@ get_bus_id(system) ->
 %%% Priv
 %%%
 say_hello(Conn) ->
-    {ok, DBusObj} = dbus_proxy:start_link(self(), Conn, 'org.freedesktop.DBus', <<"/">>),
-    {ok, DBusIfaceObj} = dbus_proxy:interface(DBusObj, 'org.freedesktop.DBus'),
-    dbus_proxy:call(DBusIfaceObj, 'Hello', []).
+    {ok, DBusObj} = dbus_proxy:start_link(self(), Conn, <<"org.freedesktop.DBus">>, <<"/">>),
+    {ok, DBusIfaceObj} = dbus_proxy:interface(DBusObj, <<"org.freedesktop.DBus">>),
+    dbus_proxy:call(DBusIfaceObj, <<"Hello">>, []).
 
 env_to_bus_id() ->
     str_to_bus_id(os:getenv(?SESSION_ENV)).
