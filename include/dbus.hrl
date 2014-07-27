@@ -80,40 +80,55 @@
 -record(dbus_node, {
 	  name            :: dbus_name(),
 	  elements   = [] :: [dbus_node()],
-	  interfaces = [] :: [dbus_iface()]
+	  interfaces      :: term()           % gb_tree()
 	 }).
 -type dbus_node() :: #dbus_node{}.
 
+-type dbus_annotation_name() :: 'org.freedesktop.DBus.Deprecated'
+			      | 'org.freedesktop.DBus.GLib.CSymbol'
+			      | 'org.freedesktop.DBus.Method.NoReply'
+			      | 'org.freedesktop.DBus.Property.EmitsChangedSignal'
+			      | binary().
+-type dbus_annotation_value() :: true 
+			       | false
+			       | invalidates
+			       | binary().
+-type dbus_annotation() :: {dbus_annotation_name(), dbus_annotation_value()}.
+
 -record(dbus_iface, {
-	  name            :: dbus_name(),
-	  methods    = [] :: [dbus_name()],
-	  signals    = [] :: dbus_name(),
-	  properties = [] :: [dbus_property()]
+	  name             :: dbus_name(),
+	  methods          :: term(),              % gb_tree()
+	  signals          :: term(),              % gb_tree()
+	  properties       :: term(),              % gb_tree()
+	  annotations      :: [dbus_annotation()]
 	  }).
 -type dbus_iface() :: #dbus_iface{}.
 
 -record(dbus_method, {
-	  name            :: dbus_name(),
-	  args            :: [dbus_arg()],
-	  result          :: none | undefined | dbus_arg(),
-	  in_sig          :: binary(),
-	  in_types        :: dbus_signature()
+	  name             :: dbus_name(),
+	  args       = []  :: [dbus_arg()],
+	  result           :: none | undefined | dbus_arg(),
+	  in_sig           :: binary(),
+	  in_types         :: dbus_signature(),
+	  annotations = [] :: [dbus_annotation()]
 	 }).
 -type dbus_method() :: #dbus_method{}.
 
 -record(dbus_signal, {
-	  name            :: dbus_name(),
-	  args            :: [dbus_arg()],
-	  result          :: none | dbus_arg(),
-	  out_sig         :: binary(),
-	  out_types       :: dbus_signature()
+	  name             :: dbus_name(),
+	  args        = [] :: [dbus_arg()],
+	  result           :: none | dbus_arg(),
+	  out_sig          :: binary(),
+	  out_types        :: dbus_signature(),
+	  annotations = [] :: [dbus_annotation()]
 	 }).
 -type dbus_signal() :: #dbus_signal{}.
 
 -record(dbus_property, {
-	  name            :: dbus_name(),
-	  type            :: binary(),
-	  access          :: read | write | readwrite
+	  name             :: dbus_name(),
+	  type             :: binary(),
+	  access           :: read | write | readwrite,
+	  annotations = [] :: [dbus_annotation()]
 	  }).
 -type dbus_property() :: #dbus_property{}.
 

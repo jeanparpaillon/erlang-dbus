@@ -52,15 +52,19 @@
 								  #dbus_arg{direction=out, type = <<"u">>}], 
 					in_sig = <<"s">>, in_types=[string]}).
 -define(DBUS_IFACE, #dbus_iface{name='org.freedesktop.DBus',
-				methods=[?DBUS_HELLO_METHOD, ?DBUS_ADD_MATCH, 
-					 ?DBUS_REQUEST_NAME, ?DBUS_RELEASE_NAME]}).
+				methods=gb_trees:from_orddict([{'AddMatch', ?DBUS_ADD_MATCH},
+							       {'Hello', ?DBUS_HELLO_METHOD},
+							       {'ReleaseName', ?DBUS_RELEASE_NAME},
+							       {'RequestName', ?DBUS_REQUEST_NAME}])}).
 
 -define(DBUS_INTROSPECT_METHOD, #dbus_method{name= 'Introspect', args=[], result=#dbus_arg{direction=out, type = <<"s">>}, 
 					     in_sig = <<>>, in_types=[]}).
--define(DBUS_INTROSPECTABLE_IFACE, #dbus_iface{name='org.freedesktop.DBus.Introspectable', 
-					       methods=[?DBUS_INTROSPECT_METHOD]}).
+-define(DBUS_INTROSPECTABLE_IFACE, #dbus_iface{name='org.freedesktop.DBus.Introspectable',
+					       methods=gb_trees:from_orddict([{'Introspect', ?DBUS_INTROSPECT_METHOD}])}).
 
--define(DEFAULT_DBUS_NODE, #dbus_node{elements=[], interfaces=[?DBUS_IFACE, ?DBUS_INTROSPECTABLE_IFACE]}).
+-define(DEFAULT_DBUS_NODE, #dbus_node{elements=[], 
+				      interfaces=gb_trees:from_orddict([{'org.freedesktop.DBus', ?DBUS_IFACE}, 
+									{'org.freedesktop.DBus.Introspectable', ?DBUS_INTROSPECTABLE_IFACE}])}).
 
 -spec start_link(Bus :: pid(), Conn :: pid(), Service :: dbus_name(), Path :: dbus_name()) -> {ok, pid()} | {error, term()}.
 start_link(Bus, Conn, Service, Path) when is_pid(Conn),
@@ -72,8 +76,7 @@ stop(Proxy) ->
     gen_server:cast(Proxy, stop).
 
 interface(Proxy, IfaceName) when is_pid(Proxy) ->
-    Iface = {interface, Proxy, IfaceName},
-    {ok, Iface}.
+    {ok, {interface, Proxy, IfaceName}}.
 
 
 call(Interface, MethodName) ->
@@ -118,24 +121,11 @@ code_change(_OldVsn, State, _Extra) ->
 
 handle_call({method, IfaceName, MethodName, Args}, _From, #state{node=Node}=State) ->
     lager:debug("Calling ~p.~p on ~p~n", [IfaceName, MethodName, State#state.path]),
-    Method =
-	case dbus_introspect:find_interface(IfaceName, Node) of
-	    {ok, Iface} ->
-		case dbus_introspect:find_method(MethodName, Iface) of
-		    {ok, Method1} ->
-			Method1;
-		    error ->
-			{error, {'org.freedesktop.DBus.UnknownMethod',  [MethodName], IfaceName, State#state.node}}
-		end;
-	    error ->
-		{error, {'org.freedesktop.DBus.UnknownInterface',  [IfaceName]}}
-	end,
-
-    case Method of
-	{error, _}=Error ->
-	    {reply, Error, State}; 
-	_ ->
-	    do_method(IfaceName, Method, Args, State)
+    case dbus_introspect:find_method(Node, IfaceName, MethodName) of
+	{ok, Method} ->
+	    do_method(IfaceName, Method, Args, State);
+	{error, _}=Err ->
+	    {reply, Err, State}
     end;
 
 handle_call(Request, _From, State) ->

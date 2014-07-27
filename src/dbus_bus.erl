@@ -103,14 +103,14 @@ code_change(_OldVsn, State, _Extra) ->
 handle_call({export_service, ServiceName}, _From, State) ->
     BusObj = State#state.dbus_object,
 
-    {ok, BusIface} = dbus_proxy:interface(BusObj, "org.freedesktop.DBus"),
+    {ok, BusIface} = dbus_proxy:interface(BusObj, 'org.freedesktop.DBus'),
     {ok, _Header1} = dbus_proxy:call(BusIface, 'RequestName', [ServiceName, 0]),
     {reply, ok, State};
 
 handle_call({unexport_service, ServiceName}, _From, State) ->
     BusObj = State#state.dbus_object,
 
-    {ok, BusIface} = dbus_proxy:interface(BusObj, "org.freedesktop.DBus"),
+    {ok, BusIface} = dbus_proxy:interface(BusObj, 'org.freedesktop.DBus'),
     {ok, _Header1} = dbus_proxy:call(BusIface, 'ReleaseName', [ServiceName]),
     {reply, ok, State};
 

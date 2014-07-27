@@ -291,7 +291,7 @@ handle_info({received, Data}, authenticated, #state{buf=Buf}=State) ->
     end;
 
 %% Other
-handle_info(closed, StateName, State) ->
+handle_info(closed, _, State) ->
     lager:error("Connection closed...~n", []),
     {stop, closed, State};
 

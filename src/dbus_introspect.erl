@@ -7,29 +7,97 @@
 %% @doc introspect support module
 %%
 -module(dbus_introspect).
+-compile({parse_transform, lager_transform}).
 
 -include_lib("xmerl/include/xmerl.hrl").
 -include("dbus.hrl").
 
 -export([
+	 find_method/3,
+	 find_signal/3,
 	 to_xml/1,
 	 from_xml/1,
-	 from_xml_string/1,
-	 to_xmerl/1,
-	 fetch_interface/2,
-	 find_interface/2,
-	 fetch_method/2,
-	 find_method/2,
-	 fetch_signal/2,
-	 find_signal/2
+	 from_xml_string/1
 	]).
+
+-record(state, {node         :: dbus_node(),
+		child        :: dbus_node(),
+		iface        :: dbus_iface(),
+		method       :: dbus_method(),
+		signal       :: dbus_signal(),
+		property     :: dbus_property(),
+		s     = root :: atom()}).
 
 %%%
 %%% API
 %%%
+-spec find_method(dbus_node(), Iface :: dbus_name(), Method :: dbus_name()) -> 
+			 {ok, dbus_method()} 
+			     | {error, {'org.freedesktop.DBus.UnknownMethod', [dbus_name()], dbus_name(), dbus_node()}}
+			     | {error, {'org.freedesktop.DBus.UnknownInterface', [dbus_name()]}}.
+find_method(#dbus_node{interfaces=Ifaces}=Node, IfaceName, MethodName) ->
+    case gb_trees:lookup(IfaceName, Ifaces) of
+	{value, #dbus_iface{methods=Methods}=_I} ->
+	    case gb_trees:lookup(MethodName, Methods) of
+		{value, #dbus_method{}=Method} ->
+		    {ok, Method};
+		none ->
+		    {error, {'org.freedesktop.DBus.UnknownMethod', [MethodName], IfaceName, Node}}
+	    end;
+	none ->
+	    {error, {'org.freedesktop.DBus.UnknownInterface', [IfaceName]}}
+    end.
+
+
+-spec find_signal(dbus_node(), Iface :: dbus_name(), Signal :: dbus_name()) -> 
+			 {ok, dbus_signal()} 
+			     | {error, {'org.freedesktop.DBus.UnknownSignal', [dbus_name()], dbus_name(), dbus_node()}}
+			     | {error, {'org.freedesktop.DBus.UnknownInterface', [dbus_name()]}}.
+find_signal(#dbus_node{interfaces=Ifaces}=Node, IfaceName, SignalName) ->
+    case gb_trees:lookup(IfaceName, Ifaces) of
+	{value, #dbus_iface{signals=Signals}} ->
+	    case gb_trees:lookup(SignalName, Signals) of
+		{value, #dbus_signal{}=Signal} ->
+		    {ok, Signal};
+		none ->
+		    {error, {'org.freedesktop.DBus.UnknownSignal', [SignalName], IfaceName, Node}}
+	    end;
+	none ->
+	    {error, {'org.freedesktop.DBus.UnknownInterface', [IfaceName]}}
+    end.
+
+
 to_xml(#dbus_node{}=Node) ->
     Prolog = "<?xml version=\"1.0\" encoding=\"utf-8\" ?><!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\" \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">",
     lists:flatten(xmerl:export_simple([to_xmerl(Node)], xmerl_xml, [{prolog, Prolog}])).
+
+from_xml_string(Data) when is_binary(Data) ->
+    Opts = [{event_fun, fun xml_event/3}, 
+	    {event_state, #state{}},
+	    skip_external_dtd],
+    case xmerl_sax_parser:stream(Data, Opts) of
+	{ok, #dbus_node{}=Node, _Rest} ->
+	    Node;
+	{_Tag, _Location, Reason, _EndTags, _State} ->
+	    lager:error("Error parsing introspection: ~s~n", [Reason]),
+	    throw({error, parse_error})
+    end.
+
+from_xml(Filename) ->
+    Opts = [{event_fun, fun xml_event/3}, 
+	    {event_state, #state{}},
+	    skip_external_dtd],
+    case xmerl_sax_parser:file(Filename, Opts) of
+	{ok, #dbus_node{}=Node, _Rest} ->
+	    Node;
+	{_Tag, _Location, Reason, _EndTags, _State} ->
+	    lager:error("Error parsing introspection: ~s~n", [Reason]),
+	    throw({error, parse_error})
+    end.
+
+%%%
+%%% Priv
+%%%
 
 to_xmerl(undefined) ->
     [];
@@ -103,207 +171,250 @@ to_xmerl(#dbus_arg{}=Elem) ->
      end ++
      [{direction, Elem#dbus_arg.direction}, {type, Elem#dbus_arg.type}], []}.
 
-from_xml_string(Data) when is_binary(Data) ->
-    {Xml, _Misc} = xmerl_scan:string(binary_to_list(Data)),
-    xml(Xml).
 
-from_xml(FileName) ->
-    {Xml, _Misc} = xmerl_scan:file(FileName, []),
-    xml(Xml).
+xml_event(startDocument, _L, S) ->
+    S;
 
-xml(Content) when is_list(Content) ->
-    xml(Content, []);
+xml_event(endDocument, _L, #state{node=Node}) ->
+    Node;
 
-xml(#xmlElement{name=node}=Element) ->
-    Name =
-	case find_attribute(name, Element) of
-	    {ok, Attrib} -> Attrib#xmlAttribute.value;
-	    error -> undefined
-	end,
-    Content = xml(Element#xmlElement.content),
-    Interfaces = filter_content(interface, Content),
+xml_event({startPrefixMapping, _Prefix, _Uri}, _L, S) ->
+    S;
 
-    %% FIXME subnodes
-    #dbus_node{name=Name,
-	       %% 	  elements=Content,
-	       interfaces=Interfaces};
+xml_event({endPrefixMapping, _Prefix}, _L, S) ->
+    S;
 
-xml(#xmlElement{name=interface}=Element) ->
-    Name = fetch_attribute(name, Element),
-    Content = xml(Element#xmlElement.content),
-    Methods = filter_content(method, Content),
-    Signals = filter_content(signal, Content),
-    Properties = filter_content(property, Content),
+xml_event({startElement, _, "node", _, Attrs}, _L, #state{s=root}=S) ->
+    S#state{s=node, node=build_root_node(Attrs, #dbus_node{interfaces=gb_trees:empty()})};
 
-    #dbus_iface{name=Name#xmlAttribute.value,
-	       methods=Methods,
-	       signals=Signals,
-%% 	       signals=Content,
-	       properties=Properties};
+xml_event({startElement, _, "node", _, Attrs}, _L, #state{s=node}=S) ->
+    S#state{s=child_node, child=build_node(Attrs, #dbus_node{})};
 
-xml(#xmlElement{name=method}=Element) ->
-    Name = fetch_attribute(name, Element),
-    Content = xml(Element#xmlElement.content),
-    Args = filter_content(arg, Content),
-    CmpDir = fun(A) ->
-		  case A of
-		      #dbus_arg{direction=in} -> true;
-		      #dbus_arg{direction=undefined} -> true;
-		      _ -> false
-		  end
-	  end,
-    OutArgs = lists:filter(CmpDir, Args),
-    BuildSig = fun(Arg, Acc) ->
-		       Arg#dbus_arg.type ++ Acc
-	       end,
-    Signature = lists:foldr(BuildSig, "", OutArgs),
-    Types = dbus_marshaller:unmarshal_signature(list_to_binary(Signature)),
-    #dbus_method{name=Name#xmlAttribute.value,
-		 args=Args,
-		 in_sig=Signature, 
-		 in_types=Types};
+xml_event({startElement, _, "interface", _, Attrs}, _L, #state{s=node}=S) ->
+    S#state{s=iface, iface=build_iface(Attrs, 
+				       #dbus_iface{methods=gb_trees:empty(), 
+						   signals=gb_trees:empty(), 
+						   properties=gb_trees:empty()})};
 
-xml(#xmlElement{name=signal}=Element) ->
-    Name = fetch_attribute(name, Element),
-    Content = xml(Element#xmlElement.content),
-    Args = filter_content(arg, Content),
-    CmpDir = fun(A) ->
-		  case A of
-		      #dbus_arg{direction=out} -> true;
-		      #dbus_arg{direction=undefined} -> true
-		  end
-	  end,
-    OutArgs = lists:filter(CmpDir, Args),
-    BuildSig = fun(Arg, Acc) ->
-		       Arg#dbus_arg.type ++ Acc
-	       end,
-    Signature = lists:foldr(BuildSig, "", OutArgs),
-    Types = dbus_marshaller:unmarshal_signature(list_to_binary(Signature)),
-    #dbus_signal{name=Name#xmlAttribute.value,
-		 args=Args,
-		 out_sig=Signature, 
-		 out_types=Types};
+xml_event({startElement, _, "method", _, Attrs}, _L, #state{s=iface}=S) ->
+    S#state{s=method, method=build_method(Attrs, #dbus_method{})};
 
-xml(#xmlElement{name=arg}=Element) ->
-    Name =
-	case find_attribute(name, Element) of
-	    {ok, Attribute} ->
-		Attribute#xmlAttribute.value;
-	    error ->
-		none
-	end,
-    Direction =
-	    case find_attribute(direction, Element) of
-		{ok, #xmlAttribute{value="in"}} ->
-		    in;
-		{ok, #xmlAttribute{value="out"}} ->
-		    out;
-		error ->
-		    undefined
-	    end,
-    Type = fetch_attribute(type, Element),
-    #dbus_arg{name=Name, direction=Direction, type=Type#xmlAttribute.value};
+xml_event({startElement, _, "signal", _, Attrs}, _L, #state{s=iface}=S) ->
+    S#state{s=signal, signal=build_signal(Attrs, #dbus_signal{})};
 
-xml(Element) when is_record(Element, xmlText) ->
-    ignore;
-xml(Element) ->
-    throw({badarg, Element}).
+xml_event({startElement, _, "property", _, Attrs}, _L, #state{s=iface}=S) ->
+    S#state{s=property, property=build_property(Attrs, #dbus_property{})};
 
-xml([], Res) ->
-    Res;
+xml_event({startElement, _, "arg", _, Attrs}, _L, #state{s=method, method=#dbus_method{args=Args}=Method}=S) ->
+    Arg = build_arg(Attrs, #dbus_arg{}),
+    S#state{s=method_arg, method=Method#dbus_method{args=[Arg | Args]}};
 
-xml([Item | R], Res) ->
-    xml(R, Res ++ [xml(Item)]).
+xml_event({startElement, _, "arg", _, Attrs}, _L, #state{s=signal, signal=#dbus_signal{args=Args}=Signal}=S) ->
+    Arg = build_arg(Attrs, #dbus_arg{}),
+    S#state{s=signal_arg, signal=Signal#dbus_signal{args=[Arg | Args]}};
 
-fetch_attribute(Name, Element) ->
-    case find_attribute(Name, Element) of
-	{ok, Attribute} ->
-	    Attribute;
-	error ->
-	    exit({error, {not_found, Name, Element}})
-    end.
+xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=method, method=#dbus_method{annotations=Annotations}=M}=S) ->
+    S#state{s=method_annotation, 
+	    method=M#dbus_method{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
-find_attribute(Name, Element) ->
-    Fun = fun(E) ->
-		  case E of
-		      #xmlAttribute{name=Name} ->
-			  true;
-		      _ ->
-			  false
-		  end
-	  end,
-			  
-    case lists:filter(Fun, Element#xmlElement.attributes) of
-	[Attribute] ->
-	    {ok, Attribute};
-	[_Attribute|_] ->
-	    error;
-	[] ->
-	    error
-    end.
+xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=iface, iface=#dbus_iface{annotations=Annotations}=I}=S) ->
+    S#state{s=iface_annotation, 
+	    iface=I#dbus_iface{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
-filter_content(Name, Content) ->
-    Fun = fun(E) ->
-		  is_record(E, Name)
-	  end,
-    lists:filter(Fun, Content).
+xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=property, property=#dbus_property{annotations=Annotations}=P}=S) ->
+    S#state{s=property_annotation, 
+	    property=P#dbus_property{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
-fetch_interface(IfaceName, #dbus_node{}=Node) ->
-    {ok, Iface} = find_interface(IfaceName, Node),
-    Iface.
+xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=signal, signal=#dbus_signal{annotations=Annotations}=Sig}=S) ->
+    S#state{s=signal_annotation, 
+	    signal=Sig#dbus_signal{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
-find_interface(IfaceName, #dbus_node{}=Node) ->
-    Fun = fun(E) ->
-		  case E of
-		      #dbus_iface{name=IfaceName} -> true;
-		      _ -> false
-		  end
-	  end,
-    case lists:filter(Fun, Node#dbus_node.interfaces) of
-	[Iface|_] ->
-	    {ok, Iface};
-	[] ->
-	    error
-    end.
+xml_event({endElement, _, "node", _}, _L, #state{s=node}=S) ->
+    S#state{s=root};
 
-fetch_method(MethodName, #dbus_iface{}=Node) ->
-    {ok, Method} = find_method(MethodName, Node),
-    Method.
+xml_event({endElement, _, "node", _}, _L, #state{s=child_node, node=#dbus_node{elements=E}=N, child=C}=S) ->
+    S#state{s=node, node=N#dbus_node{elements=[C | E]}, child=undefined};
 
-find_method(MethodName, #dbus_iface{}=Iface) ->
-    Fun = fun(E) ->
-		  case E of
-		      #dbus_method{name=MethodName} -> true;
-		      _ -> false
-		  end
-	  end,
-    case lists:filter(Fun, Iface#dbus_iface.methods) of
-	[Method|_] ->
-	    {ok, Method};
-	[] ->
-	    error
-    end.
+xml_event({endElement, _, "interface", _}, _L, #state{s=iface, node=#dbus_node{interfaces=Ifaces}=N, iface=I}=S) ->
+    NewNode = N#dbus_node{interfaces=gb_trees:insert(I#dbus_iface.name, I, Ifaces)},
+    S#state{s=node, node=NewNode, iface=undefined, method=undefined};
 
-fetch_signal(Signal_name, #dbus_iface{}=Node) ->
-    {ok, Signal} = find_signal(Signal_name, Node),
-    Signal.
+xml_event({endElement, _, "method", _}, _L, #state{s=method, iface=#dbus_iface{methods=Methods}=I, method=M}=S) ->
+    NewIface = I#dbus_iface{methods=gb_trees:insert(M#dbus_method.name, M, Methods)},
+    S#state{s=iface, iface=NewIface, method=undefined};
 
-find_signal(Signal_name, Iface) when is_atom(Signal_name) ->
-    find_signal(Signal_name, Iface);
-find_signal(Signal_name, #dbus_iface{}=Iface) ->
-    Fun = fun(E) ->
-		  case E of
-		      #dbus_signal{name=Signal_name} -> true;
-		      _ -> false
-		  end
-	  end,
-    case lists:filter(Fun, Iface#dbus_iface.signals) of
-	[Signal|_] ->
-	    {ok, Signal};
-	[] ->
-	    error
-    end.
+xml_event({endElement, _, "signal", _}, _L, #state{s=signal, iface=#dbus_iface{signals=Signals}=I, signal=Sig}=S) ->
+    NewIface = I#dbus_iface{signals=gb_trees:insert(Sig#dbus_signal.name, Sig, Signals)},
+    S#state{s=iface, iface=NewIface, signal=undefined};
 
-%%%
-%%% Priv
-%%%
+xml_event({endElement, _, "property", _}, _L, #state{s=property, iface=#dbus_iface{properties=Props}=I, property=P}=S) ->
+    NewIface = I#dbus_iface{properties=gb_trees:insert(P#dbus_property.name, P, Props)},
+    S#state{s=iface, iface=NewIface, property=undefined};
+
+xml_event({endElement, _, "arg", _}, _L, #state{s=method_arg}=S) ->
+    S#state{s=method};
+
+xml_event({endElement, _, "arg", _}, _L, #state{s=signal_arg}=S) ->
+    S#state{s=signal};
+
+xml_event({endElement, _, "annotation", _}, _L, #state{s=method_annotation}=S) ->
+    S#state{s=method};
+
+xml_event({endElement, _, "annotation", _}, _L, #state{s=iface_annotation}=S) ->
+    S#state{s=iface};
+
+xml_event({endElement, _, "annotation", _}, _L, #state{s=property_annotation}=S) ->
+    S#state{s=property};
+
+xml_event({endElement, _, "annotation", _}, _L, #state{s=signal_annotation}=S) ->
+    S#state{s=signal};
+
+xml_event({characters, _Str}, _L, S) ->
+    S;
+
+xml_event({ignorableWhitespace, _Str}, _L, S) ->
+    S;
+
+xml_event({processingInstruction, _Target, _Data}, _L, S) ->
+    S;
+
+xml_event({comment, _Str}, _L, S) ->
+    S;
+
+xml_event(startCDATA, _L, S) ->
+    S;
+
+xml_event(endCDATA, _L, S) ->
+    S;
+
+xml_event({startDTD, "node", "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN", _SysID}, _L, S) ->
+    S;
+
+xml_event({startDTD, _Name, PublicID, _SysID}, {_, _, L}, _S) ->
+    throw({error, io_lib:format("(line ~p) Invalid DTD: ~p", [L, PublicID])});
+
+xml_event(endDTD, _L, S) ->
+    S;
+
+xml_event({startEntity, _SysID}, _L, S) ->
+    S;
+
+xml_event({endEntity, _SysID}, _L, S) ->
+    S;
+
+xml_event({elementDecl, _Name, _Model}, _L, S) ->
+    S;
+
+xml_event({attributeDecl, _ElementName, _AttributeName, _Type, _Mode, _Value}, _L, S) ->
+    S;
+
+xml_event({internalEntityDecl, _Name, _Value}, _L, S) ->
+    S;
+
+xml_event({externalEntityDecl, _Name, _PublicId, _SystemId}, _L, S) ->
+    S;
+
+xml_event({unparsedEntityDecl, _Name, _PublicId, _SystemId, _Ndata}, _L, S) ->
+    S;
+
+xml_event({notationDecl, _Name, _PublicId, _SystemId}, _L, S) ->
+    S;
+
+xml_event(E, {_,_,L}, S) ->
+    throw({error, io_lib:format("(line ~p) Unhandled event ~p (state=~p)", [L, E, S])}).
+
+
+build_root_node([], Node) ->
+    Node;
+build_root_node([{_, _, "name", Path} | Attrs], Node) ->
+    build_root_node(Attrs, Node#dbus_node{name=list_to_binary(Path)});
+build_root_node([{_, _, Attr, _}, _], _) ->
+    throw({error, {invalid_node_attribute, Attr}}).
+
+
+%% TODO: check child node path: must be relative
+build_node([], Node) ->
+    Node;
+build_node([{_, _, "name", Path} | Attrs], Node) ->
+    build_node(Attrs, Node#dbus_node{name=list_to_binary(Path)});
+build_node([{_, _, Attr, _}, _], _) ->
+    throw({error, {invalid_node_attribute, Attr}}).
+
+
+build_iface([], Iface) ->
+    Iface;
+build_iface([{_, _, "name", Name} | Attrs], Iface) ->
+    build_iface(Attrs, Iface#dbus_iface{name=list_to_binary(Name)});
+build_iface([{_, _, Attr, _}, _], _) ->
+    throw({error, {invalid_interface_attribute, Attr}}).
+
+
+build_method([], Method) ->
+    Method;
+build_method([{_, _, "name", Name} | Attrs], Method) ->
+    build_method(Attrs, Method#dbus_method{name=list_to_binary(Name)});
+build_method([{_, _, Attr, _}, _], _) ->
+    throw({error, {invalid_method_attribute, Attr}}).
+
+
+%% TODO: Deal with omission of direction attribute
+build_arg([], Arg) ->
+    Arg;
+build_arg([{_, _, "name", Name} | Attrs], Arg) ->
+    build_arg(Attrs, Arg#dbus_arg{name=list_to_binary(Name)});
+build_arg([{_, _, "type", Type} | Attrs], Arg) ->
+    build_arg(Attrs, Arg#dbus_arg{type=list_to_binary(Type)});
+build_arg([{_, _, "direction", "in"} | Attrs], Arg) ->
+    build_arg(Attrs, Arg#dbus_arg{direction=in});
+build_arg([{_, _, "direction", "out"} | Attrs], Arg) ->
+    build_arg(Attrs, Arg#dbus_arg{direction=out});
+build_arg([{_, _, Attr, _}, _], _) ->
+    throw({error, {invalid_arg_attribute, Attr}}).
+
+
+build_signal([], Signal) ->
+    Signal;
+build_signal([{_, _, "name", Name} | Attrs], Signal) ->
+    build_signal(Attrs, Signal#dbus_signal{name=list_to_binary(Name)});
+build_signal([{_, _, Attr, _} | _], _) ->
+    throw({error, {invalid_signal_attribute, Attr}}).
+
+
+build_property([], Prop) ->
+    Prop;
+build_property([{_, _, "name", Name} | Attrs], Prop) ->
+    build_property(Attrs, Prop#dbus_property{name=list_to_binary(Name)});
+build_property([{_, _, "type", Type} | Attrs], Prop) ->
+    build_property(Attrs, Prop#dbus_property{type=list_to_binary(Type)});
+build_property([{_, _, "access", "read"} | Attrs], Prop) ->
+    build_property(Attrs, Prop#dbus_property{access=read});
+build_property([{_, _, "access", "write"} | Attrs], Prop) ->
+    build_property(Attrs, Prop#dbus_property{access=write});
+build_property([{_, _, "access", "readwrite"} | Attrs], Prop) ->
+    build_property(Attrs, Prop#dbus_property{access=readwrite});
+build_property([{_, _, Attr, _} | _], _) ->
+    throw({error, {invalid_signal_attribute, Attr}}).
+
+
+build_annotation([], Acc) ->
+    Acc;
+build_annotation([{_, _, "name", "org.freedesktop.DBus.Deprecated"} | Attrs], {undefined, V}) ->
+    build_annotation(Attrs, {'org.freedesktop.DBus.Deprecated', V});
+build_annotation([{_, _, "name", "org.freedesktop.DBus.GLib.CSymbol"} | Attrs], {undefined, V}) ->
+    build_annotation(Attrs, {'org.freedesktop.DBus.GLib.CSymbol', V});
+build_annotation([{_, _, "name", "org.freedesktop.DBus.Method.NoReply"} | Attrs], {undefined, V}) ->
+    build_annotation(Attrs, {'org.freedesktop.DBus.Method.NoReply', V});
+build_annotation([{_, _, "name", "org.freedesktop.DBus.Property.EmitsChangedSignal"} | Attrs], {undefined, V}) ->
+    build_annotation(Attrs, {'org.freedesktop.DBus.Property.EmitsChangedSignal', V});
+build_annotation([{_, _, "name", Name} | Attrs], {undefined, V}) ->
+    build_annotation(Attrs, {list_to_binary(Name), V});
+build_annotation([{_, _, "value", "true"} | Attrs], {N, undefined}) ->
+    build_annotation(Attrs, {N, true});
+build_annotation([{_, _, "value", "false"} | Attrs], {N, undefined}) ->
+    build_annotation(Attrs, {N, false});
+build_annotation([{_, _, "value", "invalidates"} | Attrs], {N, undefined}) ->
+    build_annotation(Attrs, {N, invalidates});
+build_annotation([{_, _, "value", V} | Attrs], {N, undefined}) ->
+    build_annotation(Attrs, {N, list_to_binary(V)});
+build_annotation([{_, _, Attr, _} | _], _) ->
+    throw({error, {invalid_annotation_attribute, Attr}}).
