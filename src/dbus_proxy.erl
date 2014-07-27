@@ -183,7 +183,12 @@ do_method(IfaceName,
     Msg = dbus_message:call(Service, Path, IfaceName, Name),
     case dbus_message:set_body(Signature, Types, Args, Msg) of
 	#dbus_message{}=M2 ->
-	    {reply, dbus_connection:call(Conn, M2), State};
+	    case dbus_connection:call(Conn, M2) of
+		{ok, #dbus_message{body=Res}} ->
+		    {reply, {ok, Res}, State};
+		{error, Err} ->
+		    {reply, {error, Err}, State}
+	    end;
 	{error, Err} ->
 	    {reply, {error, Err}, State}
     end.

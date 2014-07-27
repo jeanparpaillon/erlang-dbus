@@ -77,12 +77,11 @@ unmarshal_data(Data) ->
 unmarshal_signature(<<>>) -> 
     [];
 unmarshal_signature(<<C>>) ->
-    Type = unmarshal_type(<<C>>),
+    Type = unmarshal_type(C),
     Type;
 unmarshal_signature(Bin) when is_binary(Bin) ->
     {Signature, <<>>} = unmarshal_signature(Bin, []),
-    Signature.
-
+    lists:flatten(Signature).
 
 %%%
 %%% Priv marshalling
@@ -480,31 +479,24 @@ unmarshal_signature(<<C, Rest/bits>>, Acc) ->
     Type = unmarshal_type(C),
     unmarshal_signature(Rest, [Acc, Type]).
 
-unmarshal_type(<<$y>>) -> byte;
-unmarshal_type(<<$b>>) -> boolean;
-unmarshal_type(<<$n>>) -> int16;
-unmarshal_type(<<$q>>) -> uint16;
-unmarshal_type(<<$i>>) -> int32;
-unmarshal_type(<<$u>>) -> uint32;
-unmarshal_type(<<$x>>) -> int64;
-unmarshal_type(<<$t>>) -> uint64;
-unmarshal_type(<<$d>>) -> double;
-unmarshal_type(<<$s>>) -> string;
-unmarshal_type(<<$o>>) -> object_path;
-unmarshal_type(<<$g>>) -> signature;
-unmarshal_type(<<$r>>) -> struct;
-unmarshal_type(<<$v>>) -> variant;
-unmarshal_type(<<$e>>) -> dict_entry;
-unmarshal_type(<<$a>>) -> array;
-unmarshal_type(_C)      -> throw({error, {bad_type, _C}}).
 
-
-%unmarshal_struct_signature([$)|R], Res) ->
-%    {Res, R};
-%unmarshal_struct_signature([Signature|R], Res) ->
-%    Type = unmarshal_signature(Signature),
-%    unmarshal_struct_signature(R, Res ++ [Type]).
-    
+unmarshal_type($y) -> byte;
+unmarshal_type($b) -> boolean;
+unmarshal_type($n) -> int16;
+unmarshal_type($q) -> uint16;
+unmarshal_type($i) -> int32;
+unmarshal_type($u) -> uint32;
+unmarshal_type($x) -> int64;
+unmarshal_type($t) -> uint64;
+unmarshal_type($d) -> double;
+unmarshal_type($s) -> string;
+unmarshal_type($o) -> object_path;
+unmarshal_type($g) -> signature;
+unmarshal_type($r) -> struct;
+unmarshal_type($v) -> variant;
+unmarshal_type($e) -> dict_entry;
+unmarshal_type($a) -> array;
+unmarshal_type(_C) -> throw({error, {bad_type, _C}}).
 
 
 unmarshal_struct(SubTypes, Data, Pos) ->

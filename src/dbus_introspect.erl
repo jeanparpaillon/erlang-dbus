@@ -79,7 +79,7 @@ from_xml_string(Data) when is_binary(Data) ->
 	{ok, #dbus_node{}=Node, _Rest} ->
 	    Node;
 	{_Tag, _Location, Reason, _EndTags, _State} ->
-	    lager:error("Error parsing introspection: ~s~n", [Reason]),
+	    lager:error("Error parsing introspection: ~p~n", [Reason]),
 	    throw({error, parse_error})
     end.
 
@@ -91,7 +91,7 @@ from_xml(Filename) ->
 	{ok, #dbus_node{}=Node, _Rest} ->
 	    Node;
 	{_Tag, _Location, Reason, _EndTags, _State} ->
-	    lager:error("Error parsing introspection: ~s~n", [Reason]),
+	    lager:error("Error parsing introspection: ~p~n", [Reason]),
 	    throw({error, parse_error})
     end.
 
@@ -240,11 +240,11 @@ xml_event({endElement, _, "interface", _}, _L, #state{s=iface, node=#dbus_node{i
     S#state{s=node, node=NewNode, iface=undefined, method=undefined};
 
 xml_event({endElement, _, "method", _}, _L, #state{s=method, iface=#dbus_iface{methods=Methods}=I, method=M}=S) ->
-    NewIface = I#dbus_iface{methods=gb_trees:insert(M#dbus_method.name, M, Methods)},
+    NewIface = I#dbus_iface{methods=gb_trees:insert(M#dbus_method.name, end_method(M), Methods)},
     S#state{s=iface, iface=NewIface, method=undefined};
 
 xml_event({endElement, _, "signal", _}, _L, #state{s=signal, iface=#dbus_iface{signals=Signals}=I, signal=Sig}=S) ->
-    NewIface = I#dbus_iface{signals=gb_trees:insert(Sig#dbus_signal.name, Sig, Signals)},
+    NewIface = I#dbus_iface{signals=gb_trees:insert(Sig#dbus_signal.name, end_signal(Sig), Signals)},
     S#state{s=iface, iface=NewIface, signal=undefined};
 
 xml_event({endElement, _, "property", _}, _L, #state{s=property, iface=#dbus_iface{properties=Props}=I, property=P}=S) ->
@@ -357,6 +357,21 @@ build_method([{_, _, Attr, _}, _], _) ->
     throw({error, {invalid_method_attribute, Attr}}).
 
 
+end_method(#dbus_method{args=Args}=Method) ->
+    InArgs = lists:filter(fun (#dbus_arg{direction=in}) ->
+				  true;
+			      (#dbus_arg{direction=undefined}) ->
+				  true;
+			      (_) ->
+				  false
+			  end, Args),
+    Signature = lists:foldl(fun (#dbus_arg{type=Type}, Acc) ->
+				    << Type/binary, Acc/binary >>
+			    end, <<>>, InArgs),
+    Types = dbus_marshaller:unmarshal_signature(Signature),
+    Method#dbus_method{args=lists:reverse(Args), in_sig=Signature, in_types=Types}.
+
+
 %% TODO: Deal with omission of direction attribute
 build_arg([], Arg) ->
     Arg;
@@ -378,6 +393,21 @@ build_signal([{_, _, "name", Name} | Attrs], Signal) ->
     build_signal(Attrs, Signal#dbus_signal{name=list_to_binary(Name)});
 build_signal([{_, _, Attr, _} | _], _) ->
     throw({error, {invalid_signal_attribute, Attr}}).
+
+
+end_signal(#dbus_signal{args=Args}=Signal) ->
+    OutArgs = lists:filter(fun (#dbus_arg{direction=out}) ->
+				   true;
+			       (#dbus_arg{direction=undefined}) ->
+				   true;
+			       (_) ->
+				   false
+			   end, Args),
+    Signature = lists:foldl(fun (#dbus_arg{type=Type}, Acc) ->
+				    << Type/binary, Acc/binary >>
+			    end, <<>>, OutArgs),
+    Types = dbus_marshaller:unmarshal_signature(Signature),
+    Signal#dbus_signal{args=lists:reverse(Args), out_sig=Signature, out_types=Types}.
 
 
 build_property([], Prop) ->
