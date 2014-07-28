@@ -40,6 +40,7 @@
 	 authenticated/3]).
 
 -record(state, {serial   = 1,
+		owner,
 		mod,
 		sock,
 		buf      = <<>>,
@@ -48,7 +49,6 @@
 		mechs    = [],
 		mech_state,
 		guid,
-		owner,
 		unix_fd           :: boolean()
 	       }).
 
@@ -62,7 +62,7 @@ start_link(BusId) ->
 
 start_link(BusId, Options) when is_record(BusId, bus_id),
 				is_list(Options) ->
-    gen_fsm:start_link(?MODULE, [BusId, Options], []).
+    gen_fsm:start_link(?MODULE, [BusId, Options, self()], []).
 
 close(Conn) ->
     gen_fsm:send_all_state_event(Conn, close).
@@ -108,7 +108,7 @@ auth(Conn) ->
 %%
 %% gen_fsm callbacks
 %%
-init([#bus_id{scheme=tcp,options=BusOptions}, Options]) ->
+init([#bus_id{scheme=tcp,options=BusOptions}, Options, Owner]) ->
     {Host, Port} = case {lists:keysearch(host, 1, BusOptions),
 			 lists:keysearch(port, 1, BusOptions)} of
 		       {{value, {host, Host1}}, {value, {port,Port1}}} ->
@@ -118,11 +118,11 @@ init([#bus_id{scheme=tcp,options=BusOptions}, Options]) ->
 		   end,
 
     {ok, Sock} = dbus_transport_tcp:connect(Host, Port, Options),
-    init_connection(Sock, ?auth_mechs_tcp);
+    init_connection(Sock, ?auth_mechs_tcp, Owner);
 
-init([#bus_id{scheme=unix, options=BusOptions}, Options]) ->
+init([#bus_id{scheme=unix, options=BusOptions}, Options, Owner]) ->
     {ok, Sock} = dbus_transport_unix:connect(BusOptions, Options),
-    init_connection(Sock, ?auth_mechs_unix).
+    init_connection(Sock, ?auth_mechs_unix, Owner).
 
 
 code_change(_OldVsn, _StateName, State, _Extra) ->
@@ -434,23 +434,24 @@ handle_message(?TYPE_ERROR, Msg, #state{pending=Pending}=State) ->
 	        {error, unexpected_message, State}
     end;
 
-handle_message(?TYPE_METHOD_CALL, _Msg, #state{owner=_Owner}=State) ->
-    %Owner ! {dbus_method_call, Msg, self()},
+handle_message(?TYPE_METHOD_CALL, Msg, #state{owner=Owner}=State) ->
+    Owner ! {dbus_method_call, Msg, self()},
     {ok, State};
 
-handle_message(?TYPE_SIGNAL, _Msg, #state{owner=_Owner}=State) ->
-    %Owner ! {dbus_signal, Msg, self()},
+handle_message(?TYPE_SIGNAL, Msg, #state{owner=Owner}=State) ->
+    Owner ! {dbus_signal, Msg, self()},
     {ok, State};
 
 handle_message(Type, Msg, State) ->
     lager:debug("Ignore ~p ~p~n", [Type, Msg]),
     {error, unexpected_message, State}.
 
-init_connection(Sock, Mechs) ->
+init_connection(Sock, Mechs, Owner) ->
     ok = dbus_transport:send(Sock, <<0>>),
     {ok, connected, #state{sock=Sock,
 			   pending=ets:new(pending, [private]), 
-			   mechs=Mechs}}.    
+			   mechs=Mechs,
+			   owner=Owner}}.    
 
 strip_eol(Bin) ->
     strip_eol(Bin, <<>>).

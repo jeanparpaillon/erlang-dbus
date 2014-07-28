@@ -16,10 +16,8 @@
 -export([
 	 start_link/4,
 	 stop/1,
-	 interface/2,
-	 call/2,
-	 call/3,
-	 cast/3,
+	 call/4,
+	 cast/4,
 	 connect_signal/3
 	]).
 
@@ -75,14 +73,10 @@ start_link(Bus, Conn, Service, Path) when is_pid(Conn),
 stop(Proxy) ->
     gen_server:cast(Proxy, stop).
 
-interface(Proxy, IfaceName) when is_pid(Proxy) ->
-    {ok, {interface, Proxy, IfaceName}}.
 
-
-call(Interface, MethodName) ->
-    call(Interface, MethodName, []).
-
-call({interface, Proxy, IfaceName}, MethodName, Args) ->
+-spec call(Proxy :: pid(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term()) -> 
+		  ok | {ok, term()} | {error, term()}.
+call(Proxy, IfaceName, MethodName, Args) when is_pid(Proxy) ->
     case gen_server:call(Proxy, {method, IfaceName, MethodName, Args}) of
 	ok ->
 	    ok;
@@ -93,11 +87,14 @@ call({interface, Proxy, IfaceName}, MethodName, Args) ->
     end.
 
 
-cast({interface, Proxy, IfaceName}, MethodName, Args) ->
+-spec cast(Proxy :: pid(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term()) -> ok.
+cast(Proxy, IfaceName, MethodName, Args) ->
     gen_server:cast(Proxy, {method, IfaceName, MethodName, Args}).
 
-connect_signal({interface, Proxy, IfaceName}, SignalName, Tag) ->
-    gen_server:cast(Proxy, {connect_signal, IfaceName, SignalName, Tag, self()}).
+
+-spec connect_signal(Proxy :: pid(), IfaceName :: dbus_name(), SignalName :: dbus_name()) -> ok.
+connect_signal(Proxy, IfaceName, SignalName) ->
+    gen_server:call(Proxy, {connect_signal, IfaceName, SignalName, self()}).
 
 %%
 %% gen_server callbacks
@@ -120,13 +117,23 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 handle_call({method, IfaceName, MethodName, Args}, _From, #state{node=Node}=State) ->
-    lager:debug("Calling ~p.~p on ~p~n", [IfaceName, MethodName, State#state.path]),
+    lager:debug("Calling ~p:~p.~p(~p)~n", [State#state.path, IfaceName, MethodName, Args]),
     case dbus_introspect:find_method(Node, IfaceName, MethodName) of
 	{ok, Method} ->
 	    do_method(IfaceName, Method, Args, State);
 	{error, _}=Err ->
 	    {reply, Err, State}
     end;
+
+handle_call({connect_signal, IfaceName, SignalName, Pid}, _From, 
+	    #state{bus=Bus, path=Path, service=Service}=State) ->
+    Match = [{type, signal},
+	     {sender, Service},
+	     {interface, IfaceName},
+	     {member, SignalName},
+	     {path, Path}],
+    Ret = dbus_bus:add_match(Bus, Match, Pid),
+    {reply, Ret, State};
 
 handle_call(Request, _From, State) ->
     lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
@@ -135,16 +142,6 @@ handle_call(Request, _From, State) ->
 
 handle_cast(stop, State) ->
     {stop, normal, State};
-
-handle_cast({connect_signal, IfaceName, SignalName, Tag, Pid}, State) ->
-    Match = [{type, signal},
-	     {sender, State#state.service},
-	     {interface, IfaceName},
-	     {member, SignalName},
-	     {path, State#state.path}],
-
-    bus:add_match(State#state.bus, Match, Tag, Pid),
-    {noreply, State};
 
 handle_cast(Request, State) ->
     lager:error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),

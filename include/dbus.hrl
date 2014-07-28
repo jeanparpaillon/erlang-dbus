@@ -47,8 +47,9 @@
 		     {array, dbus_type} |
 		     {struct, [dbus_type()]} |
 		     variant |
-		     {dict, dbus_type(), dbus_type()}.
--type dbus_signature() :: dbus_type() | [dbus_type()].
+		     {dict, dbus_type(), dbus_type()} |
+		     empty.
+-type dbus_signature() :: [dbus_type()].
 
 -record(bus_id, {
 	  scheme,				% tcp or unix

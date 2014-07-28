@@ -28,9 +28,11 @@
 -spec marshal_message(dbus_message()) -> iolist().
 marshal_message(#dbus_message{header=#dbus_header{serial=0}}=_Msg) ->
     throw({error, invalid_serial});
-marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial=S, fields=Fields}, body= <<>>}=_Msg) ->
+marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial=S, fields=Fields}, 
+			      body= <<>>}=_Msg) ->
     marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, 0, S, Fields]);
-marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial=S, fields=Fields}, body=Body}=_Msg) ->
+marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial=S, fields=Fields}, 
+			      body=Body}=_Msg) ->
     BinBody = iolist_to_binary(Body),
     [ marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, byte_size(BinBody), S, Fields]), BinBody ].
 
@@ -76,12 +78,9 @@ unmarshal_data(Data) ->
 -spec unmarshal_signature(binary()) -> dbus_signature().
 unmarshal_signature(<<>>) -> 
     [];
-unmarshal_signature(<<C>>) ->
-    Type = unmarshal_type(C),
-    Type;
 unmarshal_signature(Bin) when is_binary(Bin) ->
     {Signature, <<>>} = unmarshal_signature(Bin, []),
-    lists:flatten(Signature).
+    Signature.
 
 %%%
 %%% Priv marshalling
@@ -143,7 +142,7 @@ marshal(string, Value, Pos) when is_binary(Value) ->
     marshal_string(uint32, Value, Pos);
     
 marshal(string, Value, Pos) when is_list(Value) ->
-	marshal(string, list_to_binary(Value), Pos);
+    marshal(string, list_to_binary(Value), Pos);
 
 marshal(object_path, Value, Pos) ->
     marshal(string, Value, Pos);
@@ -268,12 +267,10 @@ marshal_int(Len, Value, Pos) when is_integer(Value) ->
 
 
 marshal_string(LenType, Value, Pos) when is_list(Value) ->
-    Length = length(Value),
-    {Value1, Pos1} = marshal(LenType, Length, Pos),
-    {[Value1, Value, 0], Pos1 + Length + 1};
+    marshal_string(LenType, list_to_binary(Value), Pos);
 
 marshal_string(LenType, Value, Pos) when is_binary(Value) ->
-    Length = size(Value),
+    Length = byte_size(Value),
     {Value1, Pos1} = marshal(LenType, Length, Pos),
     {[Value1, Value, 0], Pos1 + Length + 1}.
 
@@ -339,20 +336,21 @@ unmarshal_data(Data, Acc) ->
 
 unmarshal_message(Data) when is_binary(Data) ->
     {Header, BodyBin, Rest} = unmarshal_header(Data),
-    BodySig =
-	    case dbus_message:find_field(?FIELD_SIGNATURE, Header) of
-	        #dbus_variant{type=signature, value=Val} ->
-		    unmarshal_signature(Val);
-	        undefined -> 
-		    []
-	    end,
-    case unmarshal_list(BodySig, BodyBin) of
-	    {Body, <<>>, _Pos} ->
-	        {#dbus_message{header=Header, body=Body}, Rest};
-	    {_Body, Rest2, _Pos} ->
-	        lager:error("Garbage parsing message body: ~p~n", [Rest2]),
-	        throw({error, body_parse_error})
+    Type =
+	case dbus_message:find_field(?FIELD_SIGNATURE, Header) of
+	    #dbus_variant{type=signature, value=Val} ->
+		unmarshal_single_type(Val);
+	    undefined -> 
+		empty
+	end,
+    case unmarshal(Type, BodyBin, 0) of
+	{Body, <<>>, _Pos} ->
+	    {#dbus_message{header=Header, body=Body}, Rest};
+	{_Body, Rest2, _Pos} ->
+	    lager:error("Garbage parsing message body: ~p~n", [Rest2]),
+	    throw({error, body_parse_error})
     end.
+
 
 unmarshal_header(Bin) ->
     case unmarshal_list(?HEADER_SIGNATURE, Bin) of
@@ -366,6 +364,12 @@ unmarshal_header(Bin) ->
 	    throw({error, malformed_header})
     end.
 
+
+unmarshal_single_type(<<>>) ->
+    empty;
+unmarshal_single_type(Bin) when is_binary(Bin) ->
+    {[Type], <<>>} = unmarshal_signature(Bin, []),
+    Type.
 
 unmarshal(Type, <<>>, _Pos) ->
     throw({error, Type});
@@ -433,7 +437,7 @@ unmarshal({dict, KeyType, ValueType}, Data, Pos) ->
 
 unmarshal(variant, Data, Pos) ->
     {Signature, Data1, Pos1} = unmarshal(signature, Data, Pos),
-    Type = unmarshal_signature(Signature),
+    Type = unmarshal_single_type(Signature),
     {Value, Data2, Pos2} = unmarshal(Type, Data1, Pos1),
     {#dbus_variant{type=Type, value=Value}, Data2, Pos2}.
 
@@ -454,7 +458,7 @@ unmarshal_int(Len, Data, Pos) ->
 
 
 unmarshal_signature(<<>>, Acc) ->
-    {Acc, <<>>};
+    {lists:flatten(Acc), <<>>};
 
 unmarshal_signature(<<$a, ${, KeySig, Rest/bits>>, Acc) ->
     {KeyType, <<>>} = unmarshal_signature(KeySig),
@@ -463,40 +467,40 @@ unmarshal_signature(<<$a, ${, KeySig, Rest/bits>>, Acc) ->
 
 unmarshal_signature(<<$a, Rest/bits>>, Acc) ->
     {[Type | Types], <<>>} = unmarshal_signature(Rest, []),
-    {[Acc, [{array, Type}], Types], <<>>};
+    {lists:flatten([Acc, {array, Type}, Types]), <<>>};
 
 unmarshal_signature(<<$(, Rest/bits>>, Acc) ->
     {Types, Rest2} = unmarshal_signature(Rest, []),
     unmarshal_signature(Rest2, [Acc, {struct, Types}]);
 
 unmarshal_signature(<<$), Rest/bits>>, Acc) ->
-    {Acc, Rest};
+    {lists:flatten(Acc), Rest};
 
 unmarshal_signature(<<$}, Rest/bits>>, Acc) ->
-    {Acc, Rest};
+    {lists:flatten(Acc), Rest};
 
 unmarshal_signature(<<C, Rest/bits>>, Acc) ->
-    Type = unmarshal_type(C),
-    unmarshal_signature(Rest, [Acc, Type]).
+    Code = unmarshal_type_code(C),
+    unmarshal_signature(Rest, [Acc, Code]).
 
 
-unmarshal_type($y) -> byte;
-unmarshal_type($b) -> boolean;
-unmarshal_type($n) -> int16;
-unmarshal_type($q) -> uint16;
-unmarshal_type($i) -> int32;
-unmarshal_type($u) -> uint32;
-unmarshal_type($x) -> int64;
-unmarshal_type($t) -> uint64;
-unmarshal_type($d) -> double;
-unmarshal_type($s) -> string;
-unmarshal_type($o) -> object_path;
-unmarshal_type($g) -> signature;
-unmarshal_type($r) -> struct;
-unmarshal_type($v) -> variant;
-unmarshal_type($e) -> dict_entry;
-unmarshal_type($a) -> array;
-unmarshal_type(_C) -> throw({error, {bad_type, _C}}).
+unmarshal_type_code($y) -> byte;
+unmarshal_type_code($b) -> boolean;
+unmarshal_type_code($n) -> int16;
+unmarshal_type_code($q) -> uint16;
+unmarshal_type_code($i) -> int32;
+unmarshal_type_code($u) -> uint32;
+unmarshal_type_code($x) -> int64;
+unmarshal_type_code($t) -> uint64;
+unmarshal_type_code($d) -> double;
+unmarshal_type_code($s) -> string;
+unmarshal_type_code($o) -> object_path;
+unmarshal_type_code($g) -> signature;
+unmarshal_type_code($r) -> struct;
+unmarshal_type_code($v) -> variant;
+unmarshal_type_code($e) -> dict_entry;
+unmarshal_type_code($a) -> array;
+unmarshal_type_code(_C) -> throw({error, {bad_type_code, _C}}).
 
 
 unmarshal_struct(SubTypes, Data, Pos) ->

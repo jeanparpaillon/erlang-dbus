@@ -6,8 +6,8 @@
 %% @author Jean Parpaillon <jean.parpaillon@free.fr>
 %% @doc message module. Builds error and result messages
 %%
-
 -module(dbus_message).
+-compile({parse_transform, lager_transform}).
 
 -include("dbus.hrl").
 

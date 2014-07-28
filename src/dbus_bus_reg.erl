@@ -68,7 +68,6 @@ cast(#dbus_message{}=Msg) ->
 %% gen_server callbacks
 %%
 init([]) ->
-    %%process_flag(trap_exit, true),
     {ok, #state{}}.
 
 
@@ -133,22 +132,6 @@ handle_cast(#dbus_message{}=Msg, #state{busses=Buses}=State) ->
 handle_cast(Request, State) ->
     lager:error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
-
-
-handle_info({'EXIT', Pid, Reason}, #state{busses=Busses}=State) ->
-    case lists:keysearch(Pid, 2, Busses) of
-	{value, _} ->
-	    Busses1 =
-		lists:keydelete(Pid, 2, Busses),
-		    {noreply, State#state{busses=Busses1}};
-	false ->
-	    if
-		Reason /= normal ->
-		    {stop, Reason};
-		true ->
-		    {noreply, State}
-	    end
-    end;
 
 handle_info(Info, State) ->
     lager:error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),

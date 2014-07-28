@@ -18,14 +18,12 @@
 	 stop/1
 	]).
 
--export([
-	 add_match/4,
+-export([add_match/3,
 	 export_service/2,
 	 unexport_service/2,
 	 get_service/2,
 	 release_service/2,
-	 cast/2
-	]).
+	 cast/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -39,13 +37,13 @@
 
 -record(state, {
 	  conn,
+	  conn_name,
 	  state,
-	  hello_ref,
 	  id,
 	  dbus_object,
 	  owner,
 	  services                        :: term(), % tid()
-	  signal_handlers   = []
+	  signal_handlers                 :: term()  % tid()
 	 }).
 
 -define(DEFAULT_BUS_SYSTEM, #bus_id{scheme=unix,options=[{path, "/var/run/dbus/system_bus_socket"}]}).
@@ -61,8 +59,8 @@ connect(BusId) when is_record(BusId, bus_id) ->
 stop(Bus) ->
     gen_server:cast(Bus, stop).
 
-add_match(Bus, Match, Tag, Pid) ->
-    gen_server:cast(Bus, {add_match, Match, Tag, Pid}).
+add_match(Bus, Match, Pid) ->
+    gen_server:cast(Bus, {add_match, Match, Pid}).
 
 export_service(Bus, ServiceName) ->
     gen_server:call(Bus, {export_service, ServiceName}).
@@ -86,9 +84,13 @@ init([BusId, Owner]) ->
     case dbus_connection:start_link(BusId, [list, {packet, 0}]) of
 	{ok, Conn} ->
 	    dbus_connection:auth(Conn),
-	    say_hello(Conn),
+	    {ok, DBusObj} = dbus_proxy:start_link(self(), Conn, 'org.freedesktop.DBus', <<"/">>),
+	    ConnName = hello(DBusObj),
+	    lager:debug("Got connection name: ~p~n", [ConnName]),
 	    Reg = ets:new(services, [set, private]),
-	    {ok, #state{owner=Owner, conn=Conn, services=Reg}};
+	    SigH = ets:new(signal_handlers, [set, private]),
+	    {ok, #state{owner=Owner, conn=Conn, conn_name=ConnName, services=Reg, 
+			dbus_object=DBusObj, signal_handlers=SigH}};
 	ignore ->
 	    ignore;
 	{error, Err} -> 
@@ -100,18 +102,12 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
-handle_call({export_service, ServiceName}, _From, State) ->
-    BusObj = State#state.dbus_object,
-
-    {ok, BusIface} = dbus_proxy:interface(BusObj, 'org.freedesktop.DBus'),
-    {ok, _Header1} = dbus_proxy:call(BusIface, 'RequestName', [ServiceName, 0]),
+handle_call({export_service, ServiceName}, _From, #state{dbus_object=BusObj}=State) ->
+    {ok, _Msg} = dbus_proxy:call(BusObj, 'org.freedesktop.DBus', 'RequestName', [ServiceName, 0]),
     {reply, ok, State};
 
-handle_call({unexport_service, ServiceName}, _From, State) ->
-    BusObj = State#state.dbus_object,
-
-    {ok, BusIface} = dbus_proxy:interface(BusObj, 'org.freedesktop.DBus'),
-    {ok, _Header1} = dbus_proxy:call(BusIface, 'ReleaseName', [ServiceName]),
+handle_call({unexport_service, ServiceName}, _From, #state{dbus_object=BusObj}=State) ->
+    {ok, _Msg} = dbus_proxy:call(BusObj, 'org.freedesktop.DBus', 'ReleaseName', [ServiceName]),
     {reply, ok, State};
 
 handle_call({get_service, Name}, {Pid, _}, #state{conn=Conn, services=Reg}=State) ->
@@ -136,43 +132,15 @@ handle_call(Request, _From, State) ->
     {reply, ok, State}.
 
 
-handle_cast({add_match, Match, Tag, Pid}, State) ->
-    DBusObj = State#state.dbus_object,
-    Fold = fun({Key, Value}, Str) ->
-		   Prefix =
-		       if
-			   Str == "" ->
-			       "";
-			   true ->
-			       ", "
-		       end,
-		   KeyStr =
-		       if
-			   is_atom(Key) ->
-			       atom_to_list(Key);
-			   is_list(Key) ->
-			       Key
-		       end,
-		   ValueStr =
-		       if
-			   is_atom(Value) ->
-			       atom_to_list(Value);
-			   is_list(Value) ->
-			       Value
-		       end,
-
-			   
-		   Item = Prefix ++ KeyStr ++ "='" ++ ValueStr ++ "'",
-		   Str ++ Item
-	   end,
-
-    MatchStr = lists:foldl(Fold, "", Match),
-
-    {ok, DBusIFace} = dbus_proxy:interface(DBusObj, 'org.freedesktop.DBus'),
-    ok = dbus_proxy:call(DBusIFace, 'AddMatch', [MatchStr], [{reply, self(), add_match}]),
-
-    Signal_handlers = State#state.signal_handlers,
-    {noreply, State#state{signal_handlers=[{Match, Tag, Pid}|Signal_handlers]}};
+handle_cast({add_match, Match, Pid},
+	    #state{dbus_object=DBusObj, signal_handlers=SigH}=State) ->
+    case dbus_proxy:call(DBusObj, 'org.freedesktop.DBus', 'AddMatch', [build_match(Match, <<>>)]) of
+	ok ->
+	    ets:insert(SigH, {Match, Pid}),
+	    {noreply, State};
+	{error, Err} ->
+	    {stop, {error, Err}, State}
+    end;
 
 handle_cast(stop, State) ->
     {stop, normal, State};
@@ -193,36 +161,11 @@ handle_info({setup, BusId}, State) ->
 	{error, Err} -> {stop, Err, State}
     end;
 
-handle_info({reply, hello, {ok, Reply}}, State) ->
-    lager:debug("Hello reply ~p~n", [Reply]),
-    [Id] = Reply,
-    %reply_waiting(ok, State),
-    {noreply, State#state{id=Id}};
-
-handle_info({reply, Ref, {error, Reason}}, #state{hello_ref=Ref}=State) ->
+handle_info({reply, Ref, {error, Reason}}, #state{conn_name=Ref}=State) ->
     {stop, {error, Reason}, State};
 
-handle_info({reply, add_match, {ok, _Header}}, State) ->
-    %% Ignore reply
-    {noreply, State};
-
-handle_info({dbus_method_call, Header, Conn}, State) ->
-    dbus_service_reg ! {dbus_method_call, Header, Conn},
-    {noreply, State};
-
-handle_info({dbus_signal, Header, Conn}, #state{conn=Conn, signal_handlers=Handlers}=State) ->
-    lager:debug("Ignore signal ~p~n", [Header]),
-    lists:foreach(fun({_Match, Tag, Pid}) ->
-			  Pid ! {dbus_signal, Header, Tag}
-		  end, Handlers),
-    {noreply, State};
-
-handle_info({proxy, ok, From, Obj}, State) ->
-    gen_server:reply(From, {ok, Obj}),
-    {noreply, State};
-
-handle_info({proxy, Result, From, _Obj}, State) ->
-    gen_server:reply(From, Result),
+handle_info({dbus_signal, Msg, Conn}, #state{conn=Conn, signal_handlers=_Handlers}=State) ->
+    lager:debug("Ignore signal ~p~n", [Msg]),
     {noreply, State};
 
 handle_info({'EXIT', Pid, Reason}, State) ->
@@ -287,10 +230,18 @@ get_bus_id(system) ->
 %%%
 %%% Priv
 %%%
-say_hello(Conn) ->
-    {ok, DBusObj} = dbus_proxy:start_link(self(), Conn, 'org.freedesktop.DBus', <<"/">>),
-    {ok, DBusIfaceObj} = dbus_proxy:interface(DBusObj, 'org.freedesktop.DBus'),
-    dbus_proxy:call(DBusIfaceObj, 'Hello', []).
+hello(DBusObj) ->
+    {ok, Ret} = dbus_proxy:call(DBusObj, 'org.freedesktop.DBus', 'Hello', []),
+    Ret.
+
+build_match([], << ",", Match/binary >>) ->
+    Match;
+build_match([{Key, Value} | Rules], Acc) when is_atom(Key) ->
+    build_match([{atom_to_binary(Key, utf8), Value} | Rules], Acc);
+build_match([{Key, Value} | Rules], Acc) when is_atom(Value) ->
+    build_match([{Key, atom_to_binary(Value, utf8)} | Rules], Acc);
+build_match([{Key, Value} | Rules], Acc) ->
+    build_match(Rules, << Acc/binary, ",", Key/binary, "='", Value/binary, "'">>).
 
 env_to_bus_id() ->
     str_to_bus_id(os:getenv(?SESSION_ENV)).
