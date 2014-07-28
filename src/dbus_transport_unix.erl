@@ -91,7 +91,7 @@ handle_cast({send, Data}, State) when is_list(Data) ->
     handle_cast({send, iolist_to_binary(Data)}, State);
 
 handle_cast({send, Data}, #state{sock=Sock}=State) when is_binary(Data) ->
-    procket:sendto(Sock, Data, 0, <<>>),
+    R = procket:sendto(Sock, Data, 0, <<>>),
     {noreply, State};
 
 handle_cast(close, #state{sock=Sock}=State) ->

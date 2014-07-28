@@ -37,16 +37,18 @@
 	  conn,
 	  waiting=[]
 	 }).
+-define(SERVICE, <<"org.freedesktop.DBus">>).
+-define(PATH, <<"/">>).
 
--define(DBUS_HELLO_METHOD, #dbus_method{name='Hello', args=[], result=#dbus_arg{direction=out, type = <<"s">>}, 
+-define(DBUS_HELLO_METHOD, #dbus_method{name = <<"Hello">>, args=[], result=#dbus_arg{direction=out, type = <<"s">>}, 
 					in_sig = <<>>, in_types=[]}).
--define(DBUS_ADD_MATCH, #dbus_method{name='AddMatch', args=[#dbus_arg{direction=in, type= <<"s">>}], 
+-define(DBUS_ADD_MATCH, #dbus_method{name = <<"AddMatch">>, args=[#dbus_arg{direction=in, type= <<"s">>}], 
 				     in_sig = <<"s">>, in_types=[string]}).
--define(DBUS_REQUEST_NAME, #dbus_method{name='RequestName', args=[#dbus_arg{direction=in, type = <<"s">>}, 
+-define(DBUS_REQUEST_NAME, #dbus_method{name = <<"RequestName">>, args=[#dbus_arg{direction=in, type = <<"s">>}, 
 								  #dbus_arg{direction=in, type = <<"u">>}, 
 								  #dbus_arg{direction=out, type = <<"u">>}], 
 					in_sig = <<"su">>, in_types=[string,uint32]}).
--define(DBUS_RELEASE_NAME, #dbus_method{name='ReleaseName', args=[#dbus_arg{direction=in, type = <<"s">>}, 
+-define(DBUS_RELEASE_NAME, #dbus_method{name = <<"ReleaseName">>, args=[#dbus_arg{direction=in, type = <<"s">>}, 
 								  #dbus_arg{direction=out, type = <<"u">>}], 
 					in_sig = <<"s">>, in_types=[string]}).
 -define(DBUS_IFACE, #dbus_iface{name='org.freedesktop.DBus',
@@ -55,7 +57,7 @@
 							       {'ReleaseName', ?DBUS_RELEASE_NAME},
 							       {'RequestName', ?DBUS_REQUEST_NAME}])}).
 
--define(DBUS_INTROSPECT_METHOD, #dbus_method{name= 'Introspect', args=[], result=#dbus_arg{direction=out, type = <<"s">>}, 
+-define(DBUS_INTROSPECT_METHOD, #dbus_method{name = <<"Introspect">>, args=[], result=#dbus_arg{direction=out, type = <<"s">>}, 
 					     in_sig = <<>>, in_types=[]}).
 -define(DBUS_INTROSPECTABLE_IFACE, #dbus_iface{name='org.freedesktop.DBus.Introspectable',
 					       methods=gb_trees:from_orddict([{'Introspect', ?DBUS_INTROSPECT_METHOD}])}).
@@ -99,16 +101,16 @@ connect_signal(Proxy, IfaceName, SignalName) ->
 %%
 %% gen_server callbacks
 %%
-init([Bus, Conn, 'org.freedesktop.DBus', <<"/">>]) ->
-    {ok, #state{bus=Bus, conn=Conn, service='org.freedesktop.DBus', path= <<"/">>, node=?DEFAULT_DBUS_NODE}};
+init([Bus, Conn, ?SERVICE, ?PATH]) ->
+    {ok, #state{bus = Bus, conn = Conn, service = ?SERVICE, path = ?PATH, node = ?DEFAULT_DBUS_NODE}};
 
 init([Bus, Conn, Service, Path]) ->
     case do_introspect(Conn, Service, Path) of
-	{ok, Node} ->
-	    {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path, node=Node}};
-	{error, Err} ->
-	    lager:error("Error introspecting object ~p: ~p~n", [Path, Err]),
-	    {error, Err}
+	    {ok, Node} ->
+	        {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path, node=Node}};
+	    {error, Err} ->
+	        lager:error("Error introspecting object ~p: ~p~n", [Path, Err]),
+	        {error, Err}
     end.
 
 
@@ -195,12 +197,13 @@ do_introspect(Conn, Service, Path) ->
     case dbus_connection:call(Conn, dbus_message:introspect(Service, Path)) of
 	{ok, #dbus_message{body=Body}} ->
 	    try dbus_introspect:from_xml_string(Body) of
-		#dbus_node{}=Node -> {ok, Node}
-	    catch
-		_:Err ->
-		    lager:error("Error parsing introspection infos: ~p~n", [Err]),
-		    {error, parse_error}
-	    end;
+		    #dbus_node{}=Node -> 
+			{ok, Node}
+	        catch
+		        _:Err ->
+		            lager:error("Error parsing introspection infos: ~p~n", [Err]),
+		            {error, parse_error}
+	        end;
 	{error, #dbus_message{body=Body}=Msg} ->
 	    Err = dbus_message:get_field_value(?FIELD_ERROR_NAME, Msg),
 	    {error, {Err, Body}}

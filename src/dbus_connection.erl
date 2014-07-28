@@ -390,7 +390,7 @@ authenticated({call, #dbus_message{}=Msg}, {Pid, Tag},
     Data = dbus_marshaller:marshal_message(dbus_message:set_serial(S, Msg)),
     true = ets:insert(Pending, {S, Pid, Tag}),
     ok = dbus_transport:send(Sock, Data),
-    {reply, {ok, {self(), Tag}}, authenticated, State#state{serial=S+1}};
+    {reply, {ok, {self(), Tag}}, authenticated, State#state{serial=S}};
 
 authenticated(_Evt, _From, State) ->
     lager:debug("Unexpected event: ~p~n", [_Evt]),

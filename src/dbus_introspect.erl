@@ -106,7 +106,7 @@ to_xmerl(List) when is_list(List) ->
 
 to_xmerl(#dbus_node{}=Elem) ->
     {node,
-     case Elem#dbus_node.name of
+     case list_to_binary(Elem#dbus_node.name) of
 	 undefined ->
 	     [];
 	 Name ->
@@ -118,7 +118,7 @@ to_xmerl(#dbus_node{}=Elem) ->
 
 to_xmerl(#dbus_iface{}=Elem) ->
     {interface,
-     [{name, Elem#dbus_iface.name}],
+     [{name, list_to_binary(Elem#dbus_iface.name)}],
      to_xmerl(Elem#dbus_iface.methods) ++
      to_xmerl(Elem#dbus_iface.signals) ++
      to_xmerl(Elem#dbus_iface.properties)};
@@ -134,11 +134,11 @@ to_xmerl(#dbus_method{}=Elem) ->
 		[to_xmerl(Arg)]
 	end,
     {method,
-     case Elem#dbus_method.name of
-	 undefined ->
-	     [];
-	 Name ->
-	     [{name, Name}]
+     case list_to_binary(Elem#dbus_method.name) of
+	    undefined ->
+	        [];
+	    Name ->
+	        [{name, Name}]
      end,
      to_xmerl(Elem#dbus_method.args) ++ Result};
 
@@ -153,24 +153,23 @@ to_xmerl(#dbus_signal{}=Elem) ->
 		[to_xmerl(Arg)]
 	end,
     {signal,
-     case Elem#dbus_signal.name of
-	 undefined ->
-	     [];
-	 Name ->
-	     [{name, Name}]
+     case list_to_binary(Elem#dbus_signal.name) of
+	    undefined ->
+	        [];
+	    Name ->
+	        [{name, Name}]
      end,
      to_xmerl(Elem#dbus_signal.args) ++ Result};
 
 to_xmerl(#dbus_arg{}=Elem) ->
     {arg, 
-     case Elem#dbus_arg.name of
-	 undefined ->
-	     [];
-	 Name ->
-	     [{name, Name}]
+     case list_to_binary(Elem#dbus_arg.name) of
+	    undefined ->
+	        [];
+	    Name ->
+	        [{name, Name}]
      end ++
-     [{direction, Elem#dbus_arg.direction}, {type, Elem#dbus_arg.type}], []}.
-
+     [{direction, Elem#dbus_arg.direction}, {type, Elem#dbus_arg.type}],  []}.
 
 xml_event(startDocument, _L, S) ->
     S;
