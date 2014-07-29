@@ -13,6 +13,7 @@
 -include("dbus.hrl").
 
 -export([
+	 find_interface/2,
 	 find_method/3,
 	 find_signal/3,
 	 to_xml/1,
@@ -31,14 +32,25 @@
 %%%
 %%% API
 %%%
+-spec find_interface(dbus_node(), Iface :: dbus_name()) -> 
+			 {ok, dbus_iface()} | {error, {'org.freedesktop.DBus.UnknownInterface', [dbus_name()]}}.
+find_interface(#dbus_node{interfaces=Ifaces}, IfaceName) ->
+    case find_name(IfaceName, Ifaces, fun dbus_names:bin_to_iface/1) of
+	{value, #dbus_iface{}=I} ->
+	    {ok, I};
+	none ->
+	    {error, {'org.freedesktop.DBus.UnknownInterface', [IfaceName]}}
+    end.
+
+
 -spec find_method(dbus_node(), Iface :: dbus_name(), Method :: dbus_name()) -> 
 			 {ok, dbus_method()} 
 			     | {error, {'org.freedesktop.DBus.UnknownMethod', [dbus_name()], dbus_name(), dbus_node()}}
 			     | {error, {'org.freedesktop.DBus.UnknownInterface', [dbus_name()]}}.
 find_method(#dbus_node{interfaces=Ifaces}=Node, IfaceName, MethodName) ->
-    case gb_trees:lookup(IfaceName, Ifaces) of
+    case find_name(IfaceName, Ifaces, fun dbus_names:bin_to_iface/1) of
 	{value, #dbus_iface{methods=Methods}=_I} ->
-	    case gb_trees:lookup(MethodName, Methods) of
+	    case find_name(MethodName, Methods, fun dbus_names:bin_to_method/1) of
 		{value, #dbus_method{}=Method} ->
 		    {ok, Method};
 		none ->
@@ -54,9 +66,9 @@ find_method(#dbus_node{interfaces=Ifaces}=Node, IfaceName, MethodName) ->
 			     | {error, {'org.freedesktop.DBus.UnknownSignal', [dbus_name()], dbus_name(), dbus_node()}}
 			     | {error, {'org.freedesktop.DBus.UnknownInterface', [dbus_name()]}}.
 find_signal(#dbus_node{interfaces=Ifaces}=Node, IfaceName, SignalName) ->
-    case gb_trees:lookup(IfaceName, Ifaces) of
+    case find_name(IfaceName, Ifaces, fun dbus_names:bin_to_iface/1) of
 	{value, #dbus_iface{signals=Signals}} ->
-	    case gb_trees:lookup(SignalName, Signals) of
+	    case find_name(SignalName, Signals, fun dbus_names:bin_to_signal/1) of
 		{value, #dbus_signal{}=Signal} ->
 		    {ok, Signal};
 		none ->
@@ -98,6 +110,21 @@ from_xml(Filename) ->
 %%%
 %%% Priv
 %%%
+find_name(Name, Tree, _) when is_atom(Name) ->
+    case gb_trees:lookup(Name, Tree) of
+	{value, Iface} -> {value, Iface};
+	none -> gb_trees:lookup(atom_to_binary(Name, utf8), Tree)
+    end;
+find_name(Name, Tree, ToKnownFun) when is_binary(Name) ->
+    case gb_trees:lookup(Name, Tree) of
+	{value, Iface} -> {value, Iface};
+	none -> 
+	    case ToKnownFun(Name) of
+		Bin when is_binary(Bin) -> none;
+		Atom when is_atom(Atom) -> gb_trees:lookup(Atom, Tree)
+	    end
+    end.
+
 
 to_xmerl(undefined) ->
     [];
@@ -343,7 +370,7 @@ build_node([{_, _, Attr, _}, _], _) ->
 build_iface([], Iface) ->
     Iface;
 build_iface([{_, _, "name", Name} | Attrs], Iface) ->
-    build_iface(Attrs, Iface#dbus_iface{name=list_to_binary(Name)});
+    build_iface(Attrs, Iface#dbus_iface{name=dbus_names:list_to_iface(Name)});
 build_iface([{_, _, Attr, _}, _], _) ->
     throw({error, {invalid_interface_attribute, Attr}}).
 
@@ -351,7 +378,7 @@ build_iface([{_, _, Attr, _}, _], _) ->
 build_method([], Method) ->
     Method;
 build_method([{_, _, "name", Name} | Attrs], Method) ->
-    build_method(Attrs, Method#dbus_method{name=list_to_binary(Name)});
+    build_method(Attrs, Method#dbus_method{name=dbus_names:list_to_method(Name)});
 build_method([{_, _, Attr, _}, _], _) ->
     throw({error, {invalid_method_attribute, Attr}}).
 
@@ -389,7 +416,7 @@ build_arg([{_, _, Attr, _}, _], _) ->
 build_signal([], Signal) ->
     Signal;
 build_signal([{_, _, "name", Name} | Attrs], Signal) ->
-    build_signal(Attrs, Signal#dbus_signal{name=list_to_binary(Name)});
+    build_signal(Attrs, Signal#dbus_signal{name=dbus_names:list_to_signal(Name)});
 build_signal([{_, _, Attr, _} | _], _) ->
     throw({error, {invalid_signal_attribute, Attr}}).
 

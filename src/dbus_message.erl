@@ -10,6 +10,7 @@
 -compile({parse_transform, lager_transform}).
 
 -include("dbus.hrl").
+-include("dbus_introspectable.hrl").
 
 -export([call/4,
 	 call/5,
@@ -191,12 +192,9 @@ set_body(Signature, Types, Body, #dbus_message{header=#dbus_header{fields=Fields
 %%%
 %%% Common messages
 %%%
--define(IFACE_INTROSPECTABLE, 'org.freedesktop.DBus.Introspectable').
--define(IFACE_MEMBER, 'Introspect').
-
 -spec introspect(Service :: dbus_name(), Path :: dbus_name()) -> dbus_message().
 introspect(Service, Path) ->
-    dbus_message:call(Service, Path, ?IFACE_INTROSPECTABLE, ?IFACE_MEMBER).
+    dbus_message:call(Service, Path, ?DBUS_INTROSPECTABLE_IFACE, 'Introspect').
 
 %%%
 %%% Priv

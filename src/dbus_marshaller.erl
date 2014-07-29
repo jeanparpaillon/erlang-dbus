@@ -463,7 +463,7 @@ unmarshal_signature(<<>>, Acc) ->
     {lists:flatten(Acc), <<>>};
 
 unmarshal_signature(<<$a, ${, KeySig, Rest/bits>>, Acc) ->
-    {KeyType, <<>>} = unmarshal_signature(KeySig),
+    KeyType = unmarshal_type_code(KeySig),
     {[ValueType], Rest2} = unmarshal_signature(Rest, []),
     unmarshal_signature(Rest2, [Acc, {dict, KeyType, ValueType}]);
 

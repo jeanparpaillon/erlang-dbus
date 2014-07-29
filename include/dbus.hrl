@@ -1,3 +1,11 @@
+%%% @author Jean Parpaillon <jean.parpaillon@free.fr>
+%%% @copyright (C) 2014, Jean Parpaillon
+%%% @doc
+%%%
+%%% @end
+%%% Created : 28 Jul 2014 by Jean Parpaillon <jean.parpaillon@free.fr>
+-ifndef(dbus_hrl).
+-define(dbus_hrl, true).
 
 -define(DBUS_VERSION_MAJOR, 1).
 
@@ -44,7 +52,7 @@
 		     string |
 		     object_path |
 		     signature |
-		     {array, dbus_type} |
+		     {array, dbus_type()} |
 		     {struct, [dbus_type()]} |
 		     variant |
 		     {dict, dbus_type(), dbus_type()} |
@@ -79,7 +87,7 @@
 -type dbus_variant() :: #dbus_variant{}.
 
 -record(dbus_node, {
-	  name            :: dbus_name(),
+	  name            :: binary(),
 	  elements   = [] :: [dbus_node()],
 	  interfaces      :: term()           % gb_tree()
 	 }).
@@ -139,3 +147,10 @@
 	  type            :: binary()
 	 }).
 -type dbus_arg() :: #dbus_arg{}.
+
+-type dbus_proxy() :: pid().
+-type dbus_proxy_opt() :: {manager, atom()}
+			| {env, any()}
+			| {node, dbus_node()}.
+
+-endif.
