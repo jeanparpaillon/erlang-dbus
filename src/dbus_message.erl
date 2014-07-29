@@ -147,6 +147,7 @@ find_field(Code, #dbus_header{fields=Fields}) ->
 	Val -> Val
     end.
 
+
 -spec get_field(Code :: integer(), Header :: #dbus_header{}) -> dbus_variant().
 get_field(Code, #dbus_message{header=Header}) ->
     get_field(Code, Header);
@@ -160,6 +161,7 @@ get_field(Code, #dbus_header{fields=Fields}) ->
 get_field(Code, _) ->
     throw({no_such_field, Code}).
 
+
 -spec get_field_value(Code :: integer(), Header :: dbus_header()) -> term().
 get_field_value(Code, #dbus_message{header=Header}) ->
     get_field_value(Code, Header);
@@ -167,25 +169,23 @@ get_field_value(Code, #dbus_header{}=Header) ->
     #dbus_variant{value=Val} = get_field(Code, Header),
     Val.
 
+
 -spec set_body(Signature :: binary(),
 	       Types     :: [dbus_type()],
 	       Body      :: term(),
 	       Message   :: dbus_message()) -> dbus_message().
 set_body(Signature, Types, Body, #dbus_message{header=#dbus_header{fields=Fields}=Header}=Message) ->
     try	dbus_marshaller:marshal_list(Types, Body) of
-	{Bin, _Pos} ->
+	{Bin, Pos} ->
 	    Fields2 = case Signature of
-			  <<>> -> 
-				Fields;
-			  undefined -> 
-				Fields;
-			  [] -> Fields;
-			  O ->
-				[{?FIELD_SIGNATURE, O} | Fields]
+			  <<>> ->       Fields;
+			  undefined ->  Fields;
+			  [] ->         Fields;
+			  O ->		[{?FIELD_SIGNATURE, #dbus_variant{type=signature, value=O}} | Fields]
 		      end,
-	    Message#dbus_message{header=Header#dbus_header{fields=(Fields2)}, body=list_to_binary(Bin)}
+	    Message#dbus_message{header=Header#dbus_header{fields=Fields2, size=Pos}, body=Bin}
     catch 
-	'EXIT':Err ->
+	_:Err ->
 	    {error, {'org.freedesktop.DBus.InvalidParameters', Err}}
     end.	
 

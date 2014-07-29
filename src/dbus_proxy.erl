@@ -191,6 +191,8 @@ do_method(IfaceName,
     case dbus_message:set_body(Signature, Types, Args, Msg) of
 	#dbus_message{}=M2 ->
 	    case dbus_connection:call(Conn, M2) of
+		{ok, #dbus_message{body= <<>>}} ->
+		    {reply, ok, State};
 		{ok, #dbus_message{body=Res}} ->
 		    {reply, {ok, Res}, State};
 		{error, Err} ->
@@ -221,6 +223,7 @@ do_init_manager(Manager, Env, #state{service=Service, conn=Conn, path=Path}=Stat
     lager:info("Fetch managed objects~n", []),
     case do_callback(Manager, init, [self(), Env]) of
 	{ok, MState} ->
+	    do_connect_manager(State),
 	    Msg = dbus_message:call(Service, Path, ?DBUS_OBJECT_MANAGER_IFACE, 'GetManagedObjects'),
 	    case dbus_connection:call(Conn, Msg) of
 		{ok, #dbus_message{body=Objects}} ->
@@ -244,3 +247,9 @@ do_callback(Mod, Fun, Args) ->
 	Class:Err ->
 	    {error, {Class, Err}}
     end.
+
+do_connect_manager(#state{bus=Bus, service=Service, path=Path}) ->
+    Match = [{type, signal},
+	     {sender, Service},
+	     {path_namespace, Path}],
+    dbus_bus:add_match(Bus, Match, self()).

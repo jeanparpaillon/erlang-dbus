@@ -31,10 +31,9 @@ marshal_message(#dbus_message{header=#dbus_header{serial=0}}=_Msg) ->
 marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial=S, fields=Fields}, 
 			      body= <<>>}=_Msg) ->
     marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, 0, S, Fields]);
-marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial=S, fields=Fields}, 
+marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial=S, fields=Fields, size=Size}, 
 			      body=Body}=_Msg) ->
-    BinBody = iolist_to_binary(Body),
-    [ marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, byte_size(BinBody), S, Fields]), BinBody ].
+    [ marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, Size, S, Fields]), Body ].
 
 -spec marshal_signature(dbus_signature()) -> iolist().
 marshal_signature(byte)        ->   "y";
@@ -87,12 +86,9 @@ unmarshal_signature(Bin) when is_binary(Bin) ->
 %%%
 marshal_header(Header) when is_list(Header) ->
     {Value, Pos} = marshal_list(?HEADER_SIGNATURE, Header),
-    Pad = pad(8, Pos),
-    if
-	    Pad == 0 ->
-	        Value;
-	    Pad > 0 ->
-	        [Value, <<0:Pad>>]
+    case pad(8, Pos) of
+	0 -> Value;
+	Pad -> [Value, <<0:Pad>>]
     end.
 
 
@@ -337,20 +333,42 @@ unmarshal_data(Data, Acc) ->
 
 
 unmarshal_message(Data) when is_binary(Data) ->
-    {Header, BodyBin, Rest} = unmarshal_header(Data),
-    Type =
-	case dbus_message:find_field(?FIELD_SIGNATURE, Header) of
-	    #dbus_variant{type=signature, value=Val} ->
-		unmarshal_single_type(Val);
-	    undefined -> 
-		empty
-	end,
-    case unmarshal(Type, BodyBin, 0) of
+    {#dbus_header{type=MsgType}=Header, BodyBin, Rest} = unmarshal_header(Data),
+    case dbus_message:find_field(?FIELD_SIGNATURE, Header) of
+	#dbus_variant{type=signature, value=Val} ->
+	    case unmarshal_body(MsgType, Val, BodyBin) of
+		{ok, Body} ->
+		    {#dbus_message{header=Header, body=Body}, Rest};
+		{error, Err} ->
+		    throw({error, Err})
+	    end;
+	undefined ->
+	    case BodyBin of
+		<<>> -> {#dbus_message{header=Header, body= <<>>}, Rest};
+		_ ->    throw({error, body_parse_error})
+	    end	    
+    end.
+
+
+unmarshal_body(?TYPE_SIGNAL, SigBin, BodyBin) ->
+    Sig = unmarshal_signature(SigBin),
+    case unmarshal_list(Sig, BodyBin) of
 	{Body, <<>>, _Pos} ->
-	    {#dbus_message{header=Header, body=Body}, Rest};
-	{_Body, Rest2, _Pos} ->
-	    lager:error("Garbage parsing message body: ~p~n", [Rest2]),
-	    throw({error, body_parse_error})
+	    {ok, Body};
+	{_Body, _, _} ->
+	    {error, body_parse_error}
+    end;
+
+unmarshal_body(?TYPE_INVALID, _, _) ->
+    {ok, <<>>};
+
+unmarshal_body(_Type, SigBin, BodyBin) ->
+    Type = unmarshal_single_type(SigBin),
+    case unmarshal(Type, BodyBin, 0) of
+	{Body, <<>>, _} ->
+	    {ok, Body};
+	{_Body, _, _} ->
+	    {error, body_parse_error}
     end.
 
 
