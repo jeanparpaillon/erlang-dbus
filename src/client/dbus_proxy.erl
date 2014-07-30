@@ -21,7 +21,8 @@
 	 call/4,
 	 cast/4,
 	 connect_signal/3,
-	 has_interface/2
+	 has_interface/2,
+	 get_managed_objects/1
 	]).
 
 %% gen_server callbacks
@@ -39,7 +40,7 @@
 	  conn,
 	  bus_proxy,
 	  waiting=[],
-	  objman_state,
+	  objects,
 	  owner
 	 }).
 
@@ -47,23 +48,23 @@
 %%% @doc Try to connect "/"
 %%%
 -spec start_link(Conn :: dbus_connection(), Service :: dbus_name(), Opts :: [dbus_proxy_opt()]) -> 
-			{ok, pid()} | {error, term()}.
+			{ok, dbus_proxy()} | {error, term()}.
 start_link(Conn, Service, Opts) when is_pid(Conn) ->
     gen_server:start_link(?MODULE, [Conn, Service, <<"/">>, self(), Opts], []).
 
 
 -spec start_link(Conn :: dbus_connection(), Service :: dbus_name(), Path :: binary(), 
-		 Opts :: [dbus_proxy_opt()]) -> {ok, pid()} | {error, term()}.
+		 Opts :: [dbus_proxy_opt()]) -> {ok, dbus_proxy()} | {error, term()}.
 start_link(Conn, Service, Path, Opts) when is_pid(Conn), is_binary(Path) ->
     gen_server:start_link(?MODULE, [Conn, Service, Path, self(), Opts], []).
 
 
--spec stop(pid()) -> ok.
+-spec stop(dbus_proxy()) -> ok.
 stop(Proxy) ->
     gen_server:cast(Proxy, stop).
 
 
--spec call(Proxy :: pid(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term()) -> 
+-spec call(Proxy :: dbus_proxy(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term()) -> 
 		  ok | {ok, term()} | {error, term()}.
 call(Proxy, IfaceName, MethodName, Args) when is_pid(Proxy) ->
     case gen_server:call(Proxy, {method, IfaceName, MethodName, Args}) of
@@ -76,18 +77,22 @@ call(Proxy, IfaceName, MethodName, Args) when is_pid(Proxy) ->
     end.
 
 
--spec cast(Proxy :: pid(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term()) -> ok.
+-spec cast(Proxy :: dbus_proxy(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term()) -> ok.
 cast(Proxy, IfaceName, MethodName, Args) ->
     gen_server:cast(Proxy, {method, IfaceName, MethodName, Args}).
 
 
--spec connect_signal(Proxy :: pid(), IfaceName :: dbus_name(), SignalName :: dbus_name()) -> ok.
+-spec connect_signal(Proxy :: dbus_proxy(), IfaceName :: dbus_name(), SignalName :: dbus_name()) -> ok.
 connect_signal(Proxy, IfaceName, SignalName) ->
     gen_server:call(Proxy, {connect_signal, IfaceName, SignalName}).
 
--spec has_interface(Proxy :: pid(), InterfaceName :: dbus_name()) -> true | false.
+-spec has_interface(Proxy :: dbus_proxy(), InterfaceName :: dbus_name()) -> true | false.
 has_interface(Proxy, InterfaceName) ->
     gen_server:call(Proxy, {has_interface, InterfaceName}).
+
+-spec get_managed_objects(Proxy :: dbus_proxy()) -> {ok, term()} | {error, term()}.
+get_managed_objects(Proxy) ->
+    gen_server:call(Proxy, get_managed_objects).
 
 %%
 %% gen_server callbacks
@@ -102,11 +107,11 @@ init([Conn, Service, Path, Owner, Opts]) ->
 				   bus_proxy=proplists:get_value(bus_proxy, Opts)},
 		    case dbus_introspect:find_interface(Node, ?DBUS_OBJECT_MANAGER_IFACE) of
 			{ok, _I} ->
-			    case proplists:get_value(manager, Opts) of
-				undefined ->
+			    case proplists:get_bool(manager, Opts) of
+				false ->
 				    {ok, State};
-				Manager ->
-				    do_init_manager(Manager, proplists:get_value(env, Opts, []), State)
+				true ->
+				    do_init_manager(State)
 			    end;
 			{error, _} ->
 			    {ok, State}
@@ -153,6 +158,9 @@ handle_call({has_interface, IfaceName}, _From, #state{node=Node}=State) ->
 	{ok, _I} -> {reply, true, State};
 	{error, _Err} -> {reply, false, State}
     end;
+
+handle_call(get_managed_objects, _From, #state{objects=Objects}=State) ->
+    {reply, {ok, Objects}, State};
 
 handle_call(Request, _From, State) ->
     lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
@@ -228,40 +236,24 @@ do_introspect(Conn, Service, Path) ->
 	    {error, {Err, Body}}
     end.
 
-do_init_manager(Manager, Env, #state{service=Service, conn=Conn, path=Path}=State) ->
+do_init_manager(#state{service=Service, conn=Conn, path=Path}=State) ->
     lager:info("Fetch managed objects~n", []),
-    case do_callback(Manager, init, [self(), Env]) of
-	{ok, MState} ->
-	    do_connect_manager(State),
-	    Msg = dbus_message:call(Service, Path, ?DBUS_OBJECT_MANAGER_IFACE, 'GetManagedObjects'),
-	    case dbus_connection:call(Conn, Msg) of
-		{ok, #dbus_message{body=Objects}} ->
-		    case do_callback(Manager, add_objects, [Objects, MState]) of
-			{ok, MState2} ->
-			    {ok, State#state{objman_state=MState2}};
-			{error, Err} ->
-			    {stop, Err}
-		    end;
-		{error, Err} ->
-		    {stop, Err}
-	    end;
+    do_connect_manager(State),
+    Msg = dbus_message:call(Service, Path, ?DBUS_OBJECT_MANAGER_IFACE, 'GetManagedObjects'),
+    case dbus_connection:call(Conn, Msg) of
+	{ok, #dbus_message{body=Objects}} ->
+	    {ok, State#state{objects=Objects}};
 	{error, Err} ->
 	    {stop, Err}
     end.
 
-do_callback(Mod, Fun, Args) ->
-    try 
-	erlang:apply(Mod, Fun, Args)
-    catch 
-	Class:Err ->
-	    {error, {Class, Err}}
-    end.
 
 do_connect_manager(#state{service=Service, path=Path, bus_proxy=DBus}) ->
     Match = [{type, signal},
 	     {sender, Service},
 	     {path_namespace, Path}],
     dbus_proxy:call(DBus, 'org.freedesktop.DBus', 'AddMatch', [build_match(Match, <<>>)]).
+
 
 build_match([], << ",", Match/binary >>) ->
     Match;

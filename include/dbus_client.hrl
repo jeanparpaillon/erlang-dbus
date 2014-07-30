@@ -10,10 +10,12 @@
 -include("dbus.hrl").
 
 -type dbus_proxy() :: pid().
--type dbus_proxy_opt() :: {manager, atom()}
-			| {env, any()}
+-type dbus_proxy_opt() :: manager
 			| {node, dbus_node()}
 			| {bus_proxy, dbus_proxy()}.
+
+-type dbus_client_opt() :: {manager, dbus_name()}
+			 | {handler, atom()}.
 
 -type(dbus_bus_name() :: system | session).
 

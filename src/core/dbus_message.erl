@@ -144,7 +144,7 @@ find_field(Code, #dbus_message{header=Header}) ->
 find_field(Code, #dbus_header{fields=Fields}) ->
     case proplists:get_value(Code, Fields) of
 	undefined -> undefined;
-	Val -> Val
+	#dbus_variant{value=Val} -> Val
     end.
 
 

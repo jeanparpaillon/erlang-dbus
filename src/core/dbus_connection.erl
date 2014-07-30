@@ -435,11 +435,11 @@ handle_message(?TYPE_ERROR, Msg, #state{pending=Pending}=State) ->
     end;
 
 handle_message(?TYPE_METHOD_CALL, Msg, #state{owner=Owner}=State) ->
-    Owner ! {dbus_method_call, Msg, self()},
+    Owner ! {dbus_method_call, Msg},
     {ok, State};
 
 handle_message(?TYPE_SIGNAL, Msg, #state{owner=Owner}=State) ->
-    Owner ! {dbus_signal, Msg, self()},
+    Owner ! {dbus_signal, Msg},
     {ok, State};
 
 handle_message(Type, Msg, State) ->

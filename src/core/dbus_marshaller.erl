@@ -335,18 +335,18 @@ unmarshal_data(Data, Acc) ->
 unmarshal_message(Data) when is_binary(Data) ->
     {#dbus_header{type=MsgType}=Header, BodyBin, Rest} = unmarshal_header(Data),
     case dbus_message:find_field(?FIELD_SIGNATURE, Header) of
-	#dbus_variant{type=signature, value=Val} ->
-	    case unmarshal_body(MsgType, Val, BodyBin) of
-		{ok, Body} ->
-		    {#dbus_message{header=Header, body=Body}, Rest};
-		{error, Err} ->
-		    throw({error, Err})
-	    end;
 	undefined ->
 	    case BodyBin of
 		<<>> -> {#dbus_message{header=Header, body= <<>>}, Rest};
 		_ ->    throw({error, body_parse_error})
-	    end	    
+	    end;
+	Signature ->
+	    case unmarshal_body(MsgType, Signature, BodyBin) of
+		{ok, Body} ->
+		    {#dbus_message{header=Header, body=Body}, Rest};
+		{error, Err} ->
+		    throw({error, Err})
+	    end
     end.
 
 
@@ -375,7 +375,7 @@ unmarshal_body(_Type, SigBin, BodyBin) ->
 unmarshal_header(Bin) ->
     case unmarshal_list(?HEADER_SIGNATURE, Bin) of
 	{[$l, Type, Flags, ?DBUS_VERSION_MAJOR, Size, Serial, Fields], Rest, Pos} ->
-	    Header = #dbus_header{type=Type, flags=Flags, serial=Serial, fields=Fields},
+	    Header = #dbus_header{type=Type, flags=Flags, serial=Serial, fields=unmarshal_known_fields(Fields)},
 	    Pad = pad(8, Pos),
 	    <<0:Pad, Body:Size/binary, Rest2/binary>> = Rest,
 	    {Header, Body, Rest2};
@@ -383,6 +383,29 @@ unmarshal_header(Bin) ->
 	    lager:error("Error parsing header data: ~p~n", [Term]),
 	    throw({error, malformed_header})
     end.
+
+
+unmarshal_known_fields(Fields) ->
+    unmarshal_known_fields(Fields, []).
+
+
+unmarshal_known_fields([], Acc) ->
+    Acc;
+
+unmarshal_known_fields([{?FIELD_INTERFACE, #dbus_variant{value=Val}=F} | Fields], Acc) ->
+    Val2 = dbus_names:bin_to_iface(Val),
+    unmarshal_known_fields(Fields, [{?FIELD_INTERFACE, F#dbus_variant{value=Val2}} | Acc]);
+
+unmarshal_known_fields([{?FIELD_MEMBER, #dbus_variant{value=Val}=F} | Fields], Acc) ->
+    Val2 = dbus_names:bin_to_member(Val),
+    unmarshal_known_fields(Fields, [{?FIELD_MEMBER, F#dbus_variant{value=Val2}} | Acc]);
+
+unmarshal_known_fields([{?FIELD_ERROR_NAME, #dbus_variant{value=Val}=F} | Fields], Acc) ->
+    Val2 = dbus_names:bin_to_error(Val),
+    unmarshal_known_fields(Fields, [{?FIELD_ERROR_NAME, F#dbus_variant{value=Val2}} | Acc]);
+
+unmarshal_known_fields([ Field | Fields ], Acc) ->
+    unmarshal_known_fields(Fields, [Field | Acc]).
 
 
 unmarshal_single_type(<<>>) ->

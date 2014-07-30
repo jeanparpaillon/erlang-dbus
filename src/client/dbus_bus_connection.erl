@@ -13,7 +13,7 @@
 -include("dbus_introspectable.hrl").
 
 -export([connect/1,
-	 get_objects_manager/4]).
+	 get_objects_manager/2]).
 
 
 -define(DEFAULT_BUS_SYSTEM, #bus_id{scheme=unix,options=[{path, "/var/run/dbus/system_bus_socket"}]}).
@@ -47,10 +47,9 @@ connect(BusName) ->
 	    {error, Err}
     end.	
 
--spec get_objects_manager(dbus_bus_conn(), dbus_name(), atom(), any()) -> {ok, dbus_proxy()} | {error, term()}.
-get_objects_manager(#dbus_bus_conn{conn=Conn, bus=DBus},
-		    ServiceName, Manager, Env) when is_atom(Manager) ->
-    dbus_proxy:start_link(Conn, ServiceName, <<"/">>, [{manager, Manager}, {env, Env}, {bus_proxy, DBus}]).
+-spec get_objects_manager(dbus_bus_conn(), dbus_name()) -> {ok, dbus_proxy()} | {error, term()}.
+get_objects_manager(#dbus_bus_conn{conn=Conn, bus=DBus}, ServiceName) ->
+    dbus_proxy:start_link(Conn, ServiceName, <<"/">>, [manager, {bus_proxy, DBus}]).
 
 %%%
 %%% Priv

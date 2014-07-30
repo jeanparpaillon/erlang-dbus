@@ -13,7 +13,9 @@
 
 -export([bin_to_iface/1,
 	 bin_to_method/1,
-	 bin_to_signal/1]).
+	 bin_to_signal/1,
+	 bin_to_member/1,
+	 bin_to_error/1]).
 
 -spec list_to_iface(string()) -> dbus_name().
 list_to_iface(Str) when is_list(Str) ->
@@ -75,3 +77,19 @@ bin_to_signal(<<"PropertiesChanged">>) -> 'PropertiesChanged';
 bin_to_signal(<<"InterfacesAdded">>) -> 'InterfacesAdded';
 bin_to_signal(<<"InterfacesRemoved">>) -> 'InterfacesRemoved';
 bin_to_signal(Bin) when is_binary(Bin) -> Bin.
+
+
+-spec bin_to_member(binary()) -> dbus_name().
+bin_to_member(Bin) ->
+    case bin_to_method(Bin) of
+	Bin2 when is_binary(Bin2) ->
+	    bin_to_signal(Bin2);
+	Atom ->
+	    Atom
+    end.
+
+-spec bin_to_error(binary()) -> dbus_name().
+bin_to_error(<<"org.freedesktop.DBus.Error.NameHasNoOwner">>) -> 'org.freedesktop.DBus.Error.NameHasNoOwner';
+bin_to_error(<<"org.freedesktop.DBus.Error.OOM">>) -> 'org.freedesktop.DBus.Error.OOM';
+bin_to_error(<<"org.freedesktop.DBus.Error.MatchRuleNotFound">>) -> 'org.freedesktop.DBus.Error.MatchRuleNotFound';
+bin_to_error(Bin) when is_binary(Bin) -> Bin.
