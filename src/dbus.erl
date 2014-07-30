@@ -1,9 +1,14 @@
 %%%
 %%% @doc       D-BUS application module
 %%% @author    Mikael Magnusson <mikma@users.sourceforge.net>
+%%% @author    Jean Parpaillon <jean.parpaillon@free.fr>
 %%% @copyright 2006 Mikael Magnusson
+%%% @copyright 2014 Jean Parpaillon
 %%%
 -module(dbus).
+-compile({parse_transform, lager_transform}).
+
+-include("dbus_client.hrl").
 
 -behaviour(application).
 
@@ -14,11 +19,10 @@
 -export([start/0]).
 
 %% helpers
--export([get_system_bus/0, get_session_bus/0]).
+-export([connect/1]).
 
 %% application callbacks
 start(normal, []) ->
-    error_logger:logfile({open, "dbus.log"}),
     dbus_sup:start_link().
 
 stop(_State) ->
@@ -36,8 +40,6 @@ start() ->
     application:start(xmerl),
     application:start(dbus).
 
-get_system_bus() ->
-    dbus_bus_reg:get_bus(dbus_bus:get_bus_id(system)).
-
-get_session_bus() ->
-    dbus_bus_reg:get_bus(dbus_bus:get_bus_id(session)).
+-spec connect(dbus_bus_name()) -> {ok, dbus_bus_conn()} | {error, term()}.
+connect(BusName) ->
+    dbus_bus_connection:connect(BusName).

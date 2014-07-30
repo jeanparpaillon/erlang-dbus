@@ -8,15 +8,15 @@
 -module(dbus_proxy).
 -compile([{parse_transform, lager_transform}]).
 
--include("dbus.hrl").
+-include("dbus_client.hrl").
 -include("dbus_object_manager.hrl").
 
 -behaviour(gen_server).
 
 %% api
 -export([
+	 start_link/3,
 	 start_link/4,
-	 start_link/5,
 	 stop/1,
 	 call/4,
 	 cast/4,
@@ -36,25 +36,26 @@
 	  service,				% atom() | string()
 	  path,					% atom() | string()
 	  node,					% #node()
-	  bus,					% bus connection
 	  conn,
+	  bus_proxy,
 	  waiting=[],
-	  objman_state
+	  objman_state,
+	  owner
 	 }).
 
 %%%
 %%% @doc Try to connect "/"
 %%%
--spec start_link(Bus :: pid(), Conn :: pid(), Service :: dbus_name(), Opts :: [dbus_proxy_opt()]) -> 
+-spec start_link(Conn :: dbus_connection(), Service :: dbus_name(), Opts :: [dbus_proxy_opt()]) -> 
 			{ok, pid()} | {error, term()}.
-start_link(Bus, Conn, Service, Opts) when is_pid(Conn), is_pid(Bus) ->
-    gen_server:start_link(?MODULE, [Bus, Conn, Service, <<"/">>, Opts], []).
+start_link(Conn, Service, Opts) when is_pid(Conn) ->
+    gen_server:start_link(?MODULE, [Conn, Service, <<"/">>, self(), Opts], []).
 
 
--spec start_link(Bus :: pid(), Conn :: pid(), Service :: dbus_name(), Path :: binary(), 
+-spec start_link(Conn :: dbus_connection(), Service :: dbus_name(), Path :: binary(), 
 		 Opts :: [dbus_proxy_opt()]) -> {ok, pid()} | {error, term()}.
-start_link(Bus, Conn, Service, Path, Opts) when is_pid(Conn), is_pid(Bus), is_binary(Path) ->
-    gen_server:start_link(?MODULE, [Bus, Conn, Service, Path, Opts], []).
+start_link(Conn, Service, Path, Opts) when is_pid(Conn), is_binary(Path) ->
+    gen_server:start_link(?MODULE, [Conn, Service, Path, self(), Opts], []).
 
 
 -spec stop(pid()) -> ok.
@@ -82,7 +83,7 @@ cast(Proxy, IfaceName, MethodName, Args) ->
 
 -spec connect_signal(Proxy :: pid(), IfaceName :: dbus_name(), SignalName :: dbus_name()) -> ok.
 connect_signal(Proxy, IfaceName, SignalName) ->
-    gen_server:call(Proxy, {connect_signal, IfaceName, SignalName, self()}).
+    gen_server:call(Proxy, {connect_signal, IfaceName, SignalName}).
 
 -spec has_interface(Proxy :: pid(), InterfaceName :: dbus_name()) -> true | false.
 has_interface(Proxy, InterfaceName) ->
@@ -91,12 +92,14 @@ has_interface(Proxy, InterfaceName) ->
 %%
 %% gen_server callbacks
 %%
-init([Bus, Conn, Service, Path, Opts]) ->
+init([Conn, Service, Path, Owner, Opts]) ->
     case proplists:get_value(node, Opts) of
 	undefined ->
 	    case do_introspect(Conn, Service, Path) of
 		{ok, Node} ->
-		    State = #state{bus=Bus, conn=Conn, service=Service, path=Path, node=Node},
+		    State = #state{conn=Conn, service=Service, 
+				   path=Path, node=Node, owner=Owner,
+				   bus_proxy=proplists:get_value(bus_proxy, Opts)},
 		    case dbus_introspect:find_interface(Node, ?DBUS_OBJECT_MANAGER_IFACE) of
 			{ok, _I} ->
 			    case proplists:get_value(manager, Opts) of
@@ -113,7 +116,9 @@ init([Bus, Conn, Service, Path, Opts]) ->
 		    {stop, Err}
 	    end;
 	#dbus_node{}=Node ->
-	    {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path, node=Node}}
+	    {ok, #state{conn=Conn, service=Service, path=Path, 
+			node=Node, owner=Owner,
+			bus_proxy=proplists:get_value(bus_proxy, Opts)}}
     end.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -129,15 +134,19 @@ handle_call({method, IfaceName, MethodName, Args}, _From, #state{node=Node}=Stat
 	    {reply, Err, State}
     end;
 
-handle_call({connect_signal, IfaceName, SignalName, Pid}, _From, 
-	    #state{bus=Bus, path=Path, service=Service}=State) ->
+handle_call({connect_signal, IfaceName, SignalName}, _From, 
+	    #state{path=Path, service=Service, bus_proxy=DBus}=State) ->
     Match = [{type, signal},
 	     {sender, Service},
 	     {interface, IfaceName},
 	     {member, SignalName},
 	     {path, Path}],
-    Ret = dbus_bus:add_match(Bus, Match, Pid),
-    {reply, Ret, State};
+    case dbus_proxy:call(DBus, 'org.freedesktop.DBus', 'AddMatch', [build_match(Match, <<>>)]) of
+	ok ->
+	    {reply, ok, State};
+	{error, Err} ->
+	    {stop, {error, Err}, State}
+    end;
 
 handle_call({has_interface, IfaceName}, _From, #state{node=Node}=State) ->
     case dbus_introspect:find_interface(Node, IfaceName) of
@@ -248,8 +257,17 @@ do_callback(Mod, Fun, Args) ->
 	    {error, {Class, Err}}
     end.
 
-do_connect_manager(#state{bus=Bus, service=Service, path=Path}) ->
+do_connect_manager(#state{service=Service, path=Path, bus_proxy=DBus}) ->
     Match = [{type, signal},
 	     {sender, Service},
 	     {path_namespace, Path}],
-    dbus_bus:add_match(Bus, Match, self()).
+    dbus_proxy:call(DBus, 'org.freedesktop.DBus', 'AddMatch', [build_match(Match, <<>>)]).
+
+build_match([], << ",", Match/binary >>) ->
+    Match;
+build_match([{Key, Value} | Rules], Acc) when is_atom(Key) ->
+    build_match([{atom_to_binary(Key, utf8), Value} | Rules], Acc);
+build_match([{Key, Value} | Rules], Acc) when is_atom(Value) ->
+    build_match([{Key, atom_to_binary(Value, utf8)} | Rules], Acc);
+build_match([{Key, Value} | Rules], Acc) ->
+    build_match(Rules, << Acc/binary, ",", Key/binary, "='", Value/binary, "'">>).

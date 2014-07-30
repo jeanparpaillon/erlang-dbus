@@ -37,6 +37,8 @@
 -define(DBUS_REQUEST_NAME_REPLY_EXISTS, 3).
 -define(DBUS_REQUEST_NAME_REPLY_ALREADY_OWNER, 4).
 
+-type dbus_connection() :: pid().
+
 -type dbus_name() :: atom() | binary().
 -type dbus_option() :: no_reply_expected | no_auto_start.
 
@@ -147,10 +149,5 @@
 	  type            :: binary()
 	 }).
 -type dbus_arg() :: #dbus_arg{}.
-
--type dbus_proxy() :: pid().
--type dbus_proxy_opt() :: {manager, atom()}
-			| {env, any()}
-			| {node, dbus_node()}.
 
 -endif.
