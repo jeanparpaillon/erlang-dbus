@@ -36,6 +36,8 @@
 start_link(Bus, Conn, ServiceName) ->
     gen_server:start_link(?MODULE, [Bus, Conn, ServiceName], []).
 
+
+-spec get_object(dbus_name(), binary()) -> {ok, pid()} | {error, term()}.					    
 get_object(Service, Path) ->
     gen_server:call(Service, {get_object, Path}).
 

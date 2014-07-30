@@ -9,16 +9,19 @@
 -compile([{parse_transform, lager_transform}]).
 
 -include("dbus.hrl").
+-include("dbus_object_manager.hrl").
 
 -behaviour(gen_server).
 
 %% api
 -export([
 	 start_link/4,
+	 start_link/5,
 	 stop/1,
 	 call/4,
 	 cast/4,
-	 connect_signal/3
+	 connect_signal/3,
+	 has_interface/2
 	]).
 
 %% gen_server callbacks
@@ -35,43 +38,26 @@
 	  node,					% #node()
 	  bus,					% bus connection
 	  conn,
-	  waiting=[]
+	  waiting=[],
+	  objman_state
 	 }).
--define(SERVICE, <<"org.freedesktop.DBus">>).
--define(PATH, <<"/">>).
 
--define(DBUS_HELLO_METHOD, #dbus_method{name = <<"Hello">>, args=[], result=#dbus_arg{direction=out, type = <<"s">>}, 
-					in_sig = <<>>, in_types=[]}).
--define(DBUS_ADD_MATCH, #dbus_method{name = <<"AddMatch">>, args=[#dbus_arg{direction=in, type= <<"s">>}], 
-				     in_sig = <<"s">>, in_types=[string]}).
--define(DBUS_REQUEST_NAME, #dbus_method{name = <<"RequestName">>, args=[#dbus_arg{direction=in, type = <<"s">>}, 
-								  #dbus_arg{direction=in, type = <<"u">>}, 
-								  #dbus_arg{direction=out, type = <<"u">>}], 
-					in_sig = <<"su">>, in_types=[string,uint32]}).
--define(DBUS_RELEASE_NAME, #dbus_method{name = <<"ReleaseName">>, args=[#dbus_arg{direction=in, type = <<"s">>}, 
-								  #dbus_arg{direction=out, type = <<"u">>}], 
-					in_sig = <<"s">>, in_types=[string]}).
--define(DBUS_IFACE, #dbus_iface{name='org.freedesktop.DBus',
-				methods=gb_trees:from_orddict([{'AddMatch', ?DBUS_ADD_MATCH},
-							       {'Hello', ?DBUS_HELLO_METHOD},
-							       {'ReleaseName', ?DBUS_RELEASE_NAME},
-							       {'RequestName', ?DBUS_REQUEST_NAME}])}).
-
--define(DBUS_INTROSPECT_METHOD, #dbus_method{name = <<"Introspect">>, args=[], result=#dbus_arg{direction=out, type = <<"s">>}, 
-					     in_sig = <<>>, in_types=[]}).
--define(DBUS_INTROSPECTABLE_IFACE, #dbus_iface{name='org.freedesktop.DBus.Introspectable',
-					       methods=gb_trees:from_orddict([{'Introspect', ?DBUS_INTROSPECT_METHOD}])}).
-
--define(DEFAULT_DBUS_NODE, #dbus_node{elements=[], 
-				      interfaces=gb_trees:from_orddict([{'org.freedesktop.DBus', ?DBUS_IFACE}, 
-									{'org.freedesktop.DBus.Introspectable', ?DBUS_INTROSPECTABLE_IFACE}])}).
-
--spec start_link(Bus :: pid(), Conn :: pid(), Service :: dbus_name(), Path :: dbus_name()) -> {ok, pid()} | {error, term()}.
-start_link(Bus, Conn, Service, Path) when is_pid(Conn),
-					  is_pid(Bus) ->
-    gen_server:start_link(?MODULE, [Bus, Conn, Service, Path], []).
+%%%
+%%% @doc Try to connect "/"
+%%%
+-spec start_link(Bus :: pid(), Conn :: pid(), Service :: dbus_name(), Opts :: [dbus_proxy_opt()]) -> 
+			{ok, pid()} | {error, term()}.
+start_link(Bus, Conn, Service, Opts) when is_pid(Conn), is_pid(Bus) ->
+    gen_server:start_link(?MODULE, [Bus, Conn, Service, <<"/">>, Opts], []).
 
 
+-spec start_link(Bus :: pid(), Conn :: pid(), Service :: dbus_name(), Path :: binary(), 
+		 Opts :: [dbus_proxy_opt()]) -> {ok, pid()} | {error, term()}.
+start_link(Bus, Conn, Service, Path, Opts) when is_pid(Conn), is_pid(Bus), is_binary(Path) ->
+    gen_server:start_link(?MODULE, [Bus, Conn, Service, Path, Opts], []).
+
+
+-spec stop(pid()) -> ok.
 stop(Proxy) ->
     gen_server:cast(Proxy, stop).
 
@@ -98,21 +84,37 @@ cast(Proxy, IfaceName, MethodName, Args) ->
 connect_signal(Proxy, IfaceName, SignalName) ->
     gen_server:call(Proxy, {connect_signal, IfaceName, SignalName, self()}).
 
+-spec has_interface(Proxy :: pid(), InterfaceName :: dbus_name()) -> true | false.
+has_interface(Proxy, InterfaceName) ->
+    gen_server:call(Proxy, {has_interface, InterfaceName}).
+
 %%
 %% gen_server callbacks
 %%
-init([Bus, Conn, ?SERVICE, ?PATH]) ->
-    {ok, #state{bus = Bus, conn = Conn, service = ?SERVICE, path = ?PATH, node = ?DEFAULT_DBUS_NODE}};
-
-init([Bus, Conn, Service, Path]) ->
-    case do_introspect(Conn, Service, Path) of
-	    {ok, Node} ->
-	        {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path, node=Node}};
-	    {error, Err} ->
-	        lager:error("Error introspecting object ~p: ~p~n", [Path, Err]),
-	        {error, Err}
+init([Bus, Conn, Service, Path, Opts]) ->
+    case proplists:get_value(node, Opts) of
+	undefined ->
+	    case do_introspect(Conn, Service, Path) of
+		{ok, Node} ->
+		    State = #state{bus=Bus, conn=Conn, service=Service, path=Path, node=Node},
+		    case dbus_introspect:find_interface(Node, ?DBUS_OBJECT_MANAGER_IFACE) of
+			{ok, _I} ->
+			    case proplists:get_value(manager, Opts) of
+				undefined ->
+				    {ok, State};
+				Manager ->
+				    do_init_manager(Manager, proplists:get_value(env, Opts, []), State)
+			    end;
+			{error, _} ->
+			    {ok, State}
+		    end;
+		{error, Err} ->
+		    lager:error("Error introspecting object ~p: ~p~n", [Path, Err]),
+		    {stop, Err}
+	    end;
+	#dbus_node{}=Node ->
+	    {ok, #state{bus=Bus, conn=Conn, service=Service, path=Path, node=Node}}
     end.
-
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -136,6 +138,12 @@ handle_call({connect_signal, IfaceName, SignalName, Pid}, _From,
 	     {path, Path}],
     Ret = dbus_bus:add_match(Bus, Match, Pid),
     {reply, Ret, State};
+
+handle_call({has_interface, IfaceName}, _From, #state{node=Node}=State) ->
+    case dbus_introspect:find_interface(Node, IfaceName) of
+	{ok, _I} -> {reply, true, State};
+	{error, _Err} -> {reply, false, State}
+    end;
 
 handle_call(Request, _From, State) ->
     lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
@@ -177,12 +185,14 @@ reply(From, Reply, Options) ->
     ok.
 
 do_method(IfaceName, 
-	  #dbus_method{name=Name, in_sig=Signature, in_types=Types}, 
+	  #dbus_method{name=Name, in_sig=Signature, in_types=Types}=_M, 
 	  Args, #state{service=Service, conn=Conn, path=Path}=State) ->
     Msg = dbus_message:call(Service, Path, IfaceName, Name),
     case dbus_message:set_body(Signature, Types, Args, Msg) of
 	#dbus_message{}=M2 ->
 	    case dbus_connection:call(Conn, M2) of
+		{ok, #dbus_message{body= <<>>}} ->
+		    {reply, ok, State};
 		{ok, #dbus_message{body=Res}} ->
 		    {reply, {ok, Res}, State};
 		{error, Err} ->
@@ -208,3 +218,38 @@ do_introspect(Conn, Service, Path) ->
 	    Err = dbus_message:get_field_value(?FIELD_ERROR_NAME, Msg),
 	    {error, {Err, Body}}
     end.
+
+do_init_manager(Manager, Env, #state{service=Service, conn=Conn, path=Path}=State) ->
+    lager:info("Fetch managed objects~n", []),
+    case do_callback(Manager, init, [self(), Env]) of
+	{ok, MState} ->
+	    do_connect_manager(State),
+	    Msg = dbus_message:call(Service, Path, ?DBUS_OBJECT_MANAGER_IFACE, 'GetManagedObjects'),
+	    case dbus_connection:call(Conn, Msg) of
+		{ok, #dbus_message{body=Objects}} ->
+		    case do_callback(Manager, add_objects, [Objects, MState]) of
+			{ok, MState2} ->
+			    {ok, State#state{objman_state=MState2}};
+			{error, Err} ->
+			    {stop, Err}
+		    end;
+		{error, Err} ->
+		    {stop, Err}
+	    end;
+	{error, Err} ->
+	    {stop, Err}
+    end.
+
+do_callback(Mod, Fun, Args) ->
+    try 
+	erlang:apply(Mod, Fun, Args)
+    catch 
+	Class:Err ->
+	    {error, {Class, Err}}
+    end.
+
+do_connect_manager(#state{bus=Bus, service=Service, path=Path}) ->
+    Match = [{type, signal},
+	     {sender, Service},
+	     {path_namespace, Path}],
+    dbus_bus:add_match(Bus, Match, self()).

@@ -9,6 +9,8 @@
 -compile([{parse_transform, lager_transform}]).
 
 -include("dbus.hrl").
+-include("dbus_dbus.hrl").
+-include("dbus_introspectable.hrl").
 
 -behaviour(gen_server).
 
@@ -22,6 +24,7 @@
 	 export_service/2,
 	 unexport_service/2,
 	 get_service/2,
+	 get_object_manager/4,
 	 release_service/2,
 	 cast/2]).
 
@@ -43,7 +46,7 @@
 	  dbus_object,
 	  owner,
 	  services                        :: term(), % tid()
-	  signal_handlers                 :: term()  % tid()
+	  signal_handlers                 :: term() % tid()
 	 }).
 
 -define(DEFAULT_BUS_SYSTEM, #bus_id{scheme=unix,options=[{path, "/var/run/dbus/system_bus_socket"}]}).
@@ -52,6 +55,12 @@
 -define(TRANSPORT_DELIM, $:).
 -define(PARAM_DELIM, $,).
 -define(KEY_DELIM, $=).
+
+-define(DEFAULT_DBUS_SERVICE, 'org.freedesktop.DBus').
+-define(DEFAULT_DBUS_NODE, 
+	#dbus_node{elements=[], 
+		   interfaces=gb_trees:from_orddict([{'org.freedesktop.DBus', ?DBUS_DBUS}, 
+						     {'org.freedesktop.DBus.Introspectable', ?DBUS_INTROSPECTABLE}])}).
 
 connect(BusId) when is_record(BusId, bus_id) ->
     gen_server:start_link(?MODULE, [BusId, self()], []).
@@ -71,6 +80,9 @@ unexport_service(Bus, ServiceName) ->
 get_service(Bus, ServiceName) ->
     gen_server:call(Bus, {get_service, ServiceName}).
 
+get_object_manager(Bus, ServiceName, Manager, Env) when is_atom(Manager) ->
+    gen_server:call(Bus, {get_object_manager, ServiceName, Manager, Env}).
+
 release_service(Bus, Service) ->
     gen_server:call(Bus, {release_service, Service}).
 
@@ -84,7 +96,7 @@ init([BusId, Owner]) ->
     case dbus_connection:start_link(BusId, [list, {packet, 0}]) of
 	{ok, Conn} ->
 	    dbus_connection:auth(Conn),
-	    {ok, DBusObj} = dbus_proxy:start_link(self(), Conn, 'org.freedesktop.DBus', <<"/">>),
+	    {ok, DBusObj} = dbus_proxy:start_link(self(), Conn, ?DEFAULT_DBUS_SERVICE, [{node, ?DEFAULT_DBUS_NODE}]),
 	    ConnName = hello(DBusObj),
 	    lager:debug("Got connection name: ~p~n", [ConnName]),
 	    Reg = ets:new(services, [set, private]),
@@ -122,6 +134,14 @@ handle_call({get_service, Name}, {Pid, _}, #state{conn=Conn, services=Reg}=State
 	  end,
     true = link(Pid),
     {reply, {ok, Srv}, State};
+
+handle_call({get_object_manager, Name, Manager, Env}, _From, #state{conn=Conn}=State) ->
+    case dbus_proxy:start_link(self(), Conn, Name, <<"/">>, [{manager, Manager}, {env, Env}]) of
+	{ok, Proxy} ->
+	    {reply, {ok, Proxy}, State};
+	{error, Err} ->
+	    {reply, {error, Err}, State}
+    end;
 
 handle_call({release_service, Service}, {Pid, _}, State) ->
     lager:debug("~p: ~p release_service ~p ~p~n", [?MODULE, self(), Service, Pid]),
