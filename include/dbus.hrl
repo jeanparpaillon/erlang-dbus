@@ -28,6 +28,12 @@
 -define(DBUS_REQUEST_NAME_REPLY_IN_QUEUE, 2).
 -define(DBUS_REQUEST_NAME_REPLY_EXISTS, 3).
 -define(DBUS_REQUEST_NAME_REPLY_ALREADY_OWNER, 4).
+	  	 
+-define(PK_FILTER_ENUM_UNKNOWN, 0).	
+-define(PK_FILTER_ENUM_NONE, 1).  	 
+-define(PK_FILTER_ENUM_INSTALLED, 2).	  	 
+-define(PK_FILTER_ENUM_NOT_INSTALLED , 3).
+
 
 -type dbus_name() :: atom() | binary().
 -type dbus_option() :: no_reply_expected | no_auto_start.
