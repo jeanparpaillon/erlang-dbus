@@ -30,10 +30,13 @@
 %
 % @end
 %
--spec start_link(BusName :: dbus_bus_name(), Handler :: atom(), Opts :: [dbus_client_opt()], Env :: any()) -> 
+-spec start_link(BusName :: dbus_bus_name(), Handler :: dbus_client_handler(), Opts :: [dbus_client_opt()], Env :: any()) -> 
 			{ok, pid()} | ignore | {error, term()}.
-start_link(BusName, Handler, Opts, Env) ->
-    gen_server:start_link(?MODULE, [BusName, Handler, Opts, Env], []).
+start_link(BusName, {mod, Handler}, Opts, Env) when is_atom(Handler) ->
+    gen_server:start_link(?MODULE, [BusName, {mod, Handler, undefined}, Opts, Env], []);
+
+start_link(BusName, {gen_server, Handler}, Opts, Env) when is_pid(Handler) ->
+    gen_server:start_link(?MODULE, [BusName, {gen_server, Handler}, Opts, Env], []).
 
 %%%
 %%% gen_server callbacks
@@ -41,19 +44,19 @@ start_link(BusName, Handler, Opts, Env) ->
 init([BusName, Handler, Opts, Env]) ->
     {ok, Bus} = dbus:connect(BusName),
     case do_call(Handler, init, [Bus, Env]) of
-	{ok, S} ->
+	{ok, Handler2} ->
 	    case proplists:get_value(manager, Opts) of
 		undefined ->
-		    {ok, #state{bus=Bus, handler={Handler, S}}};
+		    {ok, #state{bus=Bus, handler=Handler2}};
 		Service ->
 		    case dbus_bus_connection:get_objects_manager(Bus, Service) of
 			{ok, Manager} ->
 			    {ok, Objects} = dbus_proxy:get_managed_objects(Manager),
-			    case may_call(Handler, add_objects, [Objects, S]) of
-				{ok, S2} ->
-				    {ok, #state{bus=Bus, manager=Manager, handler={Handler, S2}}};
+			    case may_call(Handler, add_objects, [Objects]) of
+				{ok, Handler2} ->
+				    {ok, #state{bus=Bus, manager=Manager, handler=Handler2}};
 				ignore ->
-				    {ok, #state{bus=Bus, manager=Manager, handler={Handler, S}}};
+				    {ok, #state{bus=Bus, manager=Manager, handler=Handler2}};
 				{error, Err} ->
 				    {stop, Err}
 			    end;
@@ -92,7 +95,7 @@ handle_cast(_Msg, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
-handle_info({dbus_signal, #dbus_message{body=Args}=Msg}, #state{handler={Mod, S}}=State) ->
+handle_info({dbus_signal, #dbus_message{body=Args}=Msg}, #state{handler=Handler}=State) ->
     IfaceName = dbus_message:find_field(?FIELD_INTERFACE, Msg),
     Signal = dbus_message:find_field(?FIELD_MEMBER, Msg),
     case IfaceName of
@@ -100,9 +103,9 @@ handle_info({dbus_signal, #dbus_message{body=Args}=Msg}, #state{handler={Mod, S}
 	    handle_dbus_signal(Signal, Args, State);
 	IfaceName ->
 	    Path = dbus_message:find_field(?FIELD_PATH, Msg),
-	    case may_call(Mod, signal, [Path, IfaceName, Signal, Args, S]) of
-		{ok, S2} ->
-		    {noreply, State#state{handler={Mod, S2}}};
+	    case may_call(Handler, signal, [Path, IfaceName, Signal, Args]) of
+		{ok, Handler2} ->
+		    {noreply, State#state{handler=Handler2}};
 		ignore ->
 		    {noreply, State};
 		{error, Err} ->
@@ -135,26 +138,67 @@ code_change(_OldVsn, State, _Extra) ->
 %%%
 %%% Priv
 %%%
-do_call(Mod, Fun, Args) ->
-    try erlang:apply(Mod, Fun, Args)
-    catch
+do_call({mod, Handler, State}, Fun, Args) ->
+    do_call_fun({mod, Handler, State}, Fun, Args);
+
+do_call({gen_server, Ref}, Fun, Args) ->
+    do_call_srv({gen_server, Ref}, Fun, Args).
+
+
+do_call_fun({mod, Mod, undefined}, Fun, Args) ->
+    try erlang:apply(Mod, Fun, Args) of
+	{ok, State} ->
+	    {ok, {mod, Mod, State}};
+	{error, Err} ->
+	    {error, Err}
+    catch 
+	error:undef ->
+	    error(undef);
 	_:Err ->
+	    {error, Err}
+    end;
+
+
+do_call_fun({mod, Mod, State}, Fun, Args) ->
+    try erlang:apply(Mod, Fun, Args ++ [State]) of
+	{ok, State2} ->
+	    {ok, {mod, Mod, State2}};
+	{error, Err} ->
+	    {error, Err}
+    catch _:Err ->
 	    {error, Err}
     end.
 
 
-may_call(Mod, Fun, Args) ->
-    case erlang:function_exported(Mod, Fun, length(Args)) of
-	true ->
-	    try erlang:apply(Mod, Fun, Args)
-	    catch
-		_:Err ->
-		    {error, Err}
-	    end;
-	false ->
+do_call_srv(Handler, Fun, Args) ->
+    case may_call_srv(Handler, Fun, Args) of
+	ignore ->
+	    error(undef);
+	Ret -> Ret
+    end.
+
+may_call({mod, Handler, State}, Fun, Args) when is_atom(Handler) ->
+    may_call_fun({mod, Handler, State}, Fun, Args);
+
+may_call({gen_server, Ref}, Fun, Args) ->
+    may_call_srv(Ref, Fun, Args).
+
+may_call_fun({mod, Mod, State}, Fun, Args) ->
+    try do_call_fun({mod, Mod, State}, Fun, Args)
+    catch 
+	error:undef ->
 	    ignore
     end.
 
+may_call_srv({gen_server, Ref}, Fun, Args) ->
+    case gen_server:call(Ref, list_to_tuple(lists:flatten(Fun, Args))) of
+	ok ->
+	    {ok, {gen_server, Ref}};
+	ignore ->
+	    ignore;
+	{error, Err} ->
+	    {error, Err}
+    end.
 
 handle_dbus_signal('NameAcquired', Name, State) ->
     lager:debug("Name acquired: ~p~n", Name),

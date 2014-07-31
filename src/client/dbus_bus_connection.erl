@@ -13,6 +13,7 @@
 -include("dbus_introspectable.hrl").
 
 -export([connect/1,
+	 get_object/3,
 	 get_objects_manager/2]).
 
 
@@ -45,7 +46,11 @@ connect(BusName) ->
 	    end;
 	{error, Err} ->
 	    {error, Err}
-    end.	
+    end.
+
+-spec get_object(dbus_bus_conn(), Service :: dbus_name(), Path :: binary()) -> {ok, dbus_proxy()} | {error, term()}.
+get_object(#dbus_bus_conn{conn=Conn, bus=DBus}, ServiceName, Path) ->
+    dbus_proxy:start_link(Conn, ServiceName, Path, [{bus_proxy, DBus}]).
 
 -spec get_objects_manager(dbus_bus_conn(), dbus_name()) -> {ok, dbus_proxy()} | {error, term()}.
 get_objects_manager(#dbus_bus_conn{conn=Conn, bus=DBus}, ServiceName) ->
