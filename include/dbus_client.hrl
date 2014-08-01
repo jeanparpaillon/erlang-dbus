@@ -18,7 +18,8 @@
 			 | {handler, atom()}.
 
 -type dbus_client_handler() :: {mod, atom()}
-			     | {gen_server, pid()}.
+			     | {gen_server, pid()}
+			     | pid().
 
 -type(dbus_bus_name() :: system | session).
 

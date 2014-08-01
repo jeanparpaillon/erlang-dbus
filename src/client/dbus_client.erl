@@ -36,7 +36,10 @@ start_link(BusName, {mod, Handler}, Opts, Env) when is_atom(Handler) ->
     gen_server:start_link(?MODULE, [BusName, {mod, Handler, undefined}, Opts, Env], []);
 
 start_link(BusName, {gen_server, Handler}, Opts, Env) when is_pid(Handler) ->
-    gen_server:start_link(?MODULE, [BusName, {gen_server, Handler}, Opts, Env], []).
+    gen_server:start_link(?MODULE, [BusName, {gen_server, Handler}, Opts, Env], []);
+
+start_link(BusName, Handler, Opts, Env) when is_pid(Handler) ->
+    gen_server:start_link(?MODULE, [BusName, Handler, Opts, Env], []).
 
 %%%
 %%% gen_server callbacks
@@ -142,7 +145,10 @@ do_call({mod, Handler, State}, Fun, Args) ->
     do_call_fun({mod, Handler, State}, Fun, Args);
 
 do_call({gen_server, Ref}, Fun, Args) ->
-    do_call_srv({gen_server, Ref}, Fun, Args).
+    do_call_srv({gen_server, Ref}, Fun, Args);
+
+do_call(Pid, Fun, Args) when is_pid(Pid) ->
+    do_call_pid(Pid, Fun, Args).
 
 
 do_call_fun({mod, Mod, undefined}, Fun, Args) ->
@@ -177,6 +183,11 @@ do_call_srv(Handler, Fun, Args) ->
 	Ret -> Ret
     end.
 
+
+do_call_pid(Pid, Fun, Args) ->
+    may_call_pid(Pid, Fun, Args).
+
+
 may_call({mod, Handler, State}, Fun, Args) when is_atom(Handler) ->
     may_call_fun({mod, Handler, State}, Fun, Args);
 
@@ -190,6 +201,7 @@ may_call_fun({mod, Mod, State}, Fun, Args) ->
 	    ignore
     end.
 
+
 may_call_srv({gen_server, Ref}, Fun, Args) ->
     case gen_server:call(Ref, list_to_tuple(lists:flatten(Fun, Args))) of
 	ok ->
@@ -200,9 +212,15 @@ may_call_srv({gen_server, Ref}, Fun, Args) ->
 	    {error, Err}
     end.
 
+
+may_call_pid(Pid, Fun, Args) when is_pid(Pid) ->
+    Pid ! list_to_tuple(lists:flatten([Fun, Args])).
+
+
 handle_dbus_signal('NameAcquired', Name, State) ->
     lager:debug("Name acquired: ~p~n", Name),
     {noreply, State};
+
 handle_dbus_signal(Signal, Args, State) ->
     lager:debug("DBus signal: ~p(~p)~n", [Signal, Args]),
     {noreply, State}.
