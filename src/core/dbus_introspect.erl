@@ -394,8 +394,12 @@ end_method(#dbus_method{args=Args}=Method) ->
     Signature = lists:foldl(fun (#dbus_arg{type=Type}, Acc) ->
 				    << Type/binary, Acc/binary >>
 			    end, <<>>, InArgs),
-    Types = dbus_marshaller:unmarshal_signature(Signature),
-    Method#dbus_method{args=lists:reverse(Args), in_sig=Signature, in_types=Types}.
+    case dbus_marshaller:unmarshal_signature(Signature) of
+	{ok, Types} ->
+	    Method#dbus_method{args=lists:reverse(Args), in_sig=Signature, in_types=Types};
+	more ->
+	    throw({error, incomplete_signature})
+    end.
 
 
 %% TODO: Deal with omission of direction attribute
@@ -432,8 +436,12 @@ end_signal(#dbus_signal{args=Args}=Signal) ->
     Signature = lists:foldl(fun (#dbus_arg{type=Type}, Acc) ->
 				    << Type/binary, Acc/binary >>
 			    end, <<>>, OutArgs),
-    Types = dbus_marshaller:unmarshal_signature(Signature),
-    Signal#dbus_signal{args=lists:reverse(Args), out_sig=Signature, out_types=Types}.
+    case dbus_marshaller:unmarshal_signature(Signature) of
+	{ok, Types} ->
+	    Signal#dbus_signal{args=lists:reverse(Args), out_sig=Signature, out_types=Types};
+	more ->
+	    throw({error, incomplete_signature})
+    end.
 
 
 build_property([], Prop) ->

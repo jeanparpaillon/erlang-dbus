@@ -69,17 +69,20 @@ marshal_list(Types, Value) ->
     marshal_list(Types, Value, 0, []).
 
 
--spec unmarshal_data(binary()) -> {term(), binary()}.
+-spec unmarshal_data(binary()) -> {ok, Msgs :: [dbus_message()], Rest :: binary()}.
 unmarshal_data(Data) ->
     unmarshal_data(Data, []).
 
 
--spec unmarshal_signature(binary()) -> dbus_signature().
+-spec unmarshal_signature(binary()) -> {ok, dbus_signature()} | more.
 unmarshal_signature(<<>>) -> 
-    [];
+    {ok, []};
+
 unmarshal_signature(Bin) when is_binary(Bin) ->
-    {Signature, <<>>} = unmarshal_signature(Bin, []),
-    Signature.
+    case unmarshal_signature(Bin, []) of
+	{ok, Signature, <<>>} -> {ok, Signature};
+	more -> more
+    end.
 
 %%%
 %%% Priv marshalling
@@ -321,67 +324,82 @@ unmarshal_data(<<>>, Acc) ->
     {ok, lists:reverse(Acc), <<>>};
 unmarshal_data(Data, Acc) ->
     try unmarshal_message(Data) of
-	    {#dbus_message{}=Msg, Rest} -> 
-	        unmarshal_data(Rest, [Msg | Acc]);
-	    _ ->
-	        lager:error("Error parsing data~n", []),
-	        throw({error, dbus_parse_error})
+	{ok, #dbus_message{}=Msg, Rest} -> 
+	    unmarshal_data(Rest, [Msg | Acc]);
+	more ->
+	    {ok, lists:reverse(Acc), Data};
+	_ ->
+	    lager:error("Error parsing data~n", []),
+	    throw({error, dbus_parse_error})
     catch
-	    {'EXIT', Err} -> 
-	        throw({error, {dbus_parse_error, Err}})
+	{'EXIT', Err} -> 
+	    throw({error, {dbus_parse_error, Err}})
     end.
 
 
+unmarshal_message(<<>>) ->
+    more;
+
 unmarshal_message(Data) when is_binary(Data) ->
-    {#dbus_header{type=MsgType}=Header, BodyBin, Rest} = unmarshal_header(Data),
-    case dbus_message:find_field(?FIELD_SIGNATURE, Header) of
-	undefined ->
-	    case BodyBin of
-		<<>> -> {#dbus_message{header=Header, body= <<>>}, Rest};
-		_ ->    throw({error, body_parse_error})
-	    end;
-	Signature ->
-	    case unmarshal_body(MsgType, Signature, BodyBin) of
-		{ok, Body} ->
-		    {#dbus_message{header=Header, body=Body}, Rest};
-		{error, Err} ->
-		    throw({error, Err})
+    case unmarshal_header(Data) of
+	more -> more;
+	{ok, #dbus_header{type=MsgType}=Header, BodyBin, Rest} ->
+	    case dbus_message:find_field(?FIELD_SIGNATURE, Header) of
+		undefined ->
+		    case BodyBin of
+			<<>> -> {ok, #dbus_message{header=Header, body= <<>>}, Rest};
+			_ -> throw({error, body_parse_error})
+		    end;
+		Signature ->
+		    case unmarshal_body(MsgType, Signature, BodyBin) of
+			{ok, Body} -> {ok, #dbus_message{header=Header, body=Body}, Rest};
+			more -> more;
+			{error, Err} -> throw({error, Err})
+		    end
 	    end
     end.
 
 
 unmarshal_body(?TYPE_SIGNAL, SigBin, BodyBin) ->
-    Sig = unmarshal_signature(SigBin),
-    case unmarshal_list(Sig, BodyBin) of
-	{Body, <<>>, _Pos} ->
-	    {ok, Body};
-	{_Body, _, _} ->
-	    {error, body_parse_error}
+    case unmarshal_signature(SigBin) of
+	{ok, Sig} ->
+	    case unmarshal_list(Sig, BodyBin) of
+		more -> more;
+		{ok, Body, <<>>, _Pos} -> {ok, Body};
+		{ok, _Body, _, _} -> {error, body_parse_error}
+	    end;
+	more -> more
     end;
 
 unmarshal_body(?TYPE_INVALID, _, _) ->
     {ok, <<>>};
 
 unmarshal_body(_Type, SigBin, BodyBin) ->
-    Type = unmarshal_single_type(SigBin),
-    case unmarshal(Type, BodyBin, 0) of
-	{Body, <<>>, _} ->
-	    {ok, Body};
-	{_Body, _, _} ->
-	    {error, body_parse_error}
+    case unmarshal_single_type(SigBin) of
+	{ok, Type} ->
+	    case unmarshal(Type, BodyBin, 0) of
+		more -> more;
+		{ok, Body, <<>>, _} -> {ok, Body};
+		{ok, _Body, _, _} -> {error, body_parse_error}
+	    end;
+	more -> more
     end.
 
 
 unmarshal_header(Bin) ->
     case unmarshal_list(?HEADER_SIGNATURE, Bin) of
-	{[$l, Type, Flags, ?DBUS_VERSION_MAJOR, Size, Serial, Fields], Rest, Pos} ->
-	    Header = #dbus_header{type=Type, flags=Flags, serial=Serial, fields=unmarshal_known_fields(Fields)},
+	more -> more;
+	{ok, [$l, _, _, ?DBUS_VERSION_MAJOR, Size, _, _], Rest, _} when byte_size(Rest) < Size  ->
+	    more;
+	{ok, [$l, Type, Flags, ?DBUS_VERSION_MAJOR, Size, Serial, Fields], Rest, Pos} ->
+	    Header = #dbus_header{type=Type, flags=Flags, serial=Serial, size=Size, 
+				  fields=unmarshal_known_fields(Fields)},
 	    Pad = pad(8, Pos),
 	    <<0:Pad, Body:Size/binary, Rest2/binary>> = Rest,
-	    {Header, Body, Rest2};
-	{Term, _Rest, _Pos} ->
-	    lager:error("Error parsing header data: ~p~n", [Term]),
-	    throw({error, malformed_header})
+	    {ok, Header, Body, Rest2};
+	{ok, Header, _, _} -> 
+	    lager:debug("Bad message header: ~p~n", [Header]),
+	    throw({error, bad_header})
     end.
 
 
@@ -410,24 +428,31 @@ unmarshal_known_fields([ Field | Fields ], Acc) ->
 
 unmarshal_single_type(<<>>) ->
     empty;
-unmarshal_single_type(Bin) when is_binary(Bin) ->
-    {[Type], <<>>} = unmarshal_signature(Bin, []),
-    Type.
 
-unmarshal(Type, <<>>, _Pos) ->
-    throw({error, Type});
+unmarshal_single_type(Bin) when is_binary(Bin) ->
+    case unmarshal_signature(Bin, []) of
+	{ok, [Type], <<>>} -> {ok, Type};
+	more -> more
+    end.
+
+unmarshal(_, <<>>, _) ->
+    more;
+
 unmarshal(byte, Data, Pos) ->
     << Value:8, Data1/binary >> = Data,
-    {Value, Data1, Pos + 1};
+    {ok, Value, Data1, Pos + 1};
 
 unmarshal(boolean, Data, Pos) ->
-    {Int, Data1, Pos1} = unmarshal(uint32, Data, Pos),
-    Bool =
-	    case Int of
-	        1 -> true;
-	        0 -> false
-	    end,
-    {Bool, Data1, Pos1};
+    case unmarshal(uint32, Data, Pos) of
+	more ->
+	    more;
+	{ok, 1, Data1, Pos1} ->
+	    {ok, true, Data1, Pos1};
+	{ok, 0, Data1, Pos1} ->
+	    {ok, false, Data1, Pos1};
+	{ok, Else, _, _} ->
+	    throw({error, {parse_error, boolean, Else}})
+    end;
 
 unmarshal(uint16, Data, Pos) ->
     unmarshal_uint(2, Data, Pos);
@@ -447,11 +472,14 @@ unmarshal(int32, Data, Pos) ->
 unmarshal(int64, Data, Pos) ->
     unmarshal_int(8, Data, Pos);
 
+unmarshal(double, Data, _) when byte_size(Data) < 8 ->
+    more;
+
 unmarshal(double, Data, Pos) ->
     Pad = pad(8, Pos),
     << 0:Pad, Value:64/native-float, Data1/binary >> = Data,
     Pos1 = Pos + Pad div 8 + 8,
-    {Value, Data1, Pos1};
+    {ok, Value, Data1, Pos1};
 
 unmarshal(signature, Data, Pos) ->
     unmarshal_string(byte, Data, Pos);
@@ -462,65 +490,112 @@ unmarshal(string, Data, Pos) ->
 unmarshal(object_path, Data, Pos) ->
     unmarshal_string(uint32, Data, Pos);
 
-unmarshal({array, SubType}, Data, Pos) when true ->
-    {Length, Rest, NewPos} = unmarshal(uint32, Data, Pos),
-    unmarshal_array(SubType, Length, Rest, NewPos);
+unmarshal({array, SubType}, Data, Pos) ->
+    case unmarshal(uint32, Data, Pos) of
+	more ->
+	    more;
+	{ok, Length, Rest, NewPos} ->
+	    unmarshal_array(SubType, Length, Rest, NewPos)
+    end;
+
+unmarshal({struct, _}, Data, _) when byte_size(Data) < 8 ->
+    more;
 
 unmarshal({struct, SubTypes}, Data, Pos) ->
     Pad = pad(8, Pos),
     << 0:Pad, Data1/binary >> = Data,
     Pos1 = Pos + Pad div 8,
-    {Res, Data2, Pos2} = unmarshal_struct(SubTypes, Data1, Pos1),
-    {list_to_tuple(Res), Data2, Pos2};
+    case unmarshal_struct(SubTypes, Data1, Pos1) of
+	more ->
+	    more;
+	{ok, Res, Data2, Pos2} ->
+	    {ok, list_to_tuple(Res), Data2, Pos2}
+    end;
 
 unmarshal({dict, KeyType, ValueType}, Data, Pos) ->
-    {Length, Data1, Pos1} = unmarshal(uint32, Data, Pos),
-    {Res, Data2, Pos2} = unmarshal_array({struct, [KeyType, ValueType]}, Length, Data1, Pos1),
-    {Res, Data2, Pos2};
+    case unmarshal(uint32, Data, Pos) of
+	more ->
+	    more;
+	{ok, Length, Data1, Pos1} ->
+	    case unmarshal_array({struct, [KeyType, ValueType]}, Length, Data1, Pos1) of
+		more -> 
+		    more;
+		{ok, Res, Data2, Pos2} ->
+		    {ok, Res, Data2, Pos2}
+	    end
+    end;
 
 unmarshal(variant, Data, Pos) ->
-    {Signature, Data1, Pos1} = unmarshal(signature, Data, Pos),
-    Type = unmarshal_single_type(Signature),
-    {Value, Data2, Pos2} = unmarshal(Type, Data1, Pos1),
-    {#dbus_variant{type=Type, value=Value}, Data2, Pos2}.
+    case unmarshal(signature, Data, Pos) of
+	more -> more;
+	{ok, _, <<>>, _} -> more;
+	{ok, Signature, Data1, Pos1} ->
+	    case unmarshal_single_type(Signature) of
+		more -> more;
+		{ok, Type} ->
+		    case unmarshal(Type, Data1, Pos1) of
+			more -> more;
+			{ok, Value, Data2, Pos2} -> {ok, #dbus_variant{type=Type, value=Value}, Data2, Pos2}
+		    end
+	    end
+    end.
 
+
+unmarshal_uint(Len, Data, _) when is_integer(Len) andalso byte_size(Data) < Len ->
+    more;
 
 unmarshal_uint(Len, Data, Pos) when is_integer(Len) ->
     Bitlen = Len * 8,
     Pad = pad(Len, Pos),
     << 0:Pad, Value:Bitlen/native-unsigned, Data1/binary >> = Data,
     Pos1 = Pos + Pad div 8 + Len,
-    {Value, Data1, Pos1}.
+    {ok, Value, Data1, Pos1}.
+
+
+unmarshal_int(Len, Data, _) when is_integer(Len) andalso byte_size(Data) < Len ->
+    more;
 
 unmarshal_int(Len, Data, Pos) ->
     Bitlen = Len * 8,
     Pad = pad(Len, Pos),
     << 0:Pad, Value:Bitlen/native-signed, Data1/binary >> = Data,
     Pos1 = Pos + Pad div 8 + Len,
-    {Value, Data1, Pos1}.
+    {ok, Value, Data1, Pos1}.
 
 
 unmarshal_signature(<<>>, Acc) ->
-    {lists:flatten(Acc), <<>>};
+    {ok, lists:flatten(Acc), <<>>};
 
 unmarshal_signature(<<$a, ${, KeySig, Rest/bits>>, Acc) ->
     KeyType = unmarshal_type_code(KeySig),
-    {[ValueType], Rest2} = unmarshal_signature(Rest, []),
-    unmarshal_signature(Rest2, [Acc, {dict, KeyType, ValueType}]);
+    case unmarshal_signature(Rest, []) of
+	{ok, [], _} -> more;
+	{ok, [ValueType], Rest2} ->
+	    unmarshal_signature(Rest2, [Acc, {dict, KeyType, ValueType}]);
+	more -> more
+    end;
 
 unmarshal_signature(<<$a, Rest/bits>>, Acc) ->
-    {[Type | Types], <<>>} = unmarshal_signature(Rest, []),
-    {lists:flatten([Acc, {array, Type}, Types]), <<>>};
+    case unmarshal_signature(Rest, []) of
+	{ok, [], _} -> more;
+	{ok, [Type | Types], <<>>} ->
+	    {ok, lists:flatten([Acc, {array, Type}, Types]), <<>>};
+	more -> more
+    end;
 
 unmarshal_signature(<<$(, Rest/bits>>, Acc) ->
-    {Types, Rest2} = unmarshal_signature(Rest, []),
-    unmarshal_signature(Rest2, [Acc, {struct, Types}]);
+    case unmarshal_signature(Rest, []) of
+	{ok, [], _} -> more;
+	{ok, Types, Rest2} ->
+	    unmarshal_signature(Rest2, [Acc, {struct, Types}]);
+	more -> more
+    end;
 
 unmarshal_signature(<<$), Rest/bits>>, Acc) ->
-    {lists:flatten(Acc), Rest};
+    {ok, lists:flatten(Acc), Rest};
 
 unmarshal_signature(<<$}, Rest/bits>>, Acc) ->
-    {lists:flatten(Acc), Rest};
+    {ok, lists:flatten(Acc), Rest};
 
 unmarshal_signature(<<C, Rest/bits>>, Acc) ->
     Code = unmarshal_type_code(C),
@@ -551,42 +626,65 @@ unmarshal_struct(SubTypes, Data, Pos) ->
 
 
 unmarshal_struct([], Data, Acc, Pos) ->
-    {lists:reverse(Acc), Data, Pos};
+    {ok, lists:reverse(Acc), Data, Pos};
 
-unmarshal_struct([SubType|S], Data, Acc, Pos) ->
-    {Value, Data1, Pos1} = unmarshal(SubType, Data, Pos),
-    unmarshal_struct(S, Data1, [Value | Acc], Pos1).
+unmarshal_struct([SubType | S], Data, Acc, Pos) ->
+    case unmarshal(SubType, Data, Pos) of
+	more -> more;
+	{ok, Value, Data1, Pos1} ->
+	    unmarshal_struct(S, Data1, [Value | Acc], Pos1)
+    end.
+
 
 unmarshal_array(SubType, Length, Data, Pos) ->
     Pad = pad(padding(SubType), Pos),
-    << 0:Pad, Rest/binary >> = Data,
-    NewPos = Pos + Pad div 8,
-    unmarshal_array(SubType, Length, Rest, [], NewPos).
+    if 
+	byte_size(Data) < Pad -> more;
+	true ->
+	    << 0:Pad, Rest/binary >> = Data,
+	    NewPos = Pos + Pad div 8,
+	    unmarshal_array(SubType, Length, Rest, [], NewPos)
+    end.
 
-unmarshal_array(_SubType, 0, Data, Res, Pos) ->
-    {Res, Data, Pos};
-unmarshal_array(SubType, Length, Data, Res, Pos) when is_integer(Length), Length > 0 ->
-    {Value, Data1, Pos1} = unmarshal(SubType, Data, Pos),
-    Size = Pos1 - Pos,
-    unmarshal_array(SubType, Length - Size, Data1, Res ++ [Value], Pos1).
+
+unmarshal_array(_SubType, 0, Data, Acc, Pos) ->
+    {ok, lists:reverse(Acc), Data, Pos};
+unmarshal_array(SubType, Length, Data, Acc, Pos) when is_integer(Length), Length > 0 ->
+    case unmarshal(SubType, Data, Pos) of
+	more -> more;
+	{ok, Value, Data1, Pos1} ->
+	    Size = Pos1 - Pos,
+	    unmarshal_array(SubType, Length - Size, Data1, [Value | Acc], Pos1)
+    end.
+
 
 unmarshal_list(Type, Data) when is_atom(Type), is_binary(Data) ->
     unmarshal(Type, Data, 0);
 unmarshal_list(Types, Data) when is_list(Types), is_binary(Data) ->
     unmarshal_list(Types, Data, [], 0).
 
+
 unmarshal_list([], Rest, Acc, Pos) ->
-    {lists:reverse(Acc), Rest, Pos};
+    {ok, lists:reverse(Acc), Rest, Pos};
 unmarshal_list([Type|T], Data, Acc, Pos) ->
-    {Value, Rest, Pos1} = unmarshal(Type, Data, Pos),
-    unmarshal_list(T, Rest, [Value | Acc], Pos1).
+    case unmarshal(Type, Data, Pos) of
+	more ->
+	    more;
+	{ok, Value, Rest, Pos1} ->
+	    unmarshal_list(T, Rest, [Value | Acc], Pos1)
+    end.
 
 
 unmarshal_string(LenType, Data, Pos) ->
-    {Length, Data1, Pos1} = unmarshal(LenType, Data, Pos),
-    << String:Length/binary, 0, Data2/binary >> = Data1,
-    Pos2 = Pos1 + Length + 1,
-    {String, Data2, Pos2}.
+    case unmarshal(LenType, Data, Pos) of
+	more -> more;
+	{ok, Length, Data1, _} when byte_size(Data1) < Length ->
+	    more;
+	{ok, Length, Data1, Pos1} ->
+	    << String:Length/binary, 0, Data2/binary >> = Data1,
+	    Pos2 = Pos1 + Length + 1,
+	    {ok, String, Data2, Pos2}
+    end.
 
 %%%
 %%% Priv common

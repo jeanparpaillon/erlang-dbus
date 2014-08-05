@@ -75,8 +75,8 @@ call(Conn, #dbus_message{}=Msg) ->
 	    receive
 		{reply, Tag, Res} ->
 		    {ok, Res};
-		{error, Tag, Err} ->
-		    {error, Err};
+		{error, Tag, Res} ->
+		    {error, Res};
 		Other ->
 		    throw({error, {dbus, Other}})
 	    after ?TIMEOUT ->
@@ -282,12 +282,16 @@ handle_info({received, _Bin}, waiting_for_agree, State) ->
 
 %% STATE: authenticated
 handle_info({received, Data}, authenticated, #state{buf=Buf}=State) ->
-    {ok, Msgs, Rest} = dbus_marshaller:unmarshal_data(<<Buf/binary, Data/binary>>),
-    case handle_messages(Msgs, State#state{buf=Rest}) of
-	    {ok, State2} ->
-	        {next_state, authenticated, State2};
-	    {error, Err, State2} ->
-	        {stop, {error, Err}, State2}
+    case dbus_marshaller:unmarshal_data(<<Buf/binary, Data/binary>>) of
+	{ok, Msgs, Rest} ->
+	    case handle_messages(Msgs, State#state{buf=Rest}) of
+		{ok, State2} ->
+		    {next_state, authenticated, State2};
+		{error, Err, State2} ->
+		    {stop, {error, Err}, State2}
+	    end;
+	{more, Cont} ->
+	    {next_state, authenticated, State#state{buf=Cont}}
     end;
 
 %% Other
@@ -426,7 +430,7 @@ handle_message(?TYPE_ERROR, Msg, #state{pending=Pending}=State) ->
     Serial = dbus_message:get_field_value(?FIELD_REPLY_SERIAL, Msg),
     case ets:lookup(Pending, Serial) of
 	    [{Serial, Pid, Tag}] ->
-	        Pid ! {error, Tag, Msg},
+	        Pid ! {error, {self(), Tag}, Msg},
 	        ets:delete(Pending, Serial),
 	        {ok, State};
 	    [_] ->
