@@ -72,8 +72,8 @@ call(Proxy, IfaceName, MethodName, Args) when is_pid(Proxy) ->
 	    ok;
 	{ok, Result} ->
 	    {ok, Result};
-	{error, Reason} ->
-	    throw(Reason)
+	{error, Err} ->
+	    {error, Err}
     end.
 
 
@@ -212,8 +212,9 @@ do_method(IfaceName,
 		    {reply, ok, State};
 		{ok, #dbus_message{body=Res}} ->
 		    {reply, {ok, Res}, State};
-		{error, Err} ->
-		    {reply, {error, Err}, State}
+		{error, #dbus_message{body=Body}=Ret} ->
+		    #dbus_variant{value=Code} = dbus_message:get_field(?FIELD_ERROR_NAME, Ret),
+		    {reply, {error, {Code, Body}}, State}
 	    end;
 	{error, Err} ->
 	    {reply, {error, Err}, State}
