@@ -290,8 +290,8 @@ handle_info({received, Data}, authenticated, #state{buf=Buf}=State) ->
 		{error, Err, State2} ->
 		    {stop, {error, Err}, State2}
 	    end;
-	{more, Cont} ->
-	    {next_state, authenticated, State#state{buf=Cont}}
+	more ->
+	    {next_state, authenticated, State#state{buf=Data}}
     end;
 
 %% Other

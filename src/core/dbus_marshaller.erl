@@ -69,7 +69,7 @@ marshal_list(Types, Value) ->
     marshal_list(Types, Value, 0, []).
 
 
--spec unmarshal_data(binary()) -> {ok, Msgs :: [dbus_message()], Rest :: binary()}.
+-spec unmarshal_data(binary()) -> {ok, Msgs :: [dbus_message()], Rest :: binary()} | more.
 unmarshal_data(Data) ->
     unmarshal_data(Data, []).
 
@@ -320,12 +320,18 @@ marshal_struct_signature([SubType|R], Res) ->
 %%%
 %%% Private unmarshaling
 %%%
+unmarshal_data(<<>>, []) ->
+    more;
+
 unmarshal_data(<<>>, Acc) ->
     {ok, lists:reverse(Acc), <<>>};
+
 unmarshal_data(Data, Acc) ->
     try unmarshal_message(Data) of
 	{ok, #dbus_message{}=Msg, Rest} -> 
 	    unmarshal_data(Rest, [Msg | Acc]);
+	more when [] =:= Acc ->
+	    more;
 	more ->
 	    {ok, lists:reverse(Acc), Data};
 	_ ->
@@ -444,8 +450,7 @@ unmarshal(byte, Data, Pos) ->
 
 unmarshal(boolean, Data, Pos) ->
     case unmarshal(uint32, Data, Pos) of
-	more ->
-	    more;
+	more -> more;
 	{ok, 1, Data1, Pos1} ->
 	    {ok, true, Data1, Pos1};
 	{ok, 0, Data1, Pos1} ->
@@ -492,7 +497,7 @@ unmarshal(object_path, Data, Pos) ->
 
 unmarshal({array, SubType}, Data, Pos) ->
     case unmarshal(uint32, Data, Pos) of
-	more ->
+	more -> 
 	    more;
 	{ok, Length, Rest, NewPos} ->
 	    unmarshal_array(SubType, Length, Rest, NewPos)
@@ -527,8 +532,10 @@ unmarshal({dict, KeyType, ValueType}, Data, Pos) ->
 
 unmarshal(variant, Data, Pos) ->
     case unmarshal(signature, Data, Pos) of
-	more -> more;
-	{ok, _, <<>>, _} -> more;
+	more -> 
+	    more;
+	{ok, _, <<>>, _} -> 
+	    more;
 	{ok, Signature, Data1, Pos1} ->
 	    case unmarshal_single_type(Signature) of
 		more -> more;
@@ -569,10 +576,12 @@ unmarshal_signature(<<>>, Acc) ->
 unmarshal_signature(<<$a, ${, KeySig, Rest/bits>>, Acc) ->
     KeyType = unmarshal_type_code(KeySig),
     case unmarshal_signature(Rest, []) of
-	{ok, [], _} -> more;
+	{ok, [], _} -> 
+	    more;
 	{ok, [ValueType], Rest2} ->
 	    unmarshal_signature(Rest2, [Acc, {dict, KeyType, ValueType}]);
-	more -> more
+	more -> 
+ 	    more
     end;
 
 unmarshal_signature(<<$a, Rest/bits>>, Acc) ->
@@ -639,7 +648,7 @@ unmarshal_struct([SubType | S], Data, Acc, Pos) ->
 unmarshal_array(SubType, Length, Data, Pos) ->
     Pad = pad(padding(SubType), Pos),
     if 
-	byte_size(Data) < Pad -> more;
+	byte_size(Data) < Pad / 8 -> more;
 	true ->
 	    << 0:Pad, Rest/binary >> = Data,
 	    NewPos = Pos + Pad div 8,
