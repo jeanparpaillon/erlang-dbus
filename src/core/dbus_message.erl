@@ -186,6 +186,9 @@ set_body(Signature, Types, Body, #dbus_message{header=#dbus_header{fields=Fields
 	    Message#dbus_message{header=Header#dbus_header{fields=Fields2, size=Pos}, body=Bin}
     catch 
 	_:Err ->
+	    lager:error("org.freedesktop.DBus.InvalidParameters~n"
+			"Error:~n"
+			"~p~n", [erlang:get_stacktrace()]),
 	    {error, {'org.freedesktop.DBus.InvalidParameters', Err}}
     end.	
 
