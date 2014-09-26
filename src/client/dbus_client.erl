@@ -9,7 +9,7 @@
 
 -behaviour(gen_server).
 
--include_lib("dbus/include/dbus_client.hrl").
+-include("dbus_client.hrl").
 
 -export([start_link/4]).
 
