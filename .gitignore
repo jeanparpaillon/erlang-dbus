@@ -12,3 +12,4 @@
 .settings
 .rebar
 /.eunit
+/log
