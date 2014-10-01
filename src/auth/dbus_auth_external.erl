@@ -15,7 +15,7 @@
 	 challenge/2]).
 
 init() ->
-    {ok, <<"AUTH EXTERNAL 31303030\r\n">>}.
+    {ok, <<"AUTH EXTERNAL 31303031\r\n">>}.
 
 challenge(_, _) ->
     {error, invalid_challenge}.
