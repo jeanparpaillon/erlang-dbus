@@ -35,10 +35,7 @@ stop(_State) ->
 %% @end
 %%--------------------------------------------------------------------
 start() ->
-    application:start(crypto),
-    application:start(sasl),
-    application:start(xmerl),
-    application:start(dbus).
+    application:ensure_all_started(dbus).
 
 -spec connect(dbus_bus_name()) -> {ok, dbus_bus_conn()} | {error, term()}.
 connect(BusName) ->
