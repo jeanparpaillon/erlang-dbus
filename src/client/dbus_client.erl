@@ -30,10 +30,10 @@
 %
 -spec start_link(BusName :: dbus_bus_name(), Handler :: dbus_client_handler(), Opts :: [dbus_client_opt()], Env :: any()) -> 
 			{ok, pid()} | ignore | {error, term()}.
-start_link(BusName, {mod, Handler}, Opts, Env) when is_atom(Handler) ->
+start_link(BusName, Handler, Opts, Env) when is_atom(Handler) ->
     gen_server:start_link(?MODULE, [BusName, {mod, Handler, undefined}, Opts, Env], []);
 
-start_link(BusName, {gen_server, Handler}, Opts, Env) when is_pid(Handler) ->
+start_link(BusName, {gen_server, Handler}, Opts, Env) when is_atom(Handler) ->
     gen_server:start_link(?MODULE, [BusName, {gen_server, Handler}, Opts, Env], []);
 
 start_link(BusName, Handler, Opts, Env) when is_pid(Handler) ->
@@ -53,9 +53,9 @@ init([BusName, Handler, Opts, Env]) ->
 		    case dbus_bus_connection:get_objects_manager(Bus, Service) of
 			{ok, Manager} ->
 			    {ok, Objects} = dbus_proxy:get_managed_objects(Manager),
-			    case may_call(Handler, add_objects, [Objects]) of
-				{ok, Handler2} ->
-				    {ok, #state{bus=Bus, manager=Manager, handler=Handler2}};
+			    case may_call(Handler2, add_objects, [Objects]) of
+				{ok, Handler3} ->
+				    {ok, #state{bus=Bus, manager=Manager, handler=Handler3}};
 				ignore ->
 				    {ok, #state{bus=Bus, manager=Manager, handler=Handler2}};
 				{error, Err} ->
@@ -174,6 +174,12 @@ do_call_fun({mod, Mod, State}, Fun, Args) ->
     end.
 
 
+do_call_srv({gen_server, Mod}, init, Args) ->
+    case gen_server:start_link(Mod, Args, []) of
+	{ok, Pid} -> {ok, {gen_server, Pid}};
+	ignore -> error(undef);
+	{error, Err} -> {error, Err}
+    end;
 do_call_srv(Handler, Fun, Args) ->
     case may_call_srv(Handler, Fun, Args) of
 	ignore ->
@@ -190,7 +196,7 @@ may_call({mod, Handler, State}, Fun, Args) when is_atom(Handler) ->
     may_call_fun({mod, Handler, State}, Fun, Args);
 
 may_call({gen_server, Ref}, Fun, Args) ->
-    may_call_srv(Ref, Fun, Args).
+    may_call_srv({gen_server, Ref}, Fun, Args).
 
 may_call_fun({mod, Mod, State}, Fun, Args) ->
     try do_call_fun({mod, Mod, State}, Fun, Args)
@@ -201,7 +207,7 @@ may_call_fun({mod, Mod, State}, Fun, Args) ->
 
 
 may_call_srv({gen_server, Ref}, Fun, Args) ->
-    case gen_server:call(Ref, list_to_tuple(lists:flatten(Fun, Args))) of
+    case gen_server:call(Ref, {Fun, Args}) of
 	ok ->
 	    {ok, {gen_server, Ref}};
 	ignore ->
