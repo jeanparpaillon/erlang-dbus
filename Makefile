@@ -1,4 +1,4 @@
-# Copyright 2012 Erlware, LLC. All Rights Reserved.
+# Copyright 2015 Jean Parpaillon, all rights reserved
 #
 # This file is provided to you under the Apache License,
 # Version 2.0 (the "License"); you may not use this file
@@ -14,87 +14,19 @@
 # specific language governing permissions and limitations
 # under the License.
 #
+PROJECT = dbus
 
-ERLFLAGS= -pa $(CURDIR)/.eunit -pa $(CURDIR)/ebin -pa $(CURDIR)/deps/*/ebin
+DEPS = lager procket inert
+dep_lager = git https://github.com/basho/lager.git 2.0.3
+dep_procket = git https://github.com/msantos/procket.git master
+dep_inert = git https://github.com/msantos/inert.git 0.2.1
 
-DEPS_PLT=$(CURDIR)/.deps_plt
-DEPS=erts kernel stdlib
+COMPILE_FIRST = auth/dbus_auth
 
-# =============================================================================
-# Verify that the programs we need to run are installed on this system
-# =============================================================================
-ERL = $(shell which erl)
+include erlang.mk
 
-ifeq ($(ERL),)
-$(error "Erlang not available on this system")
-endif
+src/auth/dbus_auth_external.erl: ebin/dbus_auth.beam
 
-REBAR=$(shell which rebar || echo ./rebar)
+src/auth/dbus_auth_cookie_sha1.erl: ebin/dbus_auth.beam
 
-ifeq ($(REBAR),)
-$(error "Rebar not available on this system")
-endif
-
-.PHONY: all compile doc clean test dialyzer typer shell distclean pdf \
-  update-deps clean-common-test-data rebuild
-
-all: deps compile test
-
-# =============================================================================
-# Rules to build the system
-# =============================================================================
-
-deps:
-	$(REBAR) get-deps
-	$(REBAR) compile
-
-update-deps:
-	$(REBAR) update-deps
-	$(REBAR) compile
-
-compile:
-	$(REBAR) skip_deps=true compile
-
-doc:
-	$(REBAR) skip_deps=true doc
-
-eunit: compile clean-common-test-data
-	$(REBAR) skip_deps=true eunit
-
-test: compile eunit
-
-$(DEPS_PLT):
-	@echo Building local plt at $(DEPS_PLT)
-	@echo
-	dialyzer --output_plt $(DEPS_PLT) --build_plt \
-	   --apps $(DEPS) -r deps
-
-dialyzer: $(DEPS_PLT)
-	dialyzer --fullpath --plt $(DEPS_PLT) -Wrace_conditions -r ./ebin
-
-typer:
-	typer --plt $(DEPS_PLT) -r ./src
-
-shell: deps compile
-# You often want *rebuilt* rebar tests to be available to the
-# shell you have to call eunit (to get the tests
-# rebuilt). However, eunit runs the tests, which probably
-# fails (thats probably why You want them in the shell). This
-# runs eunit but tells make to ignore the result.
-	- @$(REBAR) skip_deps=true eunit
-	@$(ERL) $(ERLFLAGS)
-
-pdf:
-	pandoc README.md -o README.pdf
-
-clean:
-	- rm -rf $(CURDIR)/test/*.beam
-	- rm -rf $(CURDIR)/logs
-	- rm -rf $(CURDIR)/ebin
-	$(REBAR) skip_deps=true clean
-
-distclean: clean
-	- rm -rf $(DEPS_PLT)
-	- rm -rvf $(CURDIR)/deps
-
-rebuild: distclean deps compile escript dialyzer test
+ebin/dbus_auth.beam: src/auth/dbus_auth.erl
