@@ -10,7 +10,8 @@
 %% {closed, Pid}
 
 -module(dbus_transport_tcp).
--compile([{parse_transform, lager_transform}]).
+
+-include("dbus.hrl").
 
 -behaviour(gen_server).
 
@@ -43,7 +44,7 @@ init([Host, Port, Options, Owner]) ->
 				     binary]),
 	    {ok, #state{sock=Sock, owner=Owner}};
 	{error, Err} ->
-	    lager:error("Error opening socket: ~p~n", [Err]),
+	    ?error("Error opening socket: ~p~n", [Err]),
 	    {error, Err}
     end.
 
@@ -56,7 +57,7 @@ handle_call({set_raw, true}, _From, #state{sock=Sock}=State) ->
     {reply, ok, State};
 
 handle_call(Request, _From, State) ->
-    lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
+    ?error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
 
 
@@ -72,7 +73,7 @@ handle_cast(stop, State) ->
     {stop, normal, State};
 
 handle_cast(Request, State) ->
-    lager:error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
+    ?error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
 
@@ -86,7 +87,7 @@ handle_info({tcp_closed, Sock}, #state{sock=Sock, owner=Owner}=State) ->
     {stop, normal, State};
 
 handle_info(Info, State) ->
-    lager:error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
+    ?error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
 

@@ -6,7 +6,6 @@
 %% @doc DBUS constants to atom
 %%
 -module(dbus_constants).
--compile([{parse_transform, lager_transform}]).
 
 -export([
 	 to_atom/1

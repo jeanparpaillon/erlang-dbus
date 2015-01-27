@@ -6,8 +6,8 @@
 %%% @end
 %%% Created : 22 Jul 2014 by Jean Parpaillon <jean.parpaillon@free.fr>
 -module(dbus_bus_connection).
--compile([{parse_transform, lager_transform}]).
 
+-include("dbus.hrl").
 -include("dbus_client.hrl").
 -include("dbus_dbus.hrl").
 -include("dbus_introspectable.hrl").
@@ -39,7 +39,7 @@ connect(BusName) ->
 	    case dbus_proxy:start_link(Conn, ?DEFAULT_DBUS_SERVICE, [{node, ?DEFAULT_DBUS_NODE}]) of
 		{ok, DBus} ->
 		    ConnId = hello(DBus),
-		    lager:debug("Got connection id: ~p~n", [ConnId]),
+		    ?debug("Got connection id: ~p~n", [ConnId]),
 		    {ok, #dbus_bus_conn{conn=Conn, conn_id=ConnId, bus=DBus}};
 		{error, Err} ->
 		    {error, Err}

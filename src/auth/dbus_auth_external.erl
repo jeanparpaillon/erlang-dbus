@@ -6,7 +6,6 @@
 %%% Created : 5 Jul 2014 by Jean Parpaillon <jean.parpaillon@free.fr>
 
 -module(dbus_auth_external).
--compile([{parse_transform, lager_transform}]).
 
 -behaviour(dbus_auth).
 

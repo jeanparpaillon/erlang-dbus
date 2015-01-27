@@ -9,7 +9,6 @@
 %% {received, Conn, Data}
 %% {auth_ok, Auth, Sock}
 -module(dbus_connection).
--compile([{parse_transform, lager_transform}]).
 
 -behaviour(gen_fsm).
 
@@ -80,7 +79,7 @@ call(Conn, #dbus_message{}=Msg) ->
 		Other ->
 		    throw({error, {dbus, Other}})
 	    after ?TIMEOUT ->
-		    lager:error("DBUS timeout~n", []),
+		    ?error("DBUS timeout~n", []),
 		    throw({error, timeout})
 	    end;
 	{error, Err} ->
@@ -138,13 +137,13 @@ handle_event(close, _StateName, #state{sock=Sock}=State) ->
     {stop, normal, State#state{sock=undefined}};
 
 handle_event(Evt, StateName, State) ->
-    lager:error("Unhandled event: ~p~n", [Evt]),
+    ?error("Unhandled event: ~p~n", [Evt]),
     {next_state, StateName, State}.
 
 
 %% STATE: connected
 handle_info({received, _Bin}, connected, #state{sock=Sock}=State) ->
-    lager:error("Unexpected info: ~p", [_Bin]),
+    ?error("Unexpected info: ~p", [_Bin]),
     ok = dbus_transport:send(Sock, <<"ERROR \r\n">>),
     {next_state, connected, State};
 
@@ -164,7 +163,7 @@ handle_info({received, <<"OK ", Line/binary>>}, StateName,
 	    #state{sock=Sock, waiting=Waiting}=State) 
   when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
     Guid = strip_eol(Line),
-    lager:debug("Authenticated: GUID=~p~n", [Guid]),
+    ?debug("Authenticated: GUID=~p~n", [Guid]),
     case dbus_transport:support_unix_fd(Sock) of
 	true ->
 	    ok = dbus_transport:send(Sock, <<"NEGOTIATE_UNIX_FD \r\n">>),
@@ -186,14 +185,14 @@ handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName,
 handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName,
 	   #state{sock=Sock, mechs=[Mech|Rest]}=State) 
   when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
-    lager:debug("Trying next authentication mechanism~n", []),
+    ?debug("Trying next authentication mechanism~n", []),
     case Mech:init() of 
 	{ok, Resp} ->
-	    lager:debug("DBUS auth: waiting for OK~n", []),
+	    ?debug("DBUS auth: waiting for OK~n", []),
 	    dbus_transport:send(Sock, Resp),
 	    {next_state, waiting_for_ok, State#state{mechs=Rest}};
 	{continue, Resp, MechState} ->
-	    lager:debug("DBUS auth: waiting for Data~n", []),
+	    ?debug("DBUS auth: waiting for Data~n", []),
 	    dbus_transport:send(Sock, Resp),
 	    {next_state, waiting_for_data, State#state{mechs=Rest, mech_state={Mech, MechState}}}
     end;
@@ -205,7 +204,7 @@ handle_info({received, <<"DATA ", _Line/binary>>}, waiting_for_ok,
     {next_state, waiting_for_reject, State};
 
 handle_info({received, _Bin}, waiting_for_ok, #state{sock=Sock}=State) ->
-    lager:error("Unexpected info: ~p", [_Bin]),
+    ?error("Unexpected info: ~p", [_Bin]),
     ok = dbus_transport:send(Sock, <<"ERROR \r\n">>),
     {next_state, waiting_for_ok, State};
 
@@ -215,21 +214,21 @@ handle_info({received, <<"DATA ", Line/binary>>}, waiting_for_data,
     Bin = dbus_hex:from(strip_eol(Line)),
     case Mech:challenge(Bin, MechState) of
 	{ok, Resp} ->
-	    lager:debug("DBUS auth: answering challenge~n", []),
+	    ?debug("DBUS auth: answering challenge~n", []),
 	    dbus_transport:send(Sock, Resp),
 	    {next_state, waiting_for_ok, State};
 	{continue, Resp, MechState} ->
-	    lager:debug("DBUS auth: answering challenge (continue)~n", []),
+	    ?debug("DBUS auth: answering challenge (continue)~n", []),
 	    dbus_transport:send(Sock, Resp),
 	    {next_state, waiting_for_data, State#state{mech_state={Mech, MechState}}};
 	{error, Err} ->
-	    lager:debug("Error with authentication challenge: ~p~n", [Err]),
+	    ?debug("Error with authentication challenge: ~p~n", [Err]),
 	    ok = dbus_transport:send(<<"CANCEL \r\n">>),
 	    {next_state, waiting_for_reject, State}
     end;
 
 handle_info({received, _Bin}, waiting_for_data, #state{sock=Sock}=State) ->
-    lager:error("Unexpected info: ~p", [_Bin]),
+    ?error("Unexpected info: ~p", [_Bin]),
     ok = dbus_transport:send(Sock, <<"ERROR \r\n">>),
     {next_state, waiting_for_data, State};
 
@@ -240,21 +239,21 @@ handle_info({received, <<"REJECTED ", Line/binary>>}, waiting_for_reject,
 	{ok, [Mech|Rest]} ->
 	    case Mech:init() of 
 		{ok, Resp} ->
-		    lager:debug("DBUS auth: waiting for OK~n", []),
+		    ?debug("DBUS auth: waiting for OK~n", []),
 		    dbus_transport:send(Sock, Resp),
 		    {next_state, waiting_for_ok, State#state{mechs=Rest}};
 		{continue, Resp, MechState} ->
-		    lager:debug("DBUS auth: waiting for Data~n", []),
+		    ?debug("DBUS auth: waiting for Data~n", []),
 		    dbus_transport:send(Sock, Resp),
 		    {next_state, waiting_for_data, State#state{mechs=Rest, mech_state={Mech, MechState}}}
 	    end;
 	{error, Err} ->
-	    lager:error("Invalid mechanismes: ~p~n", [Err]),
+	    ?error("Invalid mechanismes: ~p~n", [Err]),
 	    {stop, disconnect, State}
     end;
 
 handle_info({received, _Bin}, waiting_for_reject, State) ->
-    lager:error("Unexpected info: ~p", [_Bin]),
+    ?error("Unexpected info: ~p", [_Bin]),
     {stop, disconnect, State};
 
 %% STATE: waiting_for_agree
@@ -277,7 +276,7 @@ handle_info({received, <<"ERROR ", _Line/binary>>}, waiting_for_agree,
     {next_state, authenticated, State#state{unix_fd=false, waiting=[]}};    
 
 handle_info({received, _Bin}, waiting_for_agree, State) ->
-    lager:error("Unexpected info: ~p", [_Bin]),
+    ?error("Unexpected info: ~p", [_Bin]),
     {stop, disconnect, State};
 
 %% STATE: authenticated
@@ -296,11 +295,11 @@ handle_info({received, Data}, authenticated, #state{buf=Buf}=State) ->
 
 %% Other
 handle_info(closed, _, State) ->
-    lager:error("Connection closed...~n", []),
+    ?error("Connection closed...~n", []),
     {stop, closed, State};
 
 handle_info(_Evt, StateName, State) ->
-    lager:error("Unexpected event: ~p~n", [_Evt]),
+    ?error("Unexpected event: ~p~n", [_Evt]),
     {next_state, StateName, State}.
 
 
@@ -321,13 +320,13 @@ connected(auth, {_Pid, Tag}=From, #state{sock=Sock, mechs=[]}=State) ->
 connected(auth, {_Pid, Tag}=From, #state{sock=Sock, mechs=[Mech|Rest]}=State) ->
     case Mech:init() of
 	{ok, Resp} ->
-	    lager:debug("DBUS auth: sending initial data~n", []),
+	    ?debug("DBUS auth: sending initial data~n", []),
 	    dbus_transport:send(Sock, Resp),
 	    {reply, {ok, {self(), Tag}}, waiting_for_ok, 
 	     State#state{waiting=[From],
 			 mechs=Rest}};
 	{continue, Resp, MechState} ->
-	    lager:debug("DBUS auth: sending initial data (continue)~n", []),
+	    ?debug("DBUS auth: sending initial data (continue)~n", []),
 	    dbus_transport:send(Sock, Resp),
 	    {reply, {ok, {self(), Tag}}, waiting_for_data,
 	     State#state{waiting=[From],
@@ -338,7 +337,7 @@ connected({call, _}, _From, State) ->
     {reply, {error, authentication_needed}, connected, State};
 
 connected(_Evt, _From, State) ->
-    lager:debug("Unexpected event: ~p~n", [_Evt]),
+    ?debug("Unexpected event: ~p~n", [_Evt]),
     {reply, {error, invalid_event}, connected, State}.
 
 
@@ -349,7 +348,7 @@ waiting_for_ok(auth, {_Pid, Tag}=From, #state{waiting=Waiting}=State) ->
     {reply, {ok, {self(), Tag}}, waiting_for_ok, 
      State#state{waiting=[From|Waiting]}};
 waiting_for_ok(_Evt, _From, State) ->
-    lager:debug("Unexpected event: ~p~n", [_Evt]),
+    ?debug("Unexpected event: ~p~n", [_Evt]),
     {reply, {error, invalid_event}, waiting_for_ok, State}.
 
 
@@ -360,7 +359,7 @@ waiting_for_data(auth, {_Pid, Tag}=From, #state{waiting=Waiting}=State) ->
     {reply, {ok, {self(), Tag}}, waiting_for_data, 
      State#state{waiting=[From|Waiting]}};
 waiting_for_data(_Evt, _From, State) ->
-    lager:debug("Unexpected event: ~p~n", [_Evt]),
+    ?debug("Unexpected event: ~p~n", [_Evt]),
     {reply, {error, invalid_event}, waiting_for_data, State}.
 
 
@@ -371,7 +370,7 @@ waiting_for_reject(auth, {_Pid, Tag}=From, #state{waiting=Waiting}=State) ->
     {reply, {ok, {self(), Tag}}, waiting_for_reject, 
      State#state{waiting=[From|Waiting]}};
 waiting_for_reject(_Evt, _From, State) ->
-    lager:debug("Unexpected event: ~p~n", [_Evt]),
+    ?debug("Unexpected event: ~p~n", [_Evt]),
     {reply, {error, invalid_event}, waiting_for_reject, State}.
 
 
@@ -382,7 +381,7 @@ waiting_for_agree(auth, {_Pid, Tag}=From, #state{waiting=Waiting}=State) ->
     {reply, {ok, {self(), Tag}}, waiting_for_agree, 
      State#state{waiting=[From|Waiting]}};
 waiting_for_agree(_Evt, _From, State) ->
-    lager:debug("Unexpected event: ~p~n", [_Evt]),
+    ?debug("Unexpected event: ~p~n", [_Evt]),
     {reply, {error, invalid_event}, waiting_for_agree, State}.
 
 
@@ -397,7 +396,7 @@ authenticated({call, #dbus_message{}=Msg}, {Pid, Tag},
     {reply, {ok, {self(), Tag}}, authenticated, State#state{serial=S}};
 
 authenticated(_Evt, _From, State) ->
-    lager:debug("Unexpected event: ~p~n", [_Evt]),
+    ?debug("Unexpected event: ~p~n", [_Evt]),
     {reply, {error, invalid_event}, authenticated, State}.
 
 %%%
@@ -422,7 +421,7 @@ handle_message(?TYPE_METHOD_RETURN, #dbus_message{}=Msg, #state{pending=Pending}
 	        ets:delete(Pending, Serial),
 	        {ok, State};
 	    [_] ->
-	        lager:debug("Unexpected message: ~p~n", [Serial]),
+	        ?debug("Unexpected message: ~p~n", [Serial]),
 	        {error, unexpected_message, State}
     end;
 
@@ -434,7 +433,7 @@ handle_message(?TYPE_ERROR, Msg, #state{pending=Pending}=State) ->
 	        ets:delete(Pending, Serial),
 	        {ok, State};
 	    [_] ->
-	        lager:debug("Unexpected message: ~p~n", [Serial]),
+	        ?debug("Unexpected message: ~p~n", [Serial]),
 	        {error, unexpected_message, State}
     end;
 
@@ -447,7 +446,7 @@ handle_message(?TYPE_SIGNAL, Msg, #state{owner=Owner}=State) ->
     {ok, State};
 
 handle_message(Type, Msg, State) ->
-    lager:debug("Ignore ~p ~p~n", [Type, Msg]),
+    ?debug("Ignore ~p ~p~n", [Type, Msg]),
     {error, unexpected_message, State}.
 
 init_connection(Sock, Mechs, Owner) ->

@@ -8,10 +8,10 @@
 %% {closed, Pid}
 
 -module(dbus_transport_unix).
--compile([{parse_transform, lager_transform}]).
 
 -behaviour(gen_server).
 
+-include("dbus.hrl").
 -include_lib("procket/include/procket.hrl").
 
 %% api
@@ -51,7 +51,7 @@ connect(BusOptions, _Options) ->
 %%
 init([{Mode, Path}, Owner]) when is_pid(Owner), is_binary(Path) ->
     true = link(Owner),
-    lager:debug("Connecting to UNIX socket: ~p~n", [Path]),
+    ?debug("Connecting to UNIX socket: ~p~n", [Path]),
     case procket:socket(?PF_LOCAL, ?SOCK_STREAM, 0) of
 	{ok, Sock} ->
 	    SockUn = get_sock_un(Mode, Path),
@@ -62,15 +62,15 @@ init([{Mode, Path}, Owner]) when is_pid(Owner), is_binary(Path) ->
 		    spawn_link(?MODULE, do_read, [PollID, Sock, self()]),
 		    {ok, #state{sock=Sock, owner=Owner}};
 		{error, Err} ->
-		    lager:error("Error connecting socket: ~p~n", [Err]),
+		    ?error("Error connecting socket: ~p~n", [Err]),
 		    {error, Err}
 	    end;
 	{error, Err} ->
-	    lager:error("Error creating socket: ~p~n", [Err]),
+	    ?error("Error creating socket: ~p~n", [Err]),
 	    {error, Err}
     end;
 init(_) ->
-    lager:error("Invalid argument in UNIX transport init~n", []),
+    ?error("Invalid argument in UNIX transport init~n", []),
     {error, invalid_argument}.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -83,7 +83,7 @@ handle_call({set_raw, Raw}, _From, State) ->
     {reply, ok, State#state{raw=Raw}};
 
 handle_call(Request, _From, State) ->
-    lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
+    ?error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
 
 
@@ -102,7 +102,7 @@ handle_cast(stop, State) ->
     {stop, normal, State};
 
 handle_cast(Request, State) ->
-    lager:error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
+    ?error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
 
@@ -111,12 +111,12 @@ handle_info({unix, Data}, #state{owner=Owner}=State) ->
     {noreply, State};
 
 handle_info({'EXIT', _From, _Reason}, #state{owner=Owner}=State) ->
-    lager:error("Listener has died, who will listen ?~n", []),
+    ?error("Listener has died, who will listen ?~n", []),
     Owner ! closed,
     {stop, normal, State#state{sock=undefined}};
 
 handle_info(Info, State) ->
-    lager:error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
+    ?error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
 

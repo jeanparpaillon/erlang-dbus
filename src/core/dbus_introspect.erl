@@ -7,7 +7,6 @@
 %% @doc introspect support module
 %%
 -module(dbus_introspect).
--compile({parse_transform, lager_transform}).
 
 -include_lib("xmerl/include/xmerl.hrl").
 -include("dbus.hrl").
@@ -91,7 +90,7 @@ from_xml_string(Data) when is_binary(Data) ->
 	{ok, #dbus_node{}=Node, _Rest} ->
 	    Node;
 	{_Tag, _Location, Reason, _EndTags, _State} ->
-	    lager:error("Error parsing introspection: ~p~n", [Reason]),
+	    ?error("Error parsing introspection: ~p~n", [Reason]),
 	    throw({error, parse_error})
     end.
 
@@ -103,7 +102,7 @@ from_xml(Filename) ->
 	{ok, #dbus_node{}=Node, _Rest} ->
 	    Node;
 	{_Tag, _Location, Reason, _EndTags, _State} ->
-	    lager:error("Error parsing introspection: ~p~n", [Reason]),
+	    ?error("Error parsing introspection: ~p~n", [Reason]),
 	    throw({error, parse_error})
     end.
 

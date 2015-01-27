@@ -6,7 +6,6 @@
 %% @doc proxy gen server representing a remote D-BUS object
 %%
 -module(dbus_proxy).
--compile([{parse_transform, lager_transform}]).
 
 -include("dbus_client.hrl").
 -include("dbus_object_manager.hrl").
@@ -117,7 +116,7 @@ init([Conn, Service, Path, Owner, Opts]) ->
 			    {ok, State}
 		    end;
 		{error, Err} ->
-		    lager:error("Error introspecting object ~p: ~p~n", [Path, Err]),
+		    ?error("Error introspecting object ~p: ~p~n", [Path, Err]),
 		    {stop, Err}
 	    end;
 	#dbus_node{}=Node ->
@@ -131,7 +130,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 handle_call({method, IfaceName, MethodName, Args}, _From, #state{node=Node}=State) ->
-    lager:debug("Calling ~p:~p.~p(~p)~n", [State#state.path, IfaceName, MethodName, Args]),
+    ?debug("Calling ~p:~p.~p(~p)~n", [State#state.path, IfaceName, MethodName, Args]),
     case dbus_introspect:find_method(Node, IfaceName, MethodName) of
 	{ok, Method} ->
 	    do_method(IfaceName, Method, Args, State);
@@ -163,7 +162,7 @@ handle_call(get_managed_objects, _From, #state{objects=Objects}=State) ->
     {reply, {ok, Objects}, State};
 
 handle_call(Request, _From, State) ->
-    lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
+    ?error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
 
 
@@ -171,7 +170,7 @@ handle_cast(stop, State) ->
     {stop, normal, State};
 
 handle_cast(Request, State) ->
-    lager:error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
+    ?error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
 
@@ -185,7 +184,7 @@ handle_info({error, #dbus_message{body=Body}=Msg, {tag, From, Options}}, State) 
     {noreply, State};
 
 handle_info(Info, State) ->
-    lager:error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
+    ?error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
 
@@ -221,7 +220,7 @@ do_method(IfaceName,
     end.
 
 do_introspect(Conn, Service, Path) ->
-    lager:debug("Introspecting: ~p:~p~n", [Service, Path]),
+    ?debug("Introspecting: ~p:~p~n", [Service, Path]),
     case dbus_connection:call(Conn, dbus_message:introspect(Service, Path)) of
 	{ok, #dbus_message{body=Body}} ->
 	    try dbus_introspect:from_xml_string(Body) of
@@ -229,7 +228,7 @@ do_introspect(Conn, Service, Path) ->
 			{ok, Node}
 	        catch
 		        _:Err ->
-		            lager:error("Error parsing introspection infos: ~p~n", [Err]),
+		            ?error("Error parsing introspection infos: ~p~n", [Err]),
 		            {error, parse_error}
 	        end;
 	{error, #dbus_message{body=Body}=Msg} ->
@@ -238,7 +237,7 @@ do_introspect(Conn, Service, Path) ->
     end.
 
 do_init_manager(#state{service=Service, conn=Conn, path=Path}=State) ->
-    lager:info("Fetch managed objects~n", []),
+    ?info("Fetch managed objects~n", []),
     do_connect_manager(State),
     Msg = dbus_message:call(Service, Path, ?DBUS_OBJECT_MANAGER_IFACE, 'GetManagedObjects'),
     case dbus_connection:call(Conn, Msg) of

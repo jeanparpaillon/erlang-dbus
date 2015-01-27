@@ -7,7 +7,6 @@
 %% @doc (un)marshalling
 %%
 -module(dbus_marshaller).
--compile([{parse_transform, lager_transform}]).
 
 -include("dbus.hrl").
 
@@ -335,7 +334,7 @@ unmarshal_data(Data, Acc) ->
 	more ->
 	    {ok, lists:reverse(Acc), Data};
 	_ ->
-	    lager:error("Error parsing data~n", []),
+	    ?error("Error parsing data~n", []),
 	    throw({error, dbus_parse_error})
     catch
 	{'EXIT', Err} -> 
@@ -404,7 +403,7 @@ unmarshal_header(Bin) ->
 	    <<0:Pad, Body:Size/binary, Rest2/binary>> = Rest,
 	    {ok, Header, Body, Rest2};
 	{ok, Header, _, _} -> 
-	    lager:debug("Bad message header: ~p~n", [Header]),
+	    ?debug("Bad message header: ~p~n", [Header]),
 	    throw({error, bad_header})
     end.
 

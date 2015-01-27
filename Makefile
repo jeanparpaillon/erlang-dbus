@@ -16,8 +16,7 @@
 #
 PROJECT = dbus
 
-DEPS = lager procket inert
-dep_lager = git https://github.com/basho/lager.git 2.0.3
+DEPS = procket inert
 dep_procket = git https://github.com/msantos/procket.git master
 dep_inert = git https://github.com/msantos/inert.git 0.2.1
 

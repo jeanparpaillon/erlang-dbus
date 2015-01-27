@@ -7,6 +7,18 @@
 -ifndef(dbus_hrl).
 -define(dbus_hrl, true).
 
+-define(debug(Msg), error_logger:info_msg(Msg)).
+-define(debug(Msg, Data), error_logger:info_msg(Msg, Data)).
+
+-define(info(Msg), error_logger:info_msg(Msg)).
+-define(info(Msg, Data), error_logger:info_msg(Msg, Data)).
+
+-define(warn(Msg),error_logger:warning_msg(Msg)).
+-define(warn(Msg, Data), error_logger:warning_msg(Msg, Data)).
+
+-define(error(Msg), error_logger:error_msg(Msg)).
+-define(error(Msg, Data), error_logger:error_msg(Msg, Data)).
+
 -define(DBUS_VERSION_MAJOR, 1).
 
 -define(TYPE_INVALID, 0).

@@ -6,7 +6,6 @@
 %%% @copyright 2014 Jean Parpaillon
 %%%
 -module(dbus).
--compile({parse_transform, lager_transform}).
 
 -include("dbus_client.hrl").
 

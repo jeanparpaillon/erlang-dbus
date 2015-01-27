@@ -4,7 +4,6 @@
 %% @doc Register of exported D-BUS services gen_server
 %%
 -module(dbus_service_reg).
--compile([{parse_transform, lager_transform}]).
 
 -behaviour(gen_server).
 
@@ -60,7 +59,7 @@ handle_call({export_service, ServiceName}, _From, State) ->
 	{value, {_, Service}} ->
 	    {reply, {ok, Service}, State};
 	_ ->
-	    lager:debug("export_service name ~p~n", [ServiceName]),
+	    ?debug("export_service name ~p~n", [ServiceName]),
 	    Service = State#state.service,
 	    ok = dbus_bus_reg:export_service(undefined, ServiceName),
 	    Services1 = [{ServiceName, Service}|Services],
@@ -68,12 +67,12 @@ handle_call({export_service, ServiceName}, _From, State) ->
     end;
 
 handle_call(Request, _From, State) ->
-    lager:error("Unhandled call in: ~p~n", [Request]),
+    ?error("Unhandled call in: ~p~n", [Request]),
     {reply, ok, State}.
 
 
 handle_cast(Request, State) ->
-    lager:error("Unhandled cast in: ~p~n", [Request]),
+    ?error("Unhandled cast in: ~p~n", [Request]),
     {noreply, State}.
 
 
@@ -93,7 +92,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     Services = State#state.services,
     case lists:keysearch(Pid, 2, Services) of
 	{value, {ServiceName, _}} ->
-	    lager:debug("~p Terminated ~p~n", [Pid, Reason]),
+	    ?debug("~p Terminated ~p~n", [Pid, Reason]),
 	    ok = dbus_bus_reg:unexport_service(Pid, ServiceName),
 	    Services1 =
 		lists:keydelete(Pid, 2, Services),
@@ -108,7 +107,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     end;
 
 handle_info(Info, State) ->
-    lager:debug("Unhandled info in: ~p~n", [Info]),
+    ?debug("Unhandled info in: ~p~n", [Info]),
     {noreply, State}.
 
 

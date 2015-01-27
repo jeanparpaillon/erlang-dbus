@@ -6,7 +6,8 @@
 %%% Created : 5 Jul 2014 by Jean Parpaillon <jean.parpaillon@free.fr>
 
 -module(dbus_auth_cookie_sha1).
--compile([{parse_transform, lager_transform}]).
+
+-include("dbus.hrl").
 
 -behaviour(dbus_auth).
 
@@ -15,7 +16,7 @@
 	challenge/2]).
 
 init() ->
-    lager:debug("Init DBUS_AUTH_COOKIE_SHA1 authentication~n", []),
+    ?debug("Init DBUS_AUTH_COOKIE_SHA1 authentication~n", []),
     User = os:getenv("USER"),
     HexUser = dbus_hex:to(list_to_binary(User)),
     {continue, <<"AUTH DBUS_COOKIE_SHA1 ", HexUser/binary, "\r\n">>, waiting_challenge}.
@@ -48,13 +49,13 @@ calc_challenge() ->
 
 calc_response(ServerChallenge, Challenge, Cookie) ->
     A1 = ServerChallenge ++ ":" ++ Challenge ++ ":" ++ Cookie,
-    lager:debug("A1: ~p~n", [A1]),
+    ?debug("A1: ~p~n", [A1]),
     DigestHex = dbus_hex:to(crypto:hash(sha, A1)),
     <<Challenge/binary, " ", DigestHex/binary>>.
 
 
 read_cookie(Context, CookieId) ->
-    lager:debug("Reading DBUS cookie: (~p, ~p)~n", [Context, CookieId]),
+    ?debug("Reading DBUS cookie: (~p, ~p)~n", [Context, CookieId]),
     Name = filename:join([os:getenv("HOME"),
 			 ".dbus-keyrings",
 			 Context]),

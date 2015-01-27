@@ -6,7 +6,6 @@
 %% @doc Bus gen_server
 %%
 -module(dbus_bus).
--compile([{parse_transform, lager_transform}]).
 
 -include("dbus.hrl").
 -include("dbus_dbus.hrl").
@@ -115,11 +114,11 @@ handle_call({get_service, Name}, {Pid, _}, #state{conn=Conn, services=Reg}=State
     {reply, {ok, Srv}, State};
 
 handle_call({release_service, Service}, {Pid, _}, State) ->
-    lager:debug("~p: ~p release_service ~p ~p~n", [?MODULE, self(), Service, Pid]),
+    ?debug("~p: ~p release_service ~p ~p~n", [?MODULE, self(), Service, Pid]),
     handle_release_service(Service, Pid, State);
 
 handle_call(Request, _From, State) ->
-    lager:error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
+    ?error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
 
 handle_cast(stop, State) ->
@@ -130,7 +129,7 @@ handle_cast(#dbus_message{}=Msg, #state{conn=Conn}=State) ->
     {noreply, State};
 
 handle_cast(Request, State) ->
-    lager:error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
+    ?error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
 
@@ -145,11 +144,11 @@ handle_info({reply, Ref, {error, Reason}}, #state{conn_name=Ref}=State) ->
     {stop, {error, Reason}, State};
 
 handle_info({dbus_signal, Msg, Conn}, #state{conn=Conn, signal_handlers=_Handlers}=State) ->
-    lager:debug("Ignore signal ~p~n", [Msg]),
+    ?debug("Ignore signal ~p~n", [Msg]),
     {noreply, State};
 
 handle_info({'EXIT', Pid, Reason}, State) ->
-    lager:error("~p: EXIT ~p ~p~n", [?MODULE, Pid, Reason]),
+    ?error("~p: EXIT ~p ~p~n", [?MODULE, Pid, Reason]),
     case handle_release_all_services(Pid, State) of
 	{ok, State1} ->
 	    {noreply, State1};
@@ -165,7 +164,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     end;
 
 handle_info(Info, State) ->
-    lager:error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
+    ?error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
 
@@ -174,7 +173,7 @@ terminate(_Reason, _State) ->
 
 
 handle_release_all_services(Pid, _State) ->
-    lager:error("~p: handle_release_all_services ~p~n", [?MODULE, Pid]),
+    ?error("~p: handle_release_all_services ~p~n", [?MODULE, Pid]),
     throw(unimplemented).
 
 
