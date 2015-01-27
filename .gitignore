@@ -8,8 +8,10 @@
 /libs
 *.swp
 *.dump
+*.beam
 .project
 .settings
 .rebar
 /.eunit
+/logs
 /log
