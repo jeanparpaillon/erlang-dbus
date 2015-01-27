@@ -10,7 +10,8 @@
 
 -include("dbus_client.hrl").
 
--export([start_link/4]).
+-export([start_link/4,
+	 state/1]).
 
 % gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -20,8 +21,15 @@
 		manager,
 		objects}).
 
--callback init(Bus :: dbus_bus_conn(), Env :: any()) ->
+-callback init(Bus :: dbus_bus_conn(), Env :: [dbus_client_env()]) ->
     {ok, State :: any()} | {error, term()}.
+
+-callback signal(Path :: dbus_name(), 
+		 IfaceName :: dbus_name(), 
+		 Signal :: dbus_name(), 
+		 Args :: [dbus_arg()],
+		 State :: any()) ->
+    {ok, State2 :: any()} | {error, term()}.
 
 % @doc Start dbus client
 %
@@ -31,6 +39,9 @@
 			{ok, pid()} | ignore | {error, term()}.
 start_link(BusName, Handler, Opts, Env) when is_atom(Handler) ->
     gen_server:start_link(?MODULE, [BusName, {Handler, undefined}, Opts, Env], []).
+
+state(Ref) ->
+    gen_server:call(Ref, state).
 
 %%%
 %%% gen_server callbacks
@@ -58,6 +69,8 @@ init([BusName, Handler, Opts, Env]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
+handle_call(state, _From, #state{handler={_Mod, HandlerState}}=State) ->
+    {reply, HandlerState, State};
 handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 

@@ -19,6 +19,9 @@
 
 -type dbus_client_handler() :: atom().
 
+-type dbus_client_env() :: {objects, list()}
+			 | {env, any()}.
+
 -type(dbus_bus_name() :: system | session).
 
 -record(dbus_bus_conn, {conn     :: dbus_connection(),
