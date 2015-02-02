@@ -17,9 +17,6 @@
 %% api:s
 -export([start/0]).
 
-%% helpers
--export([connect/1]).
-
 %% application callbacks
 start(normal, []) ->
     dbus_sup:start_link().
@@ -35,7 +32,3 @@ stop(_State) ->
 %%--------------------------------------------------------------------
 start() ->
     application:ensure_all_started(dbus).
-
--spec connect(dbus_bus_name()) -> {ok, dbus_bus_conn()} | {error, term()}.
-connect(BusName) ->
-    dbus_bus_connection:connect(BusName).
