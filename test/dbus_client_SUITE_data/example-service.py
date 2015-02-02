@@ -29,10 +29,13 @@ class SampleObject(dbus.service.Object):
     def SampleSignal(self, x, y):
         pass
 
-
 session_bus = dbus.SessionBus()
 name = dbus.service.BusName("org.lizenn.dbus.SampleService", bus=session_bus)
 obj = SampleObject(name)
+SampleObject(name, object_path="/child1")
+SampleObject(name, object_path="/child2")
+SampleObject(name, object_path="/child2/little1")
+SampleObject(name, object_path="/child2/little2")
 
 mainloop = gobject.MainLoop()
 mainloop.run()
