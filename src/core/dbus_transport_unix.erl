@@ -30,6 +30,7 @@
 
 -record(state, {sock, 
 		owner,
+		loop     :: pid(),
 		raw      :: boolean()}).
 
 connect(BusOptions, _Options) ->
@@ -59,8 +60,8 @@ init([{Mode, Path}, Owner]) when is_pid(Owner), is_binary(Path) ->
 		ok ->
 		    process_flag(trap_exit, true),
 		    PollID = inert:start(),
-		    spawn_link(?MODULE, do_read, [PollID, Sock, self()]),
-		    {ok, #state{sock=Sock, owner=Owner}};
+		    Loop = spawn_link(?MODULE, do_read, [PollID, Sock, self()]),
+		    {ok, #state{sock=Sock, owner=Owner, loop=Loop}};
 		{error, Err} ->
 		    ?error("Error connecting socket: ~p~n", [Err]),
 		    {error, Err}
@@ -94,9 +95,8 @@ handle_cast({send, Data}, #state{sock=Sock}=State) when is_binary(Data) ->
     procket:sendto(Sock, Data, 0, <<>>),
     {noreply, State};
 
-handle_cast(close, #state{sock=Sock}=State) ->
-    procket:close(Sock),
-    {stop, normal, State#state{sock=undefined}};
+handle_cast(close, State) ->
+    {stop, normal, State};
 
 handle_cast(stop, State) ->
     {stop, normal, State};
@@ -120,12 +120,16 @@ handle_info(Info, State) ->
     {noreply, State}.
 
 
-terminate(_Reason, #state{sock=Sock}) ->
+terminate(_Reason, #state{sock=Sock, loop=Loop}) ->
     case Sock of
-	    undefined -> ignore;
-	    _ -> procket:close(Sock)
+	undefined -> ignore;
+	_ -> 
+	    exit(Loop, kill),
+	    % Avoid do_read loop polling on closed fd
+	    timer:sleep(100),
+	    procket:close(Sock)
     end,
-        terminated.
+    ok.
 
 %%%
 %%% Priv
