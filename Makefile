@@ -20,7 +20,7 @@ DEPS = procket inert
 dep_procket = git https://github.com/msantos/procket.git master
 dep_inert = git https://github.com/msantos/inert.git 0.2.1
 
-COMPILE_FIRST = auth/dbus_auth
+COMPILE_FIRST = auth/dbus_auth core/dbus_connection
 
 include erlang.mk
 

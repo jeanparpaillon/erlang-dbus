@@ -23,7 +23,8 @@
 	 find_field/2,
 	 get_field/2,
 	 get_field_value/2,
-	 set_body/4]).
+	 set_body/4,
+	 match/2]).
 
 -export([introspect/2]).
 
@@ -189,7 +190,15 @@ set_body(Signature, Types, Body, #dbus_message{header=#dbus_header{fields=Fields
 			"Error:~n"
 			"~p~n", [erlang:get_stacktrace()]),
 	    {error, {'org.freedesktop.DBus.InvalidParameters', Err}}
-    end.	
+    end.
+
+
+%%
+%% @doc '_' means the header exists with any value
+%%
+-spec match(HeaderMatches :: [{integer(), dbus_name() | '_'}], dbus_message()) -> boolean().
+match(HeaderMatches, #dbus_message{header=#dbus_header{fields=Fields}}) when is_list(HeaderMatches) ->
+    match(true, HeaderMatches, Fields).
 
 %%%
 %%% Common messages
@@ -212,3 +221,19 @@ process_flags([no_auto_start | Opts], Acc) ->
     process_flags(Opts, Acc bor ?NO_AUTO_START);
 process_flags([_ | Opts], Acc) ->
     process_flags(Opts, Acc).
+
+match(Acc, [], _Msg) ->
+    Acc;
+match(Acc, [ {Code, '_'} | Tail ], Fields) ->
+    case proplists:get_value(Code, Fields) of
+	undefined -> false;
+	#dbus_variant{} -> match(Acc, Tail, Fields)
+    end;
+match(Acc, [ {Code, Value} | Tail ], Fields) ->
+    case proplists:get_value(Code, Fields) of
+	undefined -> false;
+	#dbus_variant{value=Value} -> match(Acc, Tail, Fields);
+	#dbus_variant{} -> false
+    end;
+match(_Acc, [ _ | _Tail ], _Fields) ->
+    false.

@@ -1,21 +1,26 @@
 %%%
 %%% @copyright 2014 Jean Parpaillon
 %%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%%% @doc 
+%%% @doc To merge with dbus_client ?
 %%%
 %%% @end
 %%% Created : 22 Jul 2014 by Jean Parpaillon <jean.parpaillon@free.fr>
 -module(dbus_bus_connection).
+
+-behaviour(dbus_connection).
 
 -include("dbus.hrl").
 -include("dbus_client.hrl").
 -include("dbus_dbus.hrl").
 -include("dbus_introspectable.hrl").
 
--export([connect/1,
-	 get_object/3,
-	 get_objects_manager/2]).
+-export([get_bus_id/1,
+	 connect/1]).
 
+%% dbus_connection callbacks
+-export([close/1,
+	 call/2,
+	 cast/2]).
 
 -define(DEFAULT_BUS_SYSTEM, #bus_id{scheme=unix,options=[{path, "/var/run/dbus/system_bus_socket"}]}).
 -define(SESSION_ENV, "DBUS_SESSION_BUS_ADDRESS").
@@ -24,41 +29,7 @@
 -define(PARAM_DELIM, $,).
 -define(KEY_DELIM, $=).
 
--define(DEFAULT_DBUS_SERVICE, 'org.freedesktop.DBus').
--define(DEFAULT_DBUS_NODE, 
-	#dbus_node{elements=[], 
-		   interfaces=gb_trees:from_orddict([{'org.freedesktop.DBus', ?DBUS_DBUS}, 
-						     {'org.freedesktop.DBus.Introspectable', ?DBUS_INTROSPECTABLE}])}).
-
--spec connect(dbus_bus_name()) -> {ok, dbus_bus_conn()} | {error, term()}.
-connect(BusName) ->
-    BusId = get_bus_id(BusName),
-    case dbus_connection:start_link(BusId, [list, {packet, 0}]) of
-	{ok, Conn} ->
-	    dbus_connection:auth(Conn),
-	    case dbus_proxy:start_link(Conn, ?DEFAULT_DBUS_SERVICE, [{node, ?DEFAULT_DBUS_NODE}]) of
-		{ok, DBus} ->
-		    ConnId = hello(DBus),
-		    ?debug("Got connection id: ~p~n", [ConnId]),
-		    {ok, #dbus_bus_conn{conn=Conn, conn_id=ConnId, bus=DBus}};
-		{error, Err} ->
-		    {error, Err}
-	    end;
-	{error, Err} ->
-	    {error, Err}
-    end.
-
--spec get_object(dbus_bus_conn(), Service :: dbus_name(), Path :: binary()) -> {ok, dbus_proxy()} | {error, term()}.
-get_object(#dbus_bus_conn{conn=Conn, bus=DBus}, ServiceName, Path) ->
-    dbus_proxy:start_link(Conn, ServiceName, Path, [{bus_proxy, DBus}]).
-
--spec get_objects_manager(dbus_bus_conn(), dbus_name()) -> {ok, dbus_proxy()} | {error, term()}.
-get_objects_manager(#dbus_bus_conn{conn=Conn, bus=DBus}, ServiceName) ->
-    dbus_proxy:start_link(Conn, ServiceName, <<"/">>, [manager, {bus_proxy, DBus}]).
-
-%%%
-%%% Priv
-%%%
+-spec get_bus_id(dbus_known_bus()) -> bus_id().
 get_bus_id(session) ->
     [BusId|_R] = env_to_bus_id(),
     BusId;
@@ -66,6 +37,48 @@ get_bus_id(system) ->
     ?DEFAULT_BUS_SYSTEM.
 
 
+-spec connect(bus_id() | dbus_known_bus()) -> {ok, dbus_connection()} | {error, term()}.
+connect(#bus_id{}=BusId) ->
+    case dbus_peer_connection:start_link(BusId) of
+	{ok, {dbus_peer_connection, PConn}=Conn} ->
+	    case dbus_peer_connection:auth(PConn) of
+		{ok, undefined} ->
+		    case dbus_proxy:start_link(Conn, ?DBUS_SERVICE, <<"/">>, ?DBUS_NODE) of
+			{ok, DBus} ->
+			    ConnId = hello(DBus),
+			    ?debug("Hello connection id: ~p~n", [ConnId]),
+			    dbus_peer_connection:set_controlling_process(PConn, DBus),
+			    {ok, {?MODULE, DBus}};
+			{error, Err} -> {error, Err}
+		    end;
+		{ok, ConnId} ->
+		    case dbus_proxy:start_link(Conn, ?DBUS_SERVICE, <<"/">>, ?DBUS_NODE) of
+			{ok, DBus} ->
+			    ?debug("Acquired connection id: ~p~n", [ConnId]),	
+			    dbus_peer_connection:set_controlling_process(PConn, DBus),
+			    {ok, {?MODULE, DBus}};
+			{error, Err} -> {error, Err}
+		    end
+	    end;
+	{error, Err} -> {error, Err}
+    end;
+connect(BusName) when BusName =:= system;
+		      BusName =:= session ->
+    connect(get_bus_id(BusName)).
+
+close({?MODULE, Bus}) ->     dbus_proxy:stop(Bus);
+close(Bus) ->                dbus_proxy:stop(Bus).
+
+call({?MODULE, Bus}, Msg) -> dbus_proxy:call(Bus, Msg);
+call(Bus, Msg) ->            dbus_proxy:call(Bus, Msg).
+
+cast({?MODULE, Bus}, Msg) -> dbus_proxy:cast(Bus, Msg);
+cast(Bus, Msg) ->            dbus_proxy:cast(Bus, Msg).
+
+
+%%%
+%%% Priv
+%%%
 env_to_bus_id() ->
     str_to_bus_id(os:getenv(?SESSION_ENV)).
 

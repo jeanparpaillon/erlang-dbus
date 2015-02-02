@@ -57,8 +57,9 @@
 -define(DBUS_REQUEST_NAME_REPLY_EXISTS, 3).
 -define(DBUS_REQUEST_NAME_REPLY_ALREADY_OWNER, 4).
 
--type dbus_connection() :: pid().
+-type dbus_connection() :: {atom(), any()}.
 
+-type dbus_known_bus() :: system | session.
 -type dbus_name() :: atom() | binary().
 -type dbus_option() :: no_reply_expected | no_auto_start.
 
@@ -86,6 +87,7 @@
 	  options				% tcp: address, port
 						% unix: path|abstract
 	 }).
+-type bus_id() :: #bus_id{}.
 
 -record(dbus_message, {
 	  header,

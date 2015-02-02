@@ -9,6 +9,7 @@
 
 -include("dbus.hrl").
 
+
 -define(DBUS_DBUS_HELLO, 
 	#dbus_method{name= 'Hello', 
 		     args=[], 
@@ -166,5 +167,15 @@
 						   {'NameLost', ?DBUS_DBUS_NAME_LOST},
 						   {'NameOwnerChanged', ?DBUS_DBUS_NAME_OWNER_CHANGED}
 						  ])}).
+
+-define(DBUS_SERVICE, 'org.freedesktop.DBus').
+
+-define(DBUS_NODE, #dbus_node{elements=[], 
+			      interfaces=gb_trees:from_orddict(
+					  [
+					   {'org.freedesktop.DBus', ?DBUS_DBUS},
+					   {'org.freedesktop.DBus.Introspectable', ?DBUS_INTROSPECTABLE}
+					  ])}
+       ).
 
 -endif.
