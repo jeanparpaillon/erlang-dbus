@@ -12,6 +12,8 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("kernel/include/file.hrl").
 
+-include("dbus.hrl").
+
 -define(SCRIPT, "example-service.py").
 -define(SERVICE, <<"net.lizenn.dbus.SampleService">>).
 -define(IFACE, <<"net.lizenn.dbus.SampleInterface">>).
@@ -35,7 +37,8 @@
 -export([
 	 connect_system/1,
 	 connect_session/1,
-	 connect_service/1
+	 connect_service/1,
+	 walk_node/1
 	]).
 
 suite() ->
@@ -67,7 +70,10 @@ all() ->
 groups() ->
     [
      {connect, [parallel, {repeat, 5}], [ connect_system, connect_session ]}
-    ,{service, [], [ connect_service  ]}
+    ,{service, [], [
+		    connect_service
+		   ,walk_node
+		   ]}
     ].
 
 
@@ -114,6 +120,14 @@ connect_system(_Config) ->
 connect_service(Config) ->
     {ok, Service} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE),
     ?assert(is_pid(Service)),
+    ok.
+
+walk_node(Config) ->
+    {ok, S} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE),
+    [CPath] = dbus_proxy:children(S),
+    ?assertMatch(<<"/root">>, CPath),
+    {ok, Child} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, CPath),
+    ?assertMatch([<<"/root/child2">>, <<"/root/child1">>], dbus_proxy:children(Child)),
     ok.
 
 %%%
