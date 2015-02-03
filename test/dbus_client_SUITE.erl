@@ -38,7 +38,9 @@
 	 connect_system/1,
 	 connect_session/1,
 	 connect_service/1,
-	 walk_node/1
+	 walk_node/1,
+	 call_method/1,
+	 call_method_err1/1
 	]).
 
 suite() ->
@@ -73,6 +75,8 @@ groups() ->
     ,{service, [], [
 		    connect_service
 		   ,walk_node
+		   ,call_method
+		   ,call_method_err1
 		   ]}
     ].
 
@@ -129,6 +133,19 @@ walk_node(Config) ->
     {ok, Child} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, CPath),
     ?assertMatch([<<"/root/child2">>, <<"/root/child1">>], dbus_proxy:children(Child)),
     ok.
+
+call_method(Config) ->
+    {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
+    ?assertMatch({ok,[<<"Hello World">>,<<" from example-service.py">>]},
+		 dbus_proxy:call(O, <<"net.lizenn.dbus.SampleInterface">>, <<"HelloWorld">>, ["plop"])),
+    ok.    
+
+call_method_err1(Config) ->
+    {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
+    ?assertMatch({error, {'org.freedesktop.DBus.InvalidParameters', _}},
+		 dbus_proxy:call(O, <<"net.lizenn.dbus.SampleInterface">>, <<"HelloWorld">>, [])),
+    ok.    
+
 
 %%%
 %%% Priv
