@@ -39,10 +39,8 @@
 	 connect_session/1,
 	 connect_service/1,
 	 walk_node/1,
-	 call_method/1,
-	 call_method_err1/1,
-	 call_method_err2/1,
-	 call_method_err3/1
+	 interface/1,
+	 call_method/1
 	]).
 
 suite() ->
@@ -77,10 +75,8 @@ groups() ->
     ,{service, [], [
 		    connect_service
 		   ,walk_node
+		   ,interface
 		   ,call_method
-		   ,call_method_err1
-		   ,call_method_err2
-		   ,call_method_err3
 		   ]}
     ].
 
@@ -138,30 +134,23 @@ walk_node(Config) ->
     ?assertMatch([<<"/root/child2">>, <<"/root/child1">>], dbus_proxy:children(Child)),
     ok.
 
+interface(Config) ->
+    {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
+    ?assertMatch(true, dbus_proxy:has_interface(O, ?IFACE)),
+    ?assertMatch(false, dbus_proxy:has_interface(O, <<"toto">>)),
+    ok.        
+
 call_method(Config) ->
     {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
     ?assertMatch({ok,[<<"Hello World">>,<<" from example-service.py">>]},
-		 dbus_proxy:call(O, <<"net.lizenn.dbus.SampleInterface">>, <<"HelloWorld">>, ["plop"])),
-    ok.    
-
-call_method_err1(Config) ->
-    {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
+		 dbus_proxy:call(O, ?IFACE, <<"HelloWorld">>, ["plop"])),
     ?assertMatch({error, {'org.freedesktop.DBus.InvalidParameters', _}},
-		 dbus_proxy:call(O, <<"net.lizenn.dbus.SampleInterface">>, <<"HelloWorld">>, [])),
-    ok.    
-
-call_method_err2(Config) ->
-    {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
+		 dbus_proxy:call(O, ?IFACE, <<"HelloWorld">>, [])),
     ?assertMatch({error, {'org.freedesktop.DBus.UnknownMethod', _}},
-		 dbus_proxy:call(O, <<"net.lizenn.dbus.SampleInterface">>, <<"bad_method">>, [])),
-    ok.    
-
-call_method_err3(Config) ->
-    {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
+		 dbus_proxy:call(O, ?IFACE, <<"bad_method">>, [])),
     ?assertMatch({error, {'org.freedesktop.DBus.UnknownInterface', _}},
 		 dbus_proxy:call(O, <<"net.lizenn.dbus.BadInterface">>, <<"HelloWorld">>, [])),
     ok.    
-
 
 %%%
 %%% Priv
