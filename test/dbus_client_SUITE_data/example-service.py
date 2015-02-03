@@ -30,12 +30,11 @@ class SampleObject(dbus.service.Object):
         pass
 
 session_bus = dbus.SessionBus()
-name = dbus.service.BusName("org.lizenn.dbus.SampleService", bus=session_bus)
-obj = SampleObject(name)
-SampleObject(name, object_path="/child1")
-SampleObject(name, object_path="/child2")
-SampleObject(name, object_path="/child2/little1")
-SampleObject(name, object_path="/child2/little2")
+service = dbus.service.BusName("org.lizenn.dbus.SampleService", bus=session_bus)
+SampleObject(service, object_path="/root")
+SampleObject(service, object_path="/root/child2")
+SampleObject(service, object_path="/root/child2/little1")
+SampleObject(service, object_path="/root/child2/little2")
 
 mainloop = gobject.MainLoop()
 mainloop.run()
