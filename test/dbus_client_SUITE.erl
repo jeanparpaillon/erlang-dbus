@@ -40,7 +40,9 @@
 	 connect_service/1,
 	 walk_node/1,
 	 call_method/1,
-	 call_method_err1/1
+	 call_method_err1/1,
+	 call_method_err2/1,
+	 call_method_err3/1
 	]).
 
 suite() ->
@@ -77,6 +79,8 @@ groups() ->
 		   ,walk_node
 		   ,call_method
 		   ,call_method_err1
+		   ,call_method_err2
+		   ,call_method_err3
 		   ]}
     ].
 
@@ -144,6 +148,18 @@ call_method_err1(Config) ->
     {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
     ?assertMatch({error, {'org.freedesktop.DBus.InvalidParameters', _}},
 		 dbus_proxy:call(O, <<"net.lizenn.dbus.SampleInterface">>, <<"HelloWorld">>, [])),
+    ok.    
+
+call_method_err2(Config) ->
+    {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
+    ?assertMatch({error, {'org.freedesktop.DBus.UnknownMethod', _}},
+		 dbus_proxy:call(O, <<"net.lizenn.dbus.SampleInterface">>, <<"bad_method">>, [])),
+    ok.    
+
+call_method_err3(Config) ->
+    {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
+    ?assertMatch({error, {'org.freedesktop.DBus.UnknownInterface', _}},
+		 dbus_proxy:call(O, <<"net.lizenn.dbus.BadInterface">>, <<"HelloWorld">>, [])),
     ok.    
 
 
