@@ -76,7 +76,7 @@ init_per_group(connect, Config) ->
 init_per_group(_Name, Config) ->
     ServicePath = get_data_path(?SCRIPT, Config),
     Pid = os:cmd(ServicePath ++ " & echo $!"),
-    [ {service_pid, Pid} | Config ].
+    [ {service_pid, Pid}, {connect, true} | Config ].
 
 
 end_per_group(connect, Config) ->
@@ -85,20 +85,19 @@ end_per_group(_Name, Config) ->
     os:cmd("kill " ++ ?config(service_pid, Config)),
     ok.
 
-init_per_testcase(connect_system, Config) ->
-    Config;
-init_per_testcase(connect_session, Config) ->
-    Config;
 init_per_testcase(_, Config) ->
-    {ok, Bus} = dbus_bus_connection:connect(session),
-    [ {bus, Bus} | Config ].
+    case ?config(connect, Config) of
+	true ->
+	    {ok, Bus} = dbus_bus_connection:connect(session),
+	    [ {bus, Bus} | Config ];
+	_ -> Config
+    end.
 
-end_per_testcase(connect_system, Config) ->
-    Config;
-end_per_testcase(connect_session, Config) ->
-    Config;
 end_per_testcase(_, Config) ->
-    dbus_connection:close(?config(bus, Config)),
+    case ?config(connect, Config) of
+	true -> dbus_connection:close(?config(bus, Config));
+	_ -> ok
+    end,
     ok.
 
 %%%
