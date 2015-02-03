@@ -10,6 +10,7 @@
 
 -include_lib("xmerl/include/xmerl.hrl").
 -include("dbus.hrl").
+-include("dbus_errors.hrl").
 
 -export([
 	 find_interface/2,
@@ -32,7 +33,7 @@
 %%% API
 %%%
 -spec find_interface(dbus_node(), Iface :: dbus_name()) -> 
-			 {ok, dbus_iface()} | {error, {'org.freedesktop.DBus.UnknownInterface', [dbus_name()]}}.
+			 {ok, dbus_iface()} | {error, dbus_err()}.
 find_interface(#dbus_node{interfaces=Ifaces}, IfaceName) ->
     case find_name(IfaceName, Ifaces, fun dbus_names:bin_to_iface/1) of
 	{value, #dbus_iface{}=I} ->
@@ -43,9 +44,7 @@ find_interface(#dbus_node{interfaces=Ifaces}, IfaceName) ->
 
 
 -spec find_method(dbus_node(), Iface :: dbus_name(), Method :: dbus_name()) -> 
-			 {ok, dbus_method()} 
-			     | {error, {'org.freedesktop.DBus.UnknownMethod', [dbus_name()], dbus_name(), dbus_node()}}
-			     | {error, {'org.freedesktop.DBus.UnknownInterface', [dbus_name()]}}.
+			 {ok, dbus_method()} | {error, dbus_err()}.
 find_method(#dbus_node{interfaces=Ifaces}=Node, IfaceName, MethodName) ->
     case find_name(IfaceName, Ifaces, fun dbus_names:bin_to_iface/1) of
 	{value, #dbus_iface{methods=Methods}=_I} ->
@@ -53,7 +52,7 @@ find_method(#dbus_node{interfaces=Ifaces}=Node, IfaceName, MethodName) ->
 		{value, #dbus_method{}=Method} ->
 		    {ok, Method};
 		none ->
-		    {error, {'org.freedesktop.DBus.UnknownMethod', [MethodName], IfaceName, Node}}
+		    {error, {'org.freedesktop.DBus.UnknownMethod', {[MethodName], IfaceName, Node}}}
 	    end;
 	none ->
 	    {error, {'org.freedesktop.DBus.UnknownInterface', [IfaceName]}}
@@ -61,9 +60,7 @@ find_method(#dbus_node{interfaces=Ifaces}=Node, IfaceName, MethodName) ->
 
 
 -spec find_signal(dbus_node(), Iface :: dbus_name(), Signal :: dbus_name()) -> 
-			 {ok, dbus_signal()} 
-			     | {error, {'org.freedesktop.DBus.UnknownSignal', [dbus_name()], dbus_name(), dbus_node()}}
-			     | {error, {'org.freedesktop.DBus.UnknownInterface', [dbus_name()]}}.
+			 {ok, dbus_signal()} | {error, dbus_err()}.
 find_signal(#dbus_node{interfaces=Ifaces}=Node, IfaceName, SignalName) ->
     case find_name(IfaceName, Ifaces, fun dbus_names:bin_to_iface/1) of
 	{value, #dbus_iface{signals=Signals}} ->
@@ -71,7 +68,7 @@ find_signal(#dbus_node{interfaces=Ifaces}=Node, IfaceName, SignalName) ->
 		{value, #dbus_signal{}=Signal} ->
 		    {ok, Signal};
 		none ->
-		    {error, {'org.freedesktop.DBus.UnknownSignal', [SignalName], IfaceName, Node}}
+		    {error, {'org.freedesktop.DBus.UnknownSignal', {[SignalName], IfaceName, Node}}}
 	    end;
 	none ->
 	    {error, {'org.freedesktop.DBus.UnknownInterface', [IfaceName]}}

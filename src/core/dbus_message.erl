@@ -10,6 +10,7 @@
 
 -include("dbus.hrl").
 -include("dbus_introspectable.hrl").
+-include("dbus_errors.hrl").
 
 -export([call/4,
 	 call/5,
@@ -173,7 +174,7 @@ get_field_value(Code, #dbus_header{}=Header) ->
 -spec set_body(Signature :: binary(),
 	       Types     :: [dbus_type()],
 	       Body      :: term(),
-	       Message   :: dbus_message()) -> dbus_message().
+	       Message   :: dbus_message()) -> dbus_message() | {error, dbus_err()}.
 set_body(Signature, Types, Body, #dbus_message{header=#dbus_header{fields=Fields}=Header}=Message) ->
     try	dbus_marshaller:marshal_list(Types, Body) of
 	{Bin, Pos} ->
@@ -185,11 +186,8 @@ set_body(Signature, Types, Body, #dbus_message{header=#dbus_header{fields=Fields
 		      end,
 	    Message#dbus_message{header=Header#dbus_header{fields=Fields2, size=Pos}, body=Bin}
     catch 
-	_:Err ->
-	    ?error("org.freedesktop.DBus.InvalidParameters~n"
-			"Error:~n"
-			"~p~n", [erlang:get_stacktrace()]),
-	    {error, {'org.freedesktop.DBus.InvalidParameters', Err}}
+	_:_ ->
+	    {error, {'org.freedesktop.DBus.InvalidParameters', Signature}}
     end.
 
 
