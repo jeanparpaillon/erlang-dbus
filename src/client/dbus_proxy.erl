@@ -24,7 +24,7 @@
 	 connect_signal/1,
 	 connect_signal/3,
 	 has_interface/2,
-	 node/1
+	 children/1
 	]).
 
 %% gen_server callbacks
@@ -87,6 +87,9 @@ cast(Proxy, #dbus_message{}=Msg) ->
 cast(Proxy, IfaceName, MethodName, Args) ->
     gen_server:cast(Proxy, {method, IfaceName, MethodName, Args}).
 
+-spec children(Proxy :: dbus_proxy()) -> [binary()].
+children(Proxy) ->
+    gen_server:call(Proxy, children).
 
 %%%
 %%% Connect to every signal (ie for object manager)
@@ -105,10 +108,6 @@ connect_signal(Proxy, IfaceName, SignalName) ->
 has_interface(Proxy, InterfaceName) ->
     gen_server:call(Proxy, {has_interface, InterfaceName}).
 
--spec node(Proxy :: dbus_proxy()) -> {ok, dbus_node()} | {error, term()}.
-node(Proxy) ->
-    gen_server:call(Proxy, node).
- 
 %%
 %% gen_server callbacks
 %%
@@ -167,8 +166,13 @@ handle_call({has_interface, IfaceName}, _From, #state{node=Node}=State) ->
 	{error, _Err} -> {reply, false, State}
     end;
 
-handle_call(node, _From, #state{node=Node}=State) ->
-    {reply, Node, State};
+handle_call(children, _From, #state{node=#dbus_node{name=Name, elements=Children}}=State) ->
+    Prefix = case Name of 
+		 undefined -> <<"/">>;
+		 N -> N
+	     end,
+    Paths = lists:map(fun (#dbus_node{name=ChildPath}) -> filename:join(Prefix, ChildPath) end, Children),
+    {reply, Paths, State};
 
 handle_call({call, Msg}, _From, #state{conn=Conn}=State) ->
     Ret = dbus_connection:call(Conn, Msg),

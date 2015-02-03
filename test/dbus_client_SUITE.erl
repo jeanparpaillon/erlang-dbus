@@ -13,8 +13,8 @@
 -include_lib("kernel/include/file.hrl").
 
 -define(SCRIPT, "example-service.py").
--define(SERVICE, <<"org.lizenn.dbus.SampleService">>).
--define(IFACE, <<"org.lizenn.dbus.SampleInterface">>).
+-define(SERVICE, <<"net.lizenn.dbus.SampleService">>).
+-define(IFACE, <<"net.lizenn.dbus.SampleInterface">>).
 
 %%%
 %%% CT callbacks
