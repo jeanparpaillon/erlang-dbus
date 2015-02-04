@@ -29,3 +29,5 @@ src/auth/dbus_auth_external.erl: ebin/dbus_auth.beam
 src/auth/dbus_auth_cookie_sha1.erl: ebin/dbus_auth.beam
 
 ebin/dbus_auth.beam: src/auth/dbus_auth.erl
+
+test: ct
