@@ -30,7 +30,9 @@
 		dbus_bus_reg
 	       ]},
   {mod, {dbus, []}},
-  {env, []},
+  {env, [
+	 {external_cookie, "31303030"}
+	]},
   {applications, [
 		  kernel,
 		  stdlib,
