@@ -41,7 +41,8 @@
 	 walk_node/1,
 	 interface/1,
 	 call_method/1,
-	 signal_all/1
+	 signal_all/1,
+	 signal/1
 	]).
 
 suite() ->
@@ -79,6 +80,7 @@ groups() ->
 					,interface
 					,call_method
 					,signal_all
+					,signal
 					]}
     ].
 
@@ -155,18 +157,61 @@ call_method(Config) ->
     ok.
 
 signal_all(Config) ->
-    Fun = fun(Sender, IfaceName, Signal, Path, Args, Pid) ->
-		  ?assertMatch({_, ?IFACE, <<"SampleSignal">>, <<"/root">>, [42, 24]},
-			       {Sender, IfaceName, Signal, Path, Args}),
-		  Pid ! got_signal
+    Fun = fun (_Sender, IfaceName, <<"SampleSignal">>, Path, _Args, Pid) ->
+		  ?debug("### Received signal: SampleSignal"),
+		  ?assertMatch({?IFACE, <<"/root">>},
+			       {IfaceName, Path}),
+		  Pid ! got_signal;
+	      (_Sender, IfaceName, <<"SampleSignal2">>, Path, _Args, Pid) ->
+		  ?debug("### Received signal: SampleSignal2"),
+		  ?assertMatch({?IFACE, <<"/root">>},
+			       {IfaceName, Path}),
+		  Pid ! got_signal2
 	  end,
     {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
     dbus_proxy:connect_signal(O, {Fun, self()}),
     dbus_proxy:call(O, ?IFACE, <<"HelloWorld">>, ["plop"]),
-    receive got_signal -> ok
-    after 1000 -> ?assert(false)
-    end,
+    Wait = fun([], _F) ->
+		   ok;
+	      ([ Signal | Tail ], F) ->
+		   receive Signal -> F(Tail, F)
+		   after 100 -> ?assert(false)
+		   end
+	   end,
+    Wait([ got_signal, got_signal2 ], Wait),
     ok.
+
+
+signal(Config) ->
+    Fun = fun (_Sender, IfaceName, <<"SampleSignal">>, Path, _Args, Pid) ->
+		  ?assertMatch({?IFACE, <<"/root">>},
+			       {IfaceName, Path}),
+		  Pid ! got_signal;
+	      (_Sender, ?IFACE, <<"SampleSignal2">>, _Path, _Args, Pid) ->
+		  Pid ! got_signal2
+	  end,
+    {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
+    dbus_proxy:connect_signal(O, ?IFACE, <<"SampleSignal">>, {Fun, self()}),
+    dbus_proxy:call(O, ?IFACE, <<"HelloWorld">>, ["plop"]),
+    Wait = fun ([], [], _F) ->
+		   ok;
+	       ([ Signal | Signals ], [], F) ->
+		   receive Signal -> F(lists:delete(Signal, Signals), [], F)
+		   after 100 -> ?assert(false)
+		   end;		   
+	       ([], [ BadSignal | BadSignals ], F) ->
+		   receive BadSignal -> ?assert(false)
+		   after 100 -> F([], BadSignals, F)
+		   end;		   
+	       ([ Signal | Signals ], [ BadSignal | BadSignals ], F) ->
+		   receive Signal -> F(lists:delete(Signal, Signals), [ BadSignal | BadSignals ], F);
+			   BadSignal -> ?assert(false)
+		   after 100 -> F([ Signal | Signals ], BadSignals, F)
+		   end
+	   end,
+    Wait([got_signal], [got_signal2], Wait),
+    ok.
+
 
 %%%
 %%% Priv

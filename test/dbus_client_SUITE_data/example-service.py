@@ -14,6 +14,7 @@ class SampleObject(dbus.service.Object):
     def HelloWorld(self, hello_message):
         print (str(hello_message))
         self.SampleSignal(42, 24)
+        self.SampleSignal2()
         return ["Hello World", " from example-service.py"]
 
     @dbus.service.method("net.lizenn.dbus.SampleInterface",
@@ -27,7 +28,12 @@ class SampleObject(dbus.service.Object):
 
     @dbus.service.signal("net.lizenn.dbus.SampleInterface")
     def SampleSignal(self, x, y):
-        pass
+        print "SampleSignal"
+
+    @dbus.service.signal("net.lizenn.dbus.SampleInterface")
+    def SampleSignal2(self):
+        print "SampleSignal2"
+
 
 session_bus = dbus.SessionBus()
 service = dbus.service.BusName("net.lizenn.dbus.SampleService", bus=session_bus)

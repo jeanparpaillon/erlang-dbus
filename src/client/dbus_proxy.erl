@@ -342,7 +342,7 @@ find_handlers(_Signal, Acc, []) ->
     Acc;
 find_handlers(Signal, Acc, [ Handler | Tail ]) ->
     case match_handler(Handler, Signal) of
-	true -> find_handlers(Signal, [ Handler#signal_handler.mfa | Acc ], Tail);
+	true -> find_handlers(Signal, [ Handler | Acc ], Tail);
 	false -> find_handlers(Signal, Acc, Tail)
     end.
 
@@ -366,7 +366,7 @@ match_path({_, false}, _) -> false;
 match_path({P, true}, NS) -> lists:prefix(filename:split(NS), filename:split(P)).
 
 
-do_handle_signal({Mod, Fun, Ctx}=Handler, Acc, Sender, Iface, Signal, Path, Args) ->
+do_handle_signal(#signal_handler{mfa={Mod, Fun, Ctx}}=Handler, Acc, Sender, Iface, Signal, Path, Args) ->
     case erlang:function_exported(Mod, Fun, 6) of
 	true ->
 	    try Mod:Fun(Sender, Iface, Signal, Path, Args, Ctx)
@@ -377,7 +377,7 @@ do_handle_signal({Mod, Fun, Ctx}=Handler, Acc, Sender, Iface, Signal, Path, Args
 	false -> Acc
     end;
 
-do_handle_signal({Fun, Ctx}=Handler, Acc, Sender, Iface, Signal, Path, Args) ->
+do_handle_signal(#signal_handler{mfa={Fun, Ctx}}=Handler, Acc, Sender, Iface, Signal, Path, Args) ->
     try Fun(Sender, Iface, Signal, Path, Args, Ctx)
     catch Cls:Err -> 
 	    ?error("Error dispatching signal to ~p/6: ~p:~p", [Fun, Cls, Err])
