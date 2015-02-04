@@ -24,6 +24,7 @@
 	 find_field/2,
 	 get_field/2,
 	 get_field_value/2,
+	 set_body/3,
 	 set_body/4,
 	 match/2]).
 
@@ -35,15 +36,20 @@
 -spec call(Destination :: dbus_name(), 
 	   Path        :: dbus_name(), 
 	   Interface   :: dbus_name(),
-	   Member      :: dbus_name()) -> dbus_message().
+	   Member      :: dbus_name() | dbus_method()) -> dbus_message().
+call(Destination, Path, Interface, #dbus_method{name=Name}) ->
+    call(Destination, Path, Interface, Name);
 call(Destination, Path, Interface, Member) ->
     call(Destination, Path, Interface, Member, []).
+
 
 -spec call(Destination :: dbus_name(), 
 	   Path        :: dbus_name(), 
 	   Interface   :: dbus_name(),
-	   Member      :: dbus_name(),
+	   Member      :: dbus_name() | dbus_method(),
 	   Opts        :: [dbus_option()]) -> dbus_message().
+call(Destination, Path, Interface, #dbus_method{name=Name}, Opts) ->
+    call(Destination, Path, Interface, Name, Opts);
 call(Destination, Path, Interface, Member, Opts) ->
     Fields = [
 	      {?FIELD_PATH, #dbus_variant{type=object_path, value=Path}},
@@ -169,6 +175,13 @@ get_field_value(Code, #dbus_message{header=Header}) ->
 get_field_value(Code, #dbus_header{}=Header) ->
     #dbus_variant{value=Val} = get_field(Code, Header),
     Val.
+
+
+-spec set_body(Method    :: dbus_method(),
+	       Body      :: term(),
+	       Message   :: dbus_message()) -> dbus_message() | {error, dbus_err()}.
+set_body(#dbus_method{in_sig=Signature, in_types=Types}, Body, Message) ->
+    set_body(Signature, Types, Body, Message).
 
 
 -spec set_body(Signature :: binary(),

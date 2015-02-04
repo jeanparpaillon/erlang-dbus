@@ -1,7 +1,7 @@
 %%%
 %%% @copyright 2014 Jean Parpaillon
 %%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%%% @doc To merge with dbus_client ?
+%%% @doc dbus_bus_connection is a proxy to a DBus broker
 %%%
 %%% @end
 %%% Created : 22 Jul 2014 by Jean Parpaillon <jean.parpaillon@free.fr>

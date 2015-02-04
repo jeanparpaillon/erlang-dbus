@@ -10,6 +10,10 @@
 -include("dbus.hrl").
 
 
+-define(DBUS_SERVICE, 'org.freedesktop.DBus').
+-define(DBUS_IFACE, 'org.freedesktop.DBus').
+-define(DBUS_PATH, <<"/org/freedesktop/DBus">>).
+
 -define(DBUS_DBUS_HELLO, 
 	#dbus_method{name= 'Hello', 
 		     args=[], 
@@ -142,7 +146,7 @@
 		     in_types=[string]}).
 
 -define(DBUS_DBUS, 
-	#dbus_iface{name='org.freedesktop.DBus',
+	#dbus_iface{name=?DBUS_SERVICE,
 		    methods=gb_trees:from_orddict([
 						   {'AddMatch', ?DBUS_DBUS_ADD_MATCH},
 						   {'GetAdtAuditSessionData',  ?DBUS_DBUS_GET_ADT_AUDIT_SESSION_DATA},
@@ -168,12 +172,10 @@
 						   {'NameOwnerChanged', ?DBUS_DBUS_NAME_OWNER_CHANGED}
 						  ])}).
 
--define(DBUS_SERVICE, 'org.freedesktop.DBus').
-
 -define(DBUS_NODE, #dbus_node{elements=[], 
 			      interfaces=gb_trees:from_orddict(
 					  [
-					   {'org.freedesktop.DBus', ?DBUS_DBUS},
+					   {?DBUS_IFACE, ?DBUS_DBUS},
 					   {'org.freedesktop.DBus.Introspectable', ?DBUS_INTROSPECTABLE}
 					  ])}
        ).

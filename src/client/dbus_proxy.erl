@@ -8,6 +8,7 @@
 -module(dbus_proxy).
 
 -include("dbus_client.hrl").
+-include("dbus_dbus.hrl").
 
 -behaviour(gen_server).
 
@@ -21,8 +22,9 @@
 	 call/4,
 	 cast/2,
 	 cast/4,
-	 connect_signal/1,
-	 connect_signal/3,
+	 connect_signal/2,
+	 connect_signal/4,
+	 connect_signal/6,
 	 has_interface/2,
 	 children/1
 	]).
@@ -35,12 +37,29 @@
 	 handle_info/2,
 	 terminate/2]).
 
+-callback signal_handler(Sender    :: dbus_name(),
+			 IfaceName :: dbus_name(), 
+			 Signal    :: dbus_name(), 
+			 Path      :: binary(), 
+			 Args      :: [dbus_arg()],
+			 Ctx       :: any()) -> ok.
+
+-record(signal_handler, {
+	  sender      :: dbus_name(),
+	  interface   :: dbus_name(),
+	  member      :: dbus_name(),
+	  path        :: {binary(), boolean()},
+	  mfa         :: mfa() | {fun(), any()}
+	 }).
+
 -record(state, {
 	  service,				% atom() | string()
 	  path,					% atom() | string()
 	  node            :: dbus_node(),	% #node()
 	  conn            :: dbus_connection(),
-	  waiting=[]
+	  waiting   = [],
+	  handlers  = []  :: [#signal_handler{}],
+	  uniquename      :: dbus_name()
 	 }).
 
 %%%
@@ -91,18 +110,31 @@ cast(Proxy, IfaceName, MethodName, Args) ->
 children(Proxy) ->
     gen_server:call(Proxy, children).
 
-%%%
-%%% Connect to every signal (ie for object manager)
-%%%
--spec connect_signal(Proxy :: dbus_proxy()) -> 
+%%
+%% @doc Connect to every signal (eg for object manager)
+%%
+-spec connect_signal(Proxy :: dbus_proxy(), Handler :: mfa() | {fun(), any()}) -> 
 			    ok | {error, term()}.
-connect_signal(Proxy) ->
-    gen_server:call(Proxy, connect_signal).
+connect_signal(Proxy, MFA) ->
+    gen_server:call(Proxy, {connect_signal, MFA}).
 
--spec connect_signal(Proxy :: dbus_proxy(), IfaceName :: dbus_name(), SignalName :: dbus_name()) -> 
+-spec connect_signal(Proxy :: dbus_proxy(), 
+		     IfaceName :: dbus_name(), 
+		     SignalName :: dbus_name(), 
+		     Handler :: mfa() | {fun(), any()}) -> 
 			    ok | {error, term()}.
-connect_signal(Proxy, IfaceName, SignalName) ->
-    gen_server:call(Proxy, {connect_signal, IfaceName, SignalName}).
+connect_signal(Proxy, IfaceName, SignalName, MFA) ->
+    gen_server:call(Proxy, {connect_signal, IfaceName, SignalName, MFA}).
+
+-spec connect_signal(Proxy :: dbus_proxy(), 
+		     Service :: dbus_name(), 
+		     IfaceName :: dbus_name(), 
+		     SignalName :: dbus_name(), 
+		     Path :: binary(),
+		     MFA :: mfa() | {fun(), any()}) -> 
+			    ok | {error, term()}.
+connect_signal(Proxy, Service, IfaceName, SignalName, Path, MFA) ->
+    gen_server:call(Proxy, {connect_signal, Service, IfaceName, SignalName, Path, MFA}).
 
 -spec has_interface(Proxy :: dbus_proxy(), InterfaceName :: dbus_name()) -> true | false.
 has_interface(Proxy, InterfaceName) ->
@@ -114,14 +146,15 @@ has_interface(Proxy, InterfaceName) ->
 init([Conn, Service, Path]) ->
     case do_introspect(Conn, Service, Path) of
 	{ok, Node} ->
-	    {ok, #state{conn=Conn, service=Service, path=Path, node=Node}};
+	    Unique = do_unique_name(Conn, Service),
+	    {ok, #state{conn=Conn, service=Service, path=Path, node=Node, uniquename=Unique, handlers=[]}};
 	{error, Err} ->
 	    ?error("Error introspecting object ~p: ~p~n", [Path, Err]),
 	    {stop, Err}
     end;
 
 init([Conn, Service, Path, Node]) ->
-    {ok, #state{conn=Conn, service=Service, path=Path, node=Node}}.
+    {ok, #state{conn=Conn, service=Service, path=Path, node=Node, handlers=[]}}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -136,29 +169,43 @@ handle_call({method, IfaceName, MethodName, Args}, _From, #state{node=Node}=Stat
 	    {reply, Err, State}
     end;
 
-handle_call(connect_signal, _From, 
-	    #state{conn={dbus_bus_connection, Conn}, path=Path, service=Service}=State) ->
-        Match = [{type, signal},
-		 {sender, Service},
-		 {path_namespace, Path}],
-    case dbus_proxy:call(Conn, 'org.freedesktop.DBus', 'AddMatch', [build_match(Match, <<>>)]) of
-	ok -> {reply, ok, State};
-	{error, Err} -> {stop, {error, Err}, State}
+handle_call({connect_signal, Name, '_', '_', Path, MFA}, _From, 
+	    #state{handlers=Handlers}=State) ->
+    Match = [{type, signal},
+	     {sender, Name},
+	     {path_namespace, Path}], 
+    case do_method(?DBUS_IFACE, ?DBUS_DBUS_ADD_MATCH, [build_match(Match, <<>>)], State) of
+	{reply, ok, S2} -> 
+	    Handler = #signal_handler{sender=Name, interface='_', member='_', 
+				      path={Path, true}, mfa=MFA},
+	    {reply, ok, S2#state{handlers=[ Handler | Handlers ]}};
+	{reply, {error, Err}, S2} -> {stop, {error, Err}, S2}
     end;
 
-handle_call({connect_signal, IfaceName, SignalName}, _From, 
-	    #state{conn={dbus_bus_connection, Conn}, path=Path, service=Service}=State) ->
+handle_call({connect_signal, Name, IfaceName, SignalName, Path, MFA}, _From, 
+	    #state{handlers=Handlers}=State) ->
     Match = [{type, signal},
-	     {sender, Service},
+	     {sender, Name},
 	     {interface, IfaceName},
 	     {member, SignalName},
 	     {path, Path}],
-    case dbus_proxy:call(Conn, 'org.freedesktop.DBus', 'AddMatch', [build_match(Match, <<>>)]) of
-	ok ->
-	    {reply, ok, State};
-	{error, Err} ->
-	    {stop, {error, Err}, State}
+    case do_method(?DBUS_IFACE, ?DBUS_DBUS_ADD_MATCH, [build_match(Match, <<>>)], State) of
+	{reply, ok, S2} -> 
+	    Handler = #signal_handler{sender=Name, interface=IfaceName, member=SignalName, 
+				      path={Path, false}, mfa=MFA},	    
+	    {reply, ok, S2#state{handlers=[ Handler | Handlers ]}};
+	{reply, {error, Err}, S2} -> {stop, {error, Err}, S2}
     end;
+
+handle_call({connect_signal, MFA}, _From, 
+	    #state{conn={dbus_bus_connection, Conn}, path=Path, uniquename=Name}=State) ->
+    Ret = dbus_proxy:connect_signal(Conn, Name, '_', '_', Path, MFA),
+    {reply, Ret, State};
+
+handle_call({connect_signal, IfaceName, SignalName, MFA}, _From, 
+	    #state{conn={dbus_bus_connection, Conn}, path=Path, uniquename=Name}=State) ->
+    Ret = dbus_proxy:connect_signal(Conn, Name, IfaceName, SignalName, Path, MFA),
+    {reply, Ret, State};
 
 handle_call({has_interface, IfaceName}, _From, #state{node=Node}=State) ->
     case dbus_introspect:find_interface(Node, IfaceName) of
@@ -195,6 +242,21 @@ handle_cast(Request, State) ->
     {noreply, State}.
 
 
+handle_info({dbus_signal, #dbus_message{header=Hdr, body=Args}}, #state{handlers=Handlers}=State) ->
+    Sender = dbus_message:find_field(?FIELD_SENDER, Hdr),
+    Path = dbus_message:find_field(?FIELD_PATH, Hdr),
+    Iface = dbus_message:find_field(?FIELD_INTERFACE, Hdr),
+    Signal = dbus_message:find_field(?FIELD_MEMBER, Hdr),
+    case find_handlers({Sender, Iface, Signal, Path}, [], Handlers) of
+	[] ->
+	    {noreply, State};
+	Matches ->
+	    F = fun (Handler, Acc) ->
+			do_handle_signal(Handler, Acc, Sender, Iface, Signal, Path, Args)
+		end,
+	    Handlers2 = lists:foldl(F, [], Matches),
+	    {noreply, State#state{handlers=Handlers2}}
+    end;
 handle_info({reply, #dbus_message{body=Body}, {tag, From, Options}}, State) ->
     reply(From, {ok, Body}, Options),
     {noreply, State};
@@ -222,11 +284,9 @@ reply(From, Reply, Options) ->
     end,
     ok.
 
-do_method(IfaceName, 
-	  #dbus_method{name=Name, in_sig=Signature, in_types=Types}=_M, 
-	  Args, #state{service=Service, conn=Conn, path=Path}=State) ->
-    Msg = dbus_message:call(Service, Path, IfaceName, Name),
-    case dbus_message:set_body(Signature, Types, Args, Msg) of
+do_method(IfaceName, Method, Args, #state{service=Service, conn=Conn, path=Path}=State) ->
+    Msg = dbus_message:call(Service, Path, IfaceName, Method),
+    case dbus_message:set_body(Method, Args, Msg) of
 	#dbus_message{}=M2 ->
 	    case dbus_connection:call(Conn, M2) of
 		{ok, #dbus_message{body= <<>>}} ->
@@ -246,18 +306,27 @@ do_introspect(Conn, Service, Path) ->
     case dbus_connection:call(Conn, dbus_message:introspect(Service, Path)) of
 	{ok, #dbus_message{body=Body}} ->
 	    try dbus_introspect:from_xml_string(Body) of
-		    #dbus_node{}=Node -> 
-			{ok, Node}
-	        catch
-		        _:Err ->
-		            ?error("Error parsing introspection infos: ~p~n", [Err]),
-		            {error, parse_error}
-	        end;
+		#dbus_node{}=Node -> {ok, Node}
+	    catch _:Err ->
+		    ?error("Error parsing introspection infos: ~p~n", [Err]),
+		    {error, parse_error}
+	    end;
 	{error, #dbus_message{body=Body}=Msg} ->
 	    Err = dbus_message:get_field_value(?FIELD_ERROR_NAME, Msg),
 	    {error, {Err, Body}}
     end.
 
+do_unique_name(Conn, Service) ->
+    Msg = dbus_message:call(?DBUS_SERVICE, ?DBUS_PATH, ?DBUS_IFACE, 'GetNameOwner'),
+    M2 = dbus_message:set_body(?DBUS_DBUS_GET_NAME_OWNER, [Service], Msg),
+    case dbus_connection:call(Conn, M2) of
+	{ok, #dbus_message{body=Unique}} -> Unique;
+	{error, #dbus_message{}=Err} ->
+	    case dbus_message:get_field(?FIELD_ERROR_NAME, Err) of
+		#dbus_variant{value= <<"org.freedesktop.DBus.Error.NameHasNoOwner">>} -> undefined;
+		_ -> throw({error, Err})
+	    end
+    end.
 
 build_match([], << ",", Match/binary >>) ->
     Match;
@@ -267,3 +336,50 @@ build_match([{Key, Value} | Rules], Acc) when is_atom(Value) ->
     build_match([{Key, atom_to_binary(Value, utf8)} | Rules], Acc);
 build_match([{Key, Value} | Rules], Acc) ->
     build_match(Rules, << Acc/binary, ",", Key/binary, "='", Value/binary, "'">>).
+
+
+find_handlers(_Signal, Acc, []) ->
+    Acc;
+find_handlers(Signal, Acc, [ Handler | Tail ]) ->
+    case match_handler(Handler, Signal) of
+	true -> find_handlers(Signal, [ Handler#signal_handler.mfa | Acc ], Tail);
+	false -> find_handlers(Signal, Acc, Tail)
+    end.
+
+
+match_handler({signal_handler, '_', '_', '_', '_',       _}, {_, _, _, _}) -> true;
+match_handler({signal_handler, S,   '_', '_', '_',       _}, {S, _, _, _}) -> true;
+match_handler({signal_handler, '_', I,   '_', '_',       _}, {_, I, _, _}) -> true;
+match_handler({signal_handler, '_', '_', M,   '_',       _}, {_, _, M, _}) -> true;
+match_handler({signal_handler, '_', '_', '_', PathMatch, _}, {_, _, _, P}) -> match_path(PathMatch, P);
+match_handler({signal_handler, S,   I,   '_', '_',       _}, {S, I, _, _}) -> true;
+match_handler({signal_handler, S,   '_', M,   '_',       _}, {S, _, M, _}) -> true;
+match_handler({signal_handler, S,   '_', '_', PathMatch, _}, {S, _, _, P}) -> match_path(PathMatch, P);
+match_handler({signal_handler, S,   I,   M,   '_',       _}, {S, I, M, _}) -> true;
+match_handler({signal_handler, S,   I,   '_', PathMatch, _}, {S, I, _, P}) -> match_path(PathMatch, P);
+match_handler({signal_handler, S,   I,   M,   PathMatch, _}, {S, I, M, P}) -> match_path(PathMatch, P);
+match_handler(_,                                             _)            -> false.
+
+
+match_path({P, _}, P) ->     true;
+match_path({_, false}, _) -> false;
+match_path({P, true}, NS) -> lists:prefix(filename:split(NS), filename:split(P)).
+
+
+do_handle_signal({Mod, Fun, Ctx}=Handler, Acc, Sender, Iface, Signal, Path, Args) ->
+    case erlang:function_exported(Mod, Fun, 6) of
+	true ->
+	    try Mod:Fun(Sender, Iface, Signal, Path, Args, Ctx)
+	    catch Cls:Err -> 
+		    ?error("Error dispatching signal to ~p:~p/6: ~p:~p", [Mod, Fun, Cls, Err])
+	    end,
+	    [ Handler | Acc ];
+	false -> Acc
+    end;
+
+do_handle_signal({Fun, Ctx}=Handler, Acc, Sender, Iface, Signal, Path, Args) ->
+    try Fun(Sender, Iface, Signal, Path, Args, Ctx)
+    catch Cls:Err -> 
+	    ?error("Error dispatching signal to ~p/6: ~p:~p", [Fun, Cls, Err])
+    end,
+    [ Handler | Acc ].

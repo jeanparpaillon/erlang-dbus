@@ -79,9 +79,7 @@ call(Conn, #dbus_message{}=Msg) when is_pid(Conn) ->
 		{reply, Tag, Res} ->
 		    {ok, Res};
 		{error, Tag, Res} ->
-		    {error, Res};
-		Other ->
-		    throw({error, {dbus, Other}})
+		    {error, Res}
 	    after ?TIMEOUT ->
 		    ?error("DBUS timeout~n", []),
 		    throw({error, timeout})
@@ -108,8 +106,7 @@ auth(Conn) ->
 					     {?FIELD_INTERFACE, 'org.freedesktop.DBus'}], Msg) of
 			true -> {ok, ConnId};
 			false -> throw({error, {dbus, {dbus_signal, Msg}}})
-		    end;
-		Other -> throw({error, {dbus, Other}})
+		    end
 	    end
     end.
 

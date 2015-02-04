@@ -40,7 +40,8 @@
 	 connect_service/1,
 	 walk_node/1,
 	 interface/1,
-	 call_method/1
+	 call_method/1,
+	 signal_all/1
 	]).
 
 suite() ->
@@ -72,12 +73,13 @@ all() ->
 groups() ->
     [
      {connect, [parallel, {repeat, 5}], [ connect_system, connect_session ]}
-    ,{service, [], [
-		    connect_service
-		   ,walk_node
-		   ,interface
-		   ,call_method
-		   ]}
+    ,{service, [parallel, {repeat, 1}], [
+					 connect_service
+					,walk_node
+					,interface
+					,call_method
+					,signal_all
+					]}
     ].
 
 
@@ -150,7 +152,21 @@ call_method(Config) ->
 		 dbus_proxy:call(O, ?IFACE, <<"bad_method">>, [])),
     ?assertMatch({error, {'org.freedesktop.DBus.UnknownInterface', _}},
 		 dbus_proxy:call(O, <<"net.lizenn.dbus.BadInterface">>, <<"HelloWorld">>, [])),
-    ok.    
+    ok.
+
+signal_all(Config) ->
+    Fun = fun(Sender, IfaceName, Signal, Path, Args, Pid) ->
+		  ?assertMatch({_, ?IFACE, <<"SampleSignal">>, <<"/root">>, [42, 24]},
+			       {Sender, IfaceName, Signal, Path, Args}),
+		  Pid ! got_signal
+	  end,
+    {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
+    dbus_proxy:connect_signal(O, {Fun, self()}),
+    dbus_proxy:call(O, ?IFACE, <<"HelloWorld">>, ["plop"]),
+    receive got_signal -> ok
+    after 1000 -> ?assert(false)
+    end,
+    ok.
 
 %%%
 %%% Priv
