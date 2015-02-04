@@ -1,0 +1,8 @@
+language: erlang
+otp_release:
+   - 17.1
+   - R16B03-1
+   - R16B03
+
+after_script:
+  - "make ct"
