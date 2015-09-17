@@ -15,3 +15,5 @@
 /.eunit
 /logs
 /log
+/_build
+/rebar.lock
