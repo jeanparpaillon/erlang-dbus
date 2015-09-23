@@ -41,7 +41,7 @@ challenge(_, _) ->
 %%% Priv
 %%%
 calc_challenge() ->
-    {MegaSecs, Secs, _MicroSecs} = now(),
+    {MegaSecs, Secs, _MicroSecs} = erlang:timestamp(),
     UnixTime = MegaSecs * 1000000 + Secs,
     BinTime = integer_to_binary(UnixTime),
     dbus_hex:to(<<"Hello ", BinTime/binary>>).
