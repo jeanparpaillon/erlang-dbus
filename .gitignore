@@ -16,4 +16,5 @@
 /logs
 /log
 /_build
-/rebar.lock
+/.erlang.mk
+/erlang-dbus.d

@@ -1,40 +1,16 @@
-REBAR_ROOT_DIR ?= .
-REBAR_BUILD_DIR ?= _build/default
+version = 0.1
+PROJECT = erlang-dbus
+PROJECT_VERSION = $(shell git describe --always --tags 2> /dev/null || echo $(version))
 
-REBAR = $(shell which rebar3 || echo $(REBAR_ROOT_DIR)/rebar3)
+DEPS = inert procket
+dep_procket = git https://github.com/msantos/procket.git master
+dep_inert = git https://github.com/msantos/inert.git 0.2.1
 
-PLUGIN = _build/default/plugins/econfig/ebin/econfig.app
-REGISTRY = $(HOME)/.cache/rebar3/hex/default/registry
+include erlang.mk
 
-CONFIG ?= priv/configs/default.conf
+fetch:: $(ALL_DEPS_DIRS)
+	for d in $(ALL_DEPS_DIRS); do \
+	  $(MAKE) -C $$d $@ || true; \
+	done
 
-all: compile
-
-run:
-	$(REBAR) shell --config $(CONFIG)
-
-compile: template
-	$(REBAR) compile
-
-template: rebar.config rebar.lock
-	$(REBAR) econfig template
-
-configure: rebar.config rebar.lock
-	$(REBAR) econfig configure
-
-rebar.lock: rebar.config $(REGISTRY)
-	$(REBAR) lock
-
-$(REGISTRY):
-	$(REBAR) update
-
-clean:
-	$(REBAR) clean
-	$(REBAR) econfig clean
-	-rm -f rebar.config.script
-
-distclean: clean
-	-rm -rf _build/default/plugins
-	-rm -f .econfig rebar.lock
-
-.PHONY: all template configure compile clean distclean
+.PHONY: fetch
