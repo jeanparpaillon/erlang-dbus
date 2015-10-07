@@ -16,7 +16,7 @@
 
 ERLANG_MK_FILENAME := $(realpath $(lastword $(MAKEFILE_LIST)))
 
-ERLANG_MK_VERSION = 2.0.0-pre.1
+ERLANG_MK_VERSION = 2.0.0-pre.1-2-gce1b4ca
 
 # Core configuration.
 
@@ -4140,6 +4140,7 @@ define dep_autopatch_rebar
 endef
 
 define dep_autopatch_rebar.erl
+	application:load(rebar),
 	application:set_env(rebar, log_level, debug),
 	Conf1 = case file:consult("$(call core_native_path,$(DEPS_DIR)/$1/rebar.config)") of
 		{ok, Conf0} -> Conf0;
@@ -4546,7 +4547,8 @@ $(DEPS_DIR)/$(1):
 	fi
 	$(verbose) mkdir -p $(DEPS_DIR)
 	$(dep_verbose) $(call dep_fetch_$(strip $(call dep_fetch,$(1))),$(1))
-	$(verbose) if [ -f $(DEPS_DIR)/$(1)/configure.ac -o -f $(DEPS_DIR)/$(1)/configure.in ]; then \
+	$(verbose) if [ -f $(DEPS_DIR)/$(1)/configure.ac -o -f $(DEPS_DIR)/$(1)/configure.in ] \
+			&& [ ! -f $(DEPS_DIR)/$(1)/configure ]; then \
 		echo " AUTO  " $(1); \
 		cd $(DEPS_DIR)/$(1) && autoreconf -Wall -vif -I m4; \
 	fi
