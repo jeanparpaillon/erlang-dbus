@@ -49,7 +49,7 @@
 	  interface   :: dbus_name(),
 	  member      :: dbus_name(),
 	  path        :: {binary(), boolean()},
-	  mfa         :: mfa() | {fun(), any()}
+	  mfa         :: handler()
 	 }).
 
 -record(state, {
@@ -61,6 +61,10 @@
 	  handlers  = []  :: [#signal_handler{}],
 	  uniquename      :: dbus_name()
 	 }).
+
+-type t() :: dbus_proxy().
+-type handler() :: mfa() | {fun(), any()} | pid().
+-export_type([t/0, handler/0]).
 
 %%%
 %%% @doc Try to connect "/"
@@ -113,7 +117,7 @@ children(Proxy) ->
 %%
 %% @doc Connect to every signal (eg for object manager)
 %%
--spec connect_signal(Proxy :: dbus_proxy(), Handler :: mfa() | {fun(), any()}) -> 
+-spec connect_signal(Proxy :: dbus_proxy(), Handler :: handler()) -> 
 			    ok | {error, term()}.
 connect_signal(Proxy, MFA) ->
     gen_server:call(Proxy, {connect_signal, MFA}).
@@ -121,7 +125,7 @@ connect_signal(Proxy, MFA) ->
 -spec connect_signal(Proxy :: dbus_proxy(), 
 		     IfaceName :: dbus_name(), 
 		     SignalName :: dbus_name(), 
-		     Handler :: mfa() | {fun(), any()}) -> 
+		     Handler :: handler()) -> 
 			    ok | {error, term()}.
 connect_signal(Proxy, IfaceName, SignalName, MFA) ->
     gen_server:call(Proxy, {connect_signal, IfaceName, SignalName, MFA}).
@@ -131,7 +135,7 @@ connect_signal(Proxy, IfaceName, SignalName, MFA) ->
 		     IfaceName :: dbus_name(), 
 		     SignalName :: dbus_name(), 
 		     Path :: binary(),
-		     MFA :: mfa() | {fun(), any()}) -> 
+		     MFA :: handler()) -> 
 			    ok | {error, term()}.
 connect_signal(Proxy, Service, IfaceName, SignalName, Path, MFA) ->
     gen_server:call(Proxy, {connect_signal, Service, IfaceName, SignalName, Path, MFA}).
@@ -382,4 +386,8 @@ do_handle_signal(#signal_handler{mfa={Fun, Ctx}}=Handler, Acc, Sender, Iface, Si
     catch Cls:Err -> 
 	    ?error("Error dispatching signal to ~p/6: ~p:~p", [Fun, Cls, Err])
     end,
+    [ Handler | Acc ];
+
+do_handle_signal(#signal_handler{mfa=Pid}=Handler, Acc, Sender, Iface, Signal, Path, Args) when is_pid(Pid) ->
+    Pid ! {signal, Sender, Iface, Signal, Path, Args},
     [ Handler | Acc ].
