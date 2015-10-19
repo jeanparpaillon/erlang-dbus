@@ -9,6 +9,8 @@
 
 -include("dbus.hrl").
 
+-define(DBUS_IFACE_PROPERTIES, 'org.freedesktop.DBus.Properties').
+
 -define(DBUS_PROPERTIES_GET, 
 	#dbus_method{name= 'Get', 
 		     args=[#dbus_arg{name='interface_name', type= <<"s">>},
@@ -37,7 +39,7 @@
 		     out_sig = <<"s{sv}as">>, out_types=[string, {dict, string, variant}, {array, string}]}).
 
 -define(DBUS_PROPERTIES, 
-	#dbus_iface{name='org.freedesktop.DBus.Properties',
+	#dbus_iface{name=?DBUS_IFACE_PROPERTIES,
 		    methods=gb_trees:from_orddict([
 						   {'Get', ?DBUS_PROPERTIES_GET},
 						   {'GetAll', ?DBUS_PROPERTIES_GET_ALL},
