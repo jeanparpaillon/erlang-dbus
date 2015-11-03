@@ -1,5 +1,5 @@
 version = 0.1
-PROJECT = erlang-dbus
+PROJECT = dbus
 PROJECT_VERSION = $(shell git describe --always --tags 2> /dev/null || echo $(version))
 
 DEPS = inert procket

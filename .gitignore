@@ -1,4 +1,5 @@
 *~
+/dbus.d
 /Mnesia.*
 /ebin
 /demo/ebin
