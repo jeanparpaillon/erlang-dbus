@@ -166,9 +166,9 @@
 -type dbus_property() :: #dbus_property{}.
 
 -record(dbus_arg, {
-	  name            :: dbus_name(),
-	  direction       :: in | out,
-	  type            :: binary()
+	  name       = <<>> :: dbus_name(),
+	  direction         :: in | out,
+	  type              :: binary()
 	 }).
 -type dbus_arg() :: #dbus_arg{}.
 
