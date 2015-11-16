@@ -14,53 +14,53 @@
 
 %% api
 -export([
-	 start_link/2,
-	 start_link/3,
-	 start_link/4,
-	 stop/1,
-	 call/2,
-	 call/4,
-	 cast/2,
-	 cast/4,
-	 connect_signal/2,
-	 connect_signal/4,
-	 connect_signal/6,
-	 has_interface/2,
-	 children/1
-	]).
+		 start_link/2,
+		 start_link/3,
+		 start_link/4,
+		 stop/1,
+		 call/2,
+		 call/4,
+		 cast/2,
+		 cast/4,
+		 connect_signal/2,
+		 connect_signal/4,
+		 connect_signal/6,
+		 has_interface/2,
+		 children/1
+		]).
 
 %% gen_server callbacks
 -export([init/1,
-	 code_change/3,
-	 handle_call/3,
-	 handle_cast/2,
-	 handle_info/2,
-	 terminate/2]).
+		 code_change/3,
+		 handle_call/3,
+		 handle_cast/2,
+		 handle_info/2,
+		 terminate/2]).
 
 -callback signal_handler(Sender    :: dbus_name(),
-			 IfaceName :: dbus_name(), 
-			 Signal    :: dbus_name(), 
-			 Path      :: binary(), 
-			 Args      :: [dbus_arg()],
-			 Ctx       :: any()) -> ok.
+						 IfaceName :: dbus_name(), 
+						 Signal    :: dbus_name(), 
+						 Path      :: binary(), 
+						 Args      :: [dbus_arg()],
+						 Ctx       :: any()) -> ok.
 
 -record(signal_handler, {
-	  sender      :: dbus_name(),
-	  interface   :: dbus_name(),
-	  member      :: dbus_name(),
-	  path        :: {binary(), boolean()},
-	  mfa         :: handler()
-	 }).
+		  sender      :: dbus_name(),
+		  interface   :: dbus_name(),
+		  member      :: dbus_name(),
+		  path        :: {binary(), boolean()},
+		  mfa         :: handler()
+		 }).
 
 -record(state, {
-	  service,				% atom() | string()
-	  path,					% atom() | string()
-	  node            :: dbus_node(),	% #node()
-	  conn            :: dbus_connection(),
-	  waiting   = [],
-	  handlers  = []  :: [#signal_handler{}],
-	  uniquename      :: dbus_name()
-	 }).
+		  service,				% atom() | string()
+		  path,					% atom() | string()
+		  node            :: dbus_node(),	% #node()
+		  conn            :: dbus_connection(),
+		  waiting   = [],
+		  handlers  = []  :: [#signal_handler{}],
+		  uniquename      :: dbus_name()
+		 }).
 
 -type t() :: dbus_proxy().
 -type handler() :: mfa() | {fun(), any()} | pid().
