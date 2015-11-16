@@ -347,7 +347,8 @@ unmarshal_message(<<>>) ->
 
 unmarshal_message(Data) when is_binary(Data) ->
     case unmarshal_header(Data) of
-        more -> more;
+        more -> 
+			more;
         {ok, #dbus_header{type=MsgType}=Header, BodyBin, Rest} ->
             case dbus_message:find_field(?FIELD_SIGNATURE, Header) of
                 undefined ->
@@ -392,8 +393,9 @@ unmarshal_body(_Type, SigBin, BodyBin) ->
 
 
 unmarshal_header(Bin) ->
-    case unmarshal_list(?HEADER_SIGNATURE, Bin) of
-        more -> more;
+	case unmarshal_list(?HEADER_SIGNATURE, Bin) of
+        more -> 
+			more;
         {ok, [$l, _, _, ?DBUS_VERSION_MAJOR, Size, _, _], Rest, _} when byte_size(Rest) < Size  ->
             more;
         {ok, [$l, Type, Flags, ?DBUS_VERSION_MAJOR, Size, Serial, Fields], Rest, Pos} ->
@@ -540,8 +542,10 @@ unmarshal(variant, Data, Pos) ->
                 more -> more;
                 {ok, Type} ->
                     case unmarshal(Type, Data1, Pos1) of
-                        more -> more;
-                        {ok, Value, Data2, Pos2} -> {ok, #dbus_variant{type=Type, value=Value}, Data2, Pos2}
+                        more -> 
+							more;
+                        {ok, Value, Data2, Pos2} -> 
+							{ok, #dbus_variant{type=Type, value=Value}, Data2, Pos2}
                     end
             end
     end.
@@ -647,7 +651,8 @@ unmarshal_struct([SubType | S], Data, Acc, Pos) ->
 unmarshal_array(SubType, Length, Data, Pos) ->
     Pad = pad(padding(SubType), Pos),
     if 
-        byte_size(Data) < Pad / 8 -> more;
+        byte_size(Data) < Pad / 8 -> 
+			more;
         true ->
             << 0:Pad, Rest/binary >> = Data,
             NewPos = Pos + Pad div 8,
@@ -659,7 +664,8 @@ unmarshal_array(_SubType, 0, Data, Acc, Pos) ->
     {ok, lists:reverse(Acc), Data, Pos};
 unmarshal_array(SubType, Length, Data, Acc, Pos) when is_integer(Length), Length > 0 ->
     case unmarshal(SubType, Data, Pos) of
-        more -> more;
+        more -> 
+			more;
         {ok, Value, Data1, Pos1} ->
             Size = Pos1 - Pos,
             unmarshal_array(SubType, Length - Size, Data1, [Value | Acc], Pos1)
@@ -685,7 +691,8 @@ unmarshal_list([Type|T], Data, Acc, Pos) ->
 
 unmarshal_string(LenType, Data, Pos) ->
     case unmarshal(LenType, Data, Pos) of
-        more -> more;
+        more -> 
+			more;
         {ok, Length, Data1, _} when byte_size(Data1) < Length ->
             more;
         {ok, Length, Data1, Pos1} ->
