@@ -94,7 +94,10 @@
           body}).
 -type dbus_message() :: #dbus_message{}.
 
+-type endianness() :: integer().         % $l (little) or $B (big)
+
 -record(dbus_header, {
+		  endian   = $l                  :: endianness(),
           type                           :: integer(),
           flags    = 0                   :: integer(),
           version  = ?DBUS_VERSION_MAJOR :: integer(),
