@@ -13,65 +13,65 @@
 -include("dbus_errors.hrl").
 
 -export([
-	 find_interface/2,
-	 find_method/3,
-	 find_signal/3,
-	 to_xml/1,
-	 from_xml/1,
-	 from_xml_string/1
-	]).
+         find_interface/2,
+         find_method/3,
+         find_signal/3,
+         to_xml/1,
+         from_xml/1,
+         from_xml_string/1
+        ]).
 
 -record(state, {node         :: dbus_node(),
-		child        :: dbus_node(),
-		iface        :: dbus_iface(),
-		method       :: dbus_method(),
-		signal       :: dbus_signal(),
-		property     :: dbus_property(),
-		s     = root :: atom()}).
+                child        :: dbus_node(),
+                iface        :: dbus_iface(),
+                method       :: dbus_method(),
+                signal       :: dbus_signal(),
+                property     :: dbus_property(),
+                s     = root :: atom()}).
 
 %%%
 %%% API
 %%%
 -spec find_interface(dbus_node(), Iface :: dbus_name()) -> 
-			 {ok, dbus_iface()} | {error, dbus_err()}.
+                            {ok, dbus_iface()} | {error, dbus_err()}.
 find_interface(#dbus_node{interfaces=Ifaces}, IfaceName) ->
     case find_name(IfaceName, Ifaces, fun dbus_names:bin_to_iface/1) of
-	{value, #dbus_iface{}=I} ->
-	    {ok, I};
-	none ->
-	    {error, {'org.freedesktop.DBus.UnknownInterface', [IfaceName]}}
+        {value, #dbus_iface{}=I} ->
+            {ok, I};
+        none ->
+            {error, {'org.freedesktop.DBus.UnknownInterface', [IfaceName]}}
     end.
 
 
 -spec find_method(dbus_node(), Iface :: dbus_name(), Method :: dbus_name()) -> 
-			 {ok, dbus_method()} | {error, dbus_err()}.
+                         {ok, dbus_method()} | {error, dbus_err()}.
 find_method(#dbus_node{interfaces=Ifaces}=Node, IfaceName, MethodName) ->
     case find_name(IfaceName, Ifaces, fun dbus_names:bin_to_iface/1) of
-	{value, #dbus_iface{methods=Methods}=_I} ->
-	    case find_name(MethodName, Methods, fun dbus_names:bin_to_method/1) of
-		{value, #dbus_method{}=Method} ->
-		    {ok, Method};
-		none ->
-		    {error, {'org.freedesktop.DBus.UnknownMethod', {[MethodName], IfaceName, Node}}}
-	    end;
-	none ->
-	    {error, {'org.freedesktop.DBus.UnknownInterface', [IfaceName]}}
+        {value, #dbus_iface{methods=Methods}=_I} ->
+            case find_name(MethodName, Methods, fun dbus_names:bin_to_method/1) of
+                {value, #dbus_method{}=Method} ->
+                    {ok, Method};
+                none ->
+                    {error, {'org.freedesktop.DBus.UnknownMethod', {[MethodName], IfaceName, Node}}}
+            end;
+        none ->
+            {error, {'org.freedesktop.DBus.UnknownInterface', [IfaceName]}}
     end.
 
 
 -spec find_signal(dbus_node(), Iface :: dbus_name(), Signal :: dbus_name()) -> 
-			 {ok, dbus_signal()} | {error, dbus_err()}.
+                         {ok, dbus_signal()} | {error, dbus_err()}.
 find_signal(#dbus_node{interfaces=Ifaces}=Node, IfaceName, SignalName) ->
     case find_name(IfaceName, Ifaces, fun dbus_names:bin_to_iface/1) of
-	{value, #dbus_iface{signals=Signals}} ->
-	    case find_name(SignalName, Signals, fun dbus_names:bin_to_signal/1) of
-		{value, #dbus_signal{}=Signal} ->
-		    {ok, Signal};
-		none ->
-		    {error, {'org.freedesktop.DBus.UnknownSignal', {[SignalName], IfaceName, Node}}}
-	    end;
-	none ->
-	    {error, {'org.freedesktop.DBus.UnknownInterface', [IfaceName]}}
+        {value, #dbus_iface{signals=Signals}} ->
+            case find_name(SignalName, Signals, fun dbus_names:bin_to_signal/1) of
+                {value, #dbus_signal{}=Signal} ->
+                    {ok, Signal};
+                none ->
+                    {error, {'org.freedesktop.DBus.UnknownSignal', {[SignalName], IfaceName, Node}}}
+            end;
+        none ->
+            {error, {'org.freedesktop.DBus.UnknownInterface', [IfaceName]}}
     end.
 
 
@@ -81,26 +81,26 @@ to_xml(#dbus_node{}=Node) ->
 
 from_xml_string(Data) when is_binary(Data) ->
     Opts = [{event_fun, fun xml_event/3}, 
-	    {event_state, #state{}},
-	    skip_external_dtd],
+            {event_state, #state{}},
+            skip_external_dtd],
     case xmerl_sax_parser:stream(Data, Opts) of
-	{ok, #dbus_node{}=Node, _Rest} ->
-	    Node;
-	{_Tag, _Location, Reason, _EndTags, _State} ->
-	    ?error("Error parsing introspection: ~p~n", [Reason]),
-	    throw({error, parse_error})
+        {ok, #dbus_node{}=Node, _Rest} ->
+            Node;
+        {_Tag, _Location, Reason, _EndTags, _State} ->
+            ?error("Error parsing introspection: ~p~n", [Reason]),
+            throw({error, parse_error})
     end.
 
 from_xml(Filename) ->
     Opts = [{event_fun, fun xml_event/3}, 
-	    {event_state, #state{}},
-	    skip_external_dtd],
+            {event_state, #state{}},
+            skip_external_dtd],
     case xmerl_sax_parser:file(Filename, Opts) of
-	{ok, #dbus_node{}=Node, _Rest} ->
-	    Node;
-	{_Tag, _Location, Reason, _EndTags, _State} ->
-	    ?error("Error parsing introspection: ~p~n", [Reason]),
-	    throw({error, parse_error})
+        {ok, #dbus_node{}=Node, _Rest} ->
+            Node;
+        {_Tag, _Location, Reason, _EndTags, _State} ->
+            ?error("Error parsing introspection: ~p~n", [Reason]),
+            throw({error, parse_error})
     end.
 
 %%%
@@ -108,17 +108,17 @@ from_xml(Filename) ->
 %%%
 find_name(Name, Tree, _) when is_atom(Name) ->
     case gb_trees:lookup(Name, Tree) of
-	{value, Iface} -> {value, Iface};
-	none -> gb_trees:lookup(atom_to_binary(Name, utf8), Tree)
+        {value, Iface} -> {value, Iface};
+        none -> gb_trees:lookup(atom_to_binary(Name, utf8), Tree)
     end;
 find_name(Name, Tree, ToKnownFun) when is_binary(Name) ->
     case gb_trees:lookup(Name, Tree) of
-	{value, Iface} -> {value, Iface};
-	none -> 
-	    case ToKnownFun(Name) of
-		Bin when is_binary(Bin) -> none;
-		Atom when is_atom(Atom) -> gb_trees:lookup(Atom, Tree)
-	    end
+        {value, Iface} -> {value, Iface};
+        none -> 
+            case ToKnownFun(Name) of
+                Bin when is_binary(Bin) -> none;
+                Atom when is_atom(Atom) -> gb_trees:lookup(Atom, Tree)
+            end
     end.
 
 
@@ -135,69 +135,69 @@ to_xmerl(List) when is_list(List) ->
 to_xmerl(#dbus_node{}=Elem) ->
     {node,
      case to_binary(Elem#dbus_node.name) of
-	 undefined ->
-	     [];
-	 Name ->
-	     [{name, Name}]
+         undefined ->
+             [];
+         Name ->
+             [{name, Name}]
      end,
      to_xmerl(Elem#dbus_node.elements) ++
-     to_xmerl(Elem#dbus_node.interfaces)
+         to_xmerl(Elem#dbus_node.interfaces)
     };
 
 to_xmerl(#dbus_iface{}=Elem) ->
     {interface,
      [{name, to_binary(Elem#dbus_iface.name)}],
      to_xmerl(Elem#dbus_iface.methods) ++
-     to_xmerl(Elem#dbus_iface.signals) ++
-     to_xmerl(Elem#dbus_iface.properties)};
+         to_xmerl(Elem#dbus_iface.signals) ++
+         to_xmerl(Elem#dbus_iface.properties)};
 
 to_xmerl(#dbus_method{}=Elem) ->
     Result =
-	case Elem#dbus_method.result of
-	    none ->
-		[];
-	    undefined ->
-		[];
-	    Arg ->
-		[to_xmerl(Arg)]
-	end,
+        case Elem#dbus_method.result of
+            none ->
+                [];
+            undefined ->
+                [];
+            Arg ->
+                [to_xmerl(Arg)]
+        end,
     {method,
      case to_binary(Elem#dbus_method.name) of
-	    undefined ->
-	        [];
-	    Name ->
-	        [{name, Name}]
+         undefined ->
+             [];
+         Name ->
+             [{name, Name}]
      end,
      to_xmerl(Elem#dbus_method.args) ++ Result};
 
 to_xmerl(#dbus_signal{}=Elem) ->
     Result =
-	case Elem#dbus_signal.result of
-	    none ->
-		[];
-	    undefined ->
-		[];
-	    Arg ->
-		[to_xmerl(Arg)]
-	end,
+        case Elem#dbus_signal.result of
+            none ->
+                [];
+            undefined ->
+                [];
+            Arg ->
+                [to_xmerl(Arg)]
+        end,
     {signal,
      case list_to_binary(Elem#dbus_signal.name) of
-	    undefined ->
-	        [];
-	    Name ->
-	        [{name, Name}]
+         undefined ->
+             [];
+         Name ->
+             [{name, Name}]
      end,
      to_xmerl(Elem#dbus_signal.args) ++ Result};
 
 to_xmerl(#dbus_arg{}=Elem) ->
     {arg, 
      case to_binary(Elem#dbus_arg.name) of
-	    undefined ->
-	        [];
-	    Name ->
-	        [{name, Name}]
+         undefined ->
+             [];
+         Name ->
+             [{name, Name}]
      end ++
-     [{direction, Elem#dbus_arg.direction}, {type, Elem#dbus_arg.type}],  []}.
+         [{direction, Elem#dbus_arg.direction}, {type, Elem#dbus_arg.type}],  []}.
 
 xml_event(startDocument, _L, S) ->
     S;
@@ -219,9 +219,9 @@ xml_event({startElement, _, "node", _, Attrs}, _L, #state{s=node}=S) ->
 
 xml_event({startElement, _, "interface", _, Attrs}, _L, #state{s=node}=S) ->
     S#state{s=iface, iface=build_iface(Attrs, 
-				       #dbus_iface{methods=gb_trees:empty(), 
-						   signals=gb_trees:empty(), 
-						   properties=gb_trees:empty()})};
+                                       #dbus_iface{methods=gb_trees:empty(), 
+                                                   signals=gb_trees:empty(), 
+                                                   properties=gb_trees:empty()})};
 
 xml_event({startElement, _, "method", _, Attrs}, _L, #state{s=iface}=S) ->
     S#state{s=method, method=build_method(Attrs, #dbus_method{})};
@@ -242,19 +242,19 @@ xml_event({startElement, _, "arg", _, Attrs}, _L, #state{s=signal, signal=#dbus_
 
 xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=method, method=#dbus_method{annotations=Annotations}=M}=S) ->
     S#state{s=method_annotation, 
-	    method=M#dbus_method{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
+            method=M#dbus_method{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
 xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=iface, iface=#dbus_iface{annotations=Annotations}=I}=S) ->
     S#state{s=iface_annotation, 
-	    iface=I#dbus_iface{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
+            iface=I#dbus_iface{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
 xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=property, property=#dbus_property{annotations=Annotations}=P}=S) ->
     S#state{s=property_annotation, 
-	    property=P#dbus_property{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
+            property=P#dbus_property{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
 xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=signal, signal=#dbus_signal{annotations=Annotations}=Sig}=S) ->
     S#state{s=signal_annotation, 
-	    signal=Sig#dbus_signal{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
+            signal=Sig#dbus_signal{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
 xml_event({endElement, _, "node", _}, _L, #state{s=node}=S) ->
     S#state{s=root};
@@ -386,20 +386,20 @@ build_method([{_, _, Attr, _}, _], _) ->
 
 end_method(#dbus_method{args=Args}=Method) ->
     InArgs = lists:filter(fun (#dbus_arg{direction=in}) ->
-				  true;
-			      (#dbus_arg{direction=undefined}) ->
-				  true;
-			      (_) ->
-				  false
-			  end, Args),
+                                  true;
+                              (#dbus_arg{direction=undefined}) ->
+                                  true;
+                              (_) ->
+                                  false
+                          end, Args),
     Signature = lists:foldl(fun (#dbus_arg{type=Type}, Acc) ->
-				    << Type/binary, Acc/binary >>
-			    end, <<>>, InArgs),
+                                    << Type/binary, Acc/binary >>
+                            end, <<>>, InArgs),
     case dbus_marshaller:unmarshal_signature(Signature) of
-	{ok, Types} ->
-	    Method#dbus_method{args=lists:reverse(Args), in_sig=Signature, in_types=Types};
-	more ->
-	    throw({error, incomplete_signature})
+        {ok, Types} ->
+            Method#dbus_method{args=lists:reverse(Args), in_sig=Signature, in_types=Types};
+        more ->
+            throw({error, incomplete_signature})
     end.
 
 
@@ -428,20 +428,20 @@ build_signal([{_, _, Attr, _} | _], _) ->
 
 end_signal(#dbus_signal{args=Args}=Signal) ->
     OutArgs = lists:filter(fun (#dbus_arg{direction=out}) ->
-				   true;
-			       (#dbus_arg{direction=undefined}) ->
-				   true;
-			       (_) ->
-				   false
-			   end, Args),
+                                   true;
+                               (#dbus_arg{direction=undefined}) ->
+                                   true;
+                               (_) ->
+                                   false
+                           end, Args),
     Signature = lists:foldl(fun (#dbus_arg{type=Type}, Acc) ->
-				    << Type/binary, Acc/binary >>
-			    end, <<>>, OutArgs),
+                                    << Type/binary, Acc/binary >>
+                            end, <<>>, OutArgs),
     case dbus_marshaller:unmarshal_signature(Signature) of
-	{ok, Types} ->
-	    Signal#dbus_signal{args=lists:reverse(Args), out_sig=Signature, out_types=Types};
-	more ->
-	    throw({error, incomplete_signature})
+        {ok, Types} ->
+            Signal#dbus_signal{args=lists:reverse(Args), out_sig=Signature, out_types=Types};
+        more ->
+            throw({error, incomplete_signature})
     end.
 
 
