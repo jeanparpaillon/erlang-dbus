@@ -1,5 +1,24 @@
 language: erlang
 otp_release:
-   - 17.1
-   - R16B03-1
-   - R16B03
+   - 18.0
+   - 18.1
+
+sudo: false
+
+addons:
+  apt:
+    packages:
+      - build-essential
+
+install:
+  - "make"
+
+script:
+  - "make eunit"
+
+notifications:
+  email:
+    recipients:
+      - erocci-dev@ow2.org
+    on_success: change
+    on_failure: always
