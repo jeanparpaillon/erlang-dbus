@@ -10,6 +10,10 @@
 
 -include("dbus.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 %% api
 -export([
          marshal_message/1,
@@ -727,3 +731,20 @@ pad(Type, Pos) when is_atom(Type);
                     array =:= element(1, Type);
                     struct =:= element(1, Type)->
     pad(padding(Type), Pos).
+
+%%%
+%%% eunit
+%%%
+-ifdef(TEST).
+unmarshal_byte_test_() ->
+	[
+	 ?_assertEqual({ok, 4, <<>>, 1}, unmarshal(byte, <<4>>, 0))
+	,?_assertEqual({ok, 4, <<"xyz">>, 1}, unmarshal(byte, <<4, "xyz">>, 0))
+	].
+
+unmarshal_boolean_test_() ->
+	[
+	 ?_assertEqual({ok, true, <<>>, 1}, unmarshal(byte, <<4>>, 0))
+	,?_assertEqual({ok, 4, <<"xyz">>, 1}, unmarshal(byte, <<4, "xyz">>, 0))
+	].
+-endif.
