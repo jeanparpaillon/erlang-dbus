@@ -11,9 +11,9 @@
 
 -behaviour(dbus_auth).
 
-% dbus_auth callbacks
+                                                % dbus_auth callbacks
 -export([init/0,
-	challenge/2]).
+         challenge/2]).
 
 init() ->
     ?debug("Init DBUS_AUTH_COOKIE_SHA1 authentication~n", []),
@@ -23,15 +23,15 @@ init() ->
 
 challenge(Chall, waiting_challenge) ->
     case binary:split(Chall, <<$\ >>, [global]) of
-	[Context, CookieId, ServerChallenge] ->
-	    case read_cookie(Context, CookieId) of
-		error ->
-		    {error, no_cookie};
-		{ok, Cookie} ->
-		    Challenge = calc_challenge(),
-		    {ok, calc_response(ServerChallenge, Challenge, Cookie)}
-	    end;
-	_ ->
+        [Context, CookieId, ServerChallenge] ->
+            case read_cookie(Context, CookieId) of
+                error ->
+                    {error, no_cookie};
+                {ok, Cookie} ->
+                    Challenge = calc_challenge(),
+                    {ok, calc_response(ServerChallenge, Challenge, Cookie)}
+            end;
+        _ ->
             {error, invalid_challenge}
     end;
 challenge(_, _) ->
@@ -57,8 +57,8 @@ calc_response(ServerChallenge, Challenge, Cookie) ->
 read_cookie(Context, CookieId) ->
     ?debug("Reading DBUS cookie: (~p, ~p)~n", [Context, CookieId]),
     Name = filename:join([os:getenv("HOME"),
-			 ".dbus-keyrings",
-			 Context]),
+                          ".dbus-keyrings",
+                          Context]),
     {ok, File} = file:open(Name, [read, binary]),
     Result = read_cookie2(File, CookieId),
     ok = file:close(File),
@@ -66,20 +66,20 @@ read_cookie(Context, CookieId) ->
 
 read_cookie2(Device, CookieId) ->
     case io:get_line(Device, "") of
-	eof ->
-	    error;
-	Line ->
-	    case binary:split(strip_eol(Line), <<$\ >>, [global]) of
-		[CookieId1, _Time, Cookie] ->
-		    if
-			CookieId == CookieId1 ->
-			    {ok, Cookie};
-			true ->
-			    read_cookie2(Device, CookieId)
-		    end;
-		_ ->
-		    error
-	    end
+        eof ->
+            error;
+        Line ->
+            case binary:split(strip_eol(Line), <<$\ >>, [global]) of
+                [CookieId1, _Time, Cookie] ->
+                    if
+                        CookieId == CookieId1 ->
+                            {ok, Cookie};
+                        true ->
+                            read_cookie2(Device, CookieId)
+                    end;
+                _ ->
+                    error
+            end
     end.
 
 strip_eol(Bin) ->
