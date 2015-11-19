@@ -29,9 +29,9 @@ stop(Conn) ->
 
 support_unix_fd(Conn) ->
     try gen_server:call(Conn, support_unix_fd) of
-	true -> true;
-	false -> false
+        true -> true;
+        false -> false
     catch
-	_:_ ->
-	    false
+        _:_ ->
+            false
     end.
