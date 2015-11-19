@@ -381,13 +381,10 @@ unmarshal_body(_, SigBin, BodyBin, Endian) ->
             case unmarshal_tuple(Sig, BodyBin, Endian) of
                 more -> more;
                 {ok, {}, <<>>, _Pos} -> 
-                    ?debug("empty body", []),
                     {ok, undefined};
                 {ok, {Body}, <<>>, _Pos} -> 
-                    ?debug("single body: ~p", [Body]),
                     {ok, Body};
                 {ok, Body, <<>>, _Pos} -> 
-                    ?debug("complex body", [Body]),
                     {ok, Body};
                 {ok, _Body, _, _} -> {error, body_parse_error}
             end;
