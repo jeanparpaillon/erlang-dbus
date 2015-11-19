@@ -17,7 +17,7 @@ install:
   - "make"
 
 script:
-  - "make tests"
+  - "make eunit"
 
 notifications:
   email:
