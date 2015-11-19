@@ -52,6 +52,9 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
+handle_call(support_unix_fd, _From, State) ->
+    {reply, false, State};
+
 handle_call({set_raw, true}, _From, #state{sock=Sock}=State) ->
     ok = inet:setopts(Sock, [{packet, raw}]),
     {reply, ok, State};
