@@ -102,20 +102,23 @@ init_per_group(connect_unix_external, Config) ->
 init_per_group(_Name, Config) ->
 	Config0 = start_dbus(Config, ?dbus_session_unix_external),
 	ServicePath = get_data_path(?SCRIPT, Config0),
-    Pid = os:cmd(ServicePath ++ " & echo $!"),
+    Pid = spawn(fun () -> os:cmd(ServicePath) end),
     [ {service_pid, Pid}, {connect, true} | Config0 ].
 
 
-end_per_group(connect, Config) ->
-    Config;
+end_per_group(connect, _Config) ->
+	{return_group_result, ok};
 end_per_group(connect_unix_anonymous, Config) ->
-    stop_dbus(Config);
+    stop_dbus(Config),
+	{return_group_result, ok};
 end_per_group(connect_unix_external, Config) ->
-    stop_dbus(Config);
+    stop_dbus(Config),
+	{return_group_result, ok};
 end_per_group(_Name, Config) ->
-    os:cmd("kill " ++ ?config(service_pid, Config)),
+	exit(?config(service_pid, Config), kill),
 	stop_dbus(Config),
-    ok.
+	{return_group_result, ok}.
+
 
 init_per_testcase(_, Config) ->
     case ?config(connect, Config) of
@@ -136,6 +139,7 @@ end_per_testcase(_, Config) ->
 %%% Test cases
 %%%
 connect_session(_Config) ->
+	?assertEqual(["/tmp/dbus-test"], filelib:wildcard("/tmp/dbus-test")),
     {ok, Bus} = dbus_bus_connection:connect(session),
     ?assertMatch(ok, dbus_bus_connection:close(Bus)).
 
@@ -144,6 +148,7 @@ connect_system(_Config) ->
     ?assertMatch(ok, dbus_bus_connection:close(Bus)).
 
 connect_service(Config) ->
+	?assertEqual(["/tmp/dbus-test"], filelib:wildcard("/tmp/dbus-test")),
     {ok, Service} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE),
     ?assert(is_pid(Service)),
     ok.
@@ -240,11 +245,11 @@ get_data_path(Path, Config) ->
 
 start_dbus(Config, {DBusConfig, DBusEnv}) ->
 	File = get_data_path(DBusConfig, Config),
-	Pid = os:cmd("dbus-daemon --config-file=" ++ File ++ "& echo $!"),
+	Pid = spawn(fun() -> os:cmd("dbus-daemon --config-file=" ++ File) end),
 	os:putenv("DBUS_SESSION_BUS_ADDRESS", DBusEnv),
 	[ {dbus, Pid}, {dbus_env, DBusEnv} | Config ].
 
 stop_dbus(Config) ->
-	os:cmd("kill " ++ proplists:get_value(dbus, Config)),
+	exit(?config(dbus, Config), kill),
 	proplists:delete(dbus_env, 
 					 proplists:delete(dbus, Config)).
