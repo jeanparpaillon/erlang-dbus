@@ -45,16 +45,21 @@
          signal/1
         ]).
 
+-define(dbus_session_unix_anonymous, 
+		{"session_unix_anonymous.conf", "unix:path=/tmp/dbus-test"}).
+-define(dbus_session_unix_external,
+		{"session_unix_external.conf", "unix:path=/tmp/dbus-test"}).
+
 suite() ->
     [{timetrap,{seconds,30}}].
 
 init_per_suite(Config) ->
-    application:ensure_all_started(dbus),
+	application:ensure_all_started(dbus),
     Config.
 
 end_per_suite(Config) ->
     application:stop(dbus),
-    Config.
+	Config.
 
 %%--------------------------------------------------------------------
 %% @spec all() -> GroupsAndTestCases | {skip,Reason}
@@ -66,7 +71,8 @@ end_per_suite(Config) ->
 %%--------------------------------------------------------------------
 all() ->
     [
-     {group, connect}
+     {group, connect_unix_anonymous}
+	,{group, connect_unix_external}
     ,{group, service}
     ].
 
@@ -74,6 +80,8 @@ all() ->
 groups() ->
     [
      {connect, [parallel, {repeat, 5}], [ connect_system, connect_session ]}
+	,{connect_unix_anonymous, [], [ connect_session ]}
+	,{connect_unix_external, [], [ connect_session ]}
     ,{service, [parallel, {repeat, 1}], [
                                          connect_service
                                         ,walk_node
@@ -87,16 +95,26 @@ groups() ->
 
 init_per_group(connect, Config) ->
     Config;
+init_per_group(connect_unix_anonymous, Config) ->
+	start_dbus(Config, ?dbus_session_unix_anonymous);
+init_per_group(connect_unix_external, Config) ->
+	start_dbus(Config, ?dbus_session_unix_external);
 init_per_group(_Name, Config) ->
-    ServicePath = get_data_path(?SCRIPT, Config),
+	Config0 = start_dbus(Config, ?dbus_session_unix_external),
+	ServicePath = get_data_path(?SCRIPT, Config0),
     Pid = os:cmd(ServicePath ++ " & echo $!"),
-    [ {service_pid, Pid}, {connect, true} | Config ].
+    [ {service_pid, Pid}, {connect, true} | Config0 ].
 
 
 end_per_group(connect, Config) ->
     Config;
+end_per_group(connect_unix_anonymous, Config) ->
+    stop_dbus(Config);
+end_per_group(connect_unix_external, Config) ->
+    stop_dbus(Config);
 end_per_group(_Name, Config) ->
     os:cmd("kill " ++ ?config(service_pid, Config)),
+	stop_dbus(Config),
     ok.
 
 init_per_testcase(_, Config) ->
@@ -219,3 +237,14 @@ signal(Config) ->
 get_data_path(Path, Config) ->
     DataDir = ?config(data_dir, Config),
     filename:join([DataDir, Path]).
+
+start_dbus(Config, {DBusConfig, DBusEnv}) ->
+	File = get_data_path(DBusConfig, Config),
+	Pid = os:cmd("dbus-daemon --config-file=" ++ File ++ "& echo $!"),
+	os:putenv("DBUS_SESSION_BUS_ADDRESS", DBusEnv),
+	[ {dbus, Pid}, {dbus_env, DBusEnv} | Config ].
+
+stop_dbus(Config) ->
+	os:cmd("kill " ++ proplists:get_value(dbus, Config)),
+	proplists:delete(dbus_env, 
+					 proplists:delete(dbus, Config)).
