@@ -1,3 +1,10 @@
+0.2  Jean Parpaillon  <jean.parpaillon@free.fr>
+
+		* Add ANONYMOUS authentication
+		* Fix TCP transport
+
+		-- 2015-11-19
+
 0.1  Jean Parpaillon  <jean.parpaillon@free.fr>
 
 		* Consume services from Python and Java code
