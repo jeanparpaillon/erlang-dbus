@@ -52,8 +52,8 @@
 
 -define(TIMEOUT, 10000).
 
--define(auth_mechs_tcp, [dbus_auth_cookie_sha1]).
--define(auth_mechs_unix, [dbus_auth_external, dbus_auth_cookie_sha1]).
+-define(auth_mechs_tcp, [dbus_auth_cookie_sha1, dbus_auth_anonymous]).
+-define(auth_mechs_unix, [dbus_auth_external, dbus_auth_cookie_sha1, dbus_auth_anonymous]).
 
 -spec start_link(bus_id()) -> {ok, dbus_connection()} | {error, term()}.
 start_link(BusId) ->

@@ -1,9 +1,10 @@
 %%
 %% @copyright 2006-2007 Mikael Magnusson
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
+%% @author Jean Parpaillon <jean.parpaillon@free>
 %% @doc transport gen_server
 %%
-%% Glue module to dbus_tcp_conn and dbus_unix_conn transport modules
+%% Glue module to dbus_transprot_tcp and dbus_transport_unix transport modules
 %%
 %% Messages implemented by transport modules
 %%
