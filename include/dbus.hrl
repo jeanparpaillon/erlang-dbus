@@ -90,14 +90,14 @@
 -type bus_id() :: #bus_id{}.
 
 -record(dbus_message, {
-          header,
-          body}).
+          header     :: dbus_header(),
+          body       :: term() | tuple() | undefined}).
 -type dbus_message() :: #dbus_message{}.
 
 -type endianness() :: integer().         % $l (little) or $B (big)
 
 -record(dbus_header, {
-		  endian   = $l                  :: endianness(),
+          endian   = $l                  :: endianness(),
           type                           :: integer(),
           flags    = 0                   :: integer(),
           version  = ?DBUS_VERSION_MAJOR :: integer(),

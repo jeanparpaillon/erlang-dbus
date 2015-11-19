@@ -354,12 +354,12 @@ unmarshal_message(<<>>) ->
 unmarshal_message(Data) when is_binary(Data) ->
     case unmarshal_header(Data) of
         more -> 
-			more;
+            more;
         {ok, #dbus_header{endian=Endian, type=MsgType}=Header, BodyBin, Rest} ->
             case dbus_message:find_field(?FIELD_SIGNATURE, Header) of
                 undefined ->
                     case BodyBin of
-                        <<>> -> {ok, #dbus_message{header=Header, body= <<>>}, Rest};
+                        <<>> -> {ok, #dbus_message{header=Header, body=undefined}, Rest};
                         _ -> throw({error, body_parse_error})
                     end;
                 Signature ->
@@ -372,26 +372,23 @@ unmarshal_message(Data) when is_binary(Data) ->
     end.
 
 
-unmarshal_body(?TYPE_SIGNAL, SigBin, BodyBin, Endian) ->
+unmarshal_body(?TYPE_INVALID, _, _, _) ->
+    {ok, undefined};
+
+unmarshal_body(_, SigBin, BodyBin, Endian) ->
     case unmarshal_signature(SigBin) of
         {ok, Sig} ->
-            case unmarshal_list(Sig, BodyBin, Endian) of
+            case unmarshal_tuple(Sig, BodyBin, Endian) of
                 more -> more;
-                {ok, Body, <<>>, _Pos} -> {ok, Body};
-                {ok, _Body, _, _} -> {error, body_parse_error}
-            end;
-        more -> more
-    end;
-
-unmarshal_body(?TYPE_INVALID, _, _, _) ->
-    {ok, <<>>};
-
-unmarshal_body(_Type, SigBin, BodyBin, Endian) ->
-    case unmarshal_single_type(SigBin) of
-        {ok, Type} ->
-            case unmarshal(Type, BodyBin, 0, Endian) of
-                more -> more;
-                {ok, Body, <<>>, _} -> {ok, Body};
+                {ok, {}, <<>>, _Pos} -> 
+                    ?debug("empty body", []),
+                    {ok, undefined};
+                {ok, {Body}, <<>>, _Pos} -> 
+                    ?debug("single body: ~p", [Body]),
+                    {ok, Body};
+                {ok, Body, <<>>, _Pos} -> 
+                    ?debug("complex body", [Body]),
+                    {ok, Body};
                 {ok, _Body, _, _} -> {error, body_parse_error}
             end;
         more -> more
@@ -399,35 +396,35 @@ unmarshal_body(_Type, SigBin, BodyBin, Endian) ->
 
 
 unmarshal_header(Bin) when byte_size(Bin) < 16 ->
-	more;
+    more;
 unmarshal_header(<<Endian/integer, Type/integer, Flags/integer, ?DBUS_VERSION_MAJOR, Rest/bits>>) ->
-	unmarshal_header2(Rest, #dbus_header{endian=Endian, type=Type, flags=Flags});
+    unmarshal_header2(Rest, #dbus_header{endian=Endian, type=Type, flags=Flags});
 unmarshal_header(_Data) ->
-	?debug("Bad message header: ~p~n", [_Data]),
-	throw({error, bad_header}).
+    ?debug("Bad message header: ~p~n", [_Data]),
+    throw({error, bad_header}).
 
 unmarshal_header2(<<Length:4/unsigned-little-integer-unit:8, Serial:4/unsigned-little-integer-unit:8, Bin/bits>>,
-				  #dbus_header{endian=$l}=Header) ->
-	unmarshal_header_fields(Bin, Header#dbus_header{size=Length, serial=Serial});
+                  #dbus_header{endian=$l}=Header) ->
+    unmarshal_header_fields(Bin, Header#dbus_header{size=Length, serial=Serial});
 unmarshal_header2(<<Length:4/unsigned-big-integer-unit:8, Serial:4/unsigned-big-integer-unit:8, Bin/bits>>,
-				  #dbus_header{endian=$B}=Header) ->
-	unmarshal_header_fields(Bin, Header#dbus_header{size=Length, serial=Serial}).
+                  #dbus_header{endian=$B}=Header) ->
+    unmarshal_header_fields(Bin, Header#dbus_header{size=Length, serial=Serial}).
 
 unmarshal_header_fields(Bin, #dbus_header{endian=Endian, size=Size}=Header) ->
-	case unmarshal({array, {struct, [byte, variant]}}, Bin, 12, Endian) of
+    case unmarshal({array, {struct, [byte, variant]}}, Bin, 12, Endian) of
         more -> 
-			more;
+            more;
         {ok, [_, _, _, ?DBUS_VERSION_MAJOR, Size, _, _], Rest, _} when byte_size(Rest) < Size  ->
             more;
         {ok, Fields, Rest, Pos} ->
-			Pad = pad(8, Pos),
-			if
-				byte_size(Rest) < Pad/8 + Size ->
-					more;
-				true ->
-					<<0:Pad, Body:Size/binary, Rest2/binary>> = Rest,
-					{ok, Header#dbus_header{fields=unmarshal_known_fields(Fields)}, Body, Rest2}
-			end
+            Pad = pad(8, Pos),
+            if
+                byte_size(Rest) < Pad/8 + Size ->
+                    more;
+                true ->
+                    <<0:Pad, Body:Size/binary, Rest2/binary>> = Rest,
+                    {ok, Header#dbus_header{fields=unmarshal_known_fields(Fields)}, Body, Rest2}
+            end
     end.
 
 unmarshal_known_fields(Fields) ->
@@ -503,14 +500,14 @@ unmarshal(double, Data, _, _) when byte_size(Data) < 8 ->
 
 unmarshal(double, Data, Pos, Endian) ->
     Pad = pad(8, Pos),
-	{Value, Data1} = case Endian of
-						 $l ->
-							 << 0:Pad, V:64/little-float, D/binary >> = Data,
-							 {V, D};
-						 $B ->
-							 << 0:Pad, V:64/big-float, D/binary >> = Data,
-							 {V, D}
-					 end,
+    {Value, Data1} = case Endian of
+                         $l ->
+                             << 0:Pad, V:64/little-float, D/binary >> = Data,
+                             {V, D};
+                         $B ->
+                             << 0:Pad, V:64/big-float, D/binary >> = Data,
+                             {V, D}
+                     end,
     Pos1 = Pos + Pad div 8 + 8,
     {ok, Value, Data1, Pos1};
 
@@ -570,9 +567,9 @@ unmarshal(variant, Data, Pos, Endian) ->
                 {ok, Type} ->
                     case unmarshal(Type, Data1, Pos1, Endian) of
                         more -> 
-							more;
+                            more;
                         {ok, Value, Data2, Pos2} -> 
-							{ok, #dbus_variant{type=Type, value=Value}, Data2, Pos2}
+                            {ok, #dbus_variant{type=Type, value=Value}, Data2, Pos2}
                     end
             end
     end.
@@ -584,14 +581,14 @@ unmarshal_uint(Len, Data, _, _) when is_integer(Len) andalso byte_size(Data) < L
 unmarshal_uint(Len, Data, Pos, Endian) when is_integer(Len) ->
     Bitlen = Len * 8,
     Pad = pad(Len, Pos),
-	{Value, Data1} = case Endian of
-						 $l ->
-							 << 0:Pad, V:Bitlen/little-unsigned, D/binary >> = Data,
-							 {V, D};
-						 $B ->
-							 << 0:Pad, V:Bitlen/big-unsigned, D/binary >> = Data,
-							 {V, D}
-					 end,							 
+    {Value, Data1} = case Endian of
+                         $l ->
+                             << 0:Pad, V:Bitlen/little-unsigned, D/binary >> = Data,
+                             {V, D};
+                         $B ->
+                             << 0:Pad, V:Bitlen/big-unsigned, D/binary >> = Data,
+                             {V, D}
+                     end,                            
     Pos1 = Pos + Pad div 8 + Len,
     {ok, Value, Data1, Pos1}.
 
@@ -602,14 +599,14 @@ unmarshal_int(Len, Data, _, _) when is_integer(Len) andalso byte_size(Data) < Le
 unmarshal_int(Len, Data, Pos, Endian) ->
     Bitlen = Len * 8,
     Pad = pad(Len, Pos),
-	{Value, Data1} = case Endian of
-						 $l ->
-							 << 0:Pad, V:Bitlen/little-signed, D/binary >> = Data,
-							 {V, D};
-						 $B ->
-							 << 0:Pad, V:Bitlen/big-signed, D/binary >> = Data,
-							 {V, D}
-					 end,
+    {Value, Data1} = case Endian of
+                         $l ->
+                             << 0:Pad, V:Bitlen/little-signed, D/binary >> = Data,
+                             {V, D};
+                         $B ->
+                             << 0:Pad, V:Bitlen/big-signed, D/binary >> = Data,
+                             {V, D}
+                     end,
     Pos1 = Pos + Pad div 8 + Len,
     {ok, Value, Data1, Pos1}.
 
@@ -693,7 +690,7 @@ unmarshal_array(SubType, Length, Data, Pos, Endian) ->
     Pad = pad(padding(SubType), Pos),
     if 
         byte_size(Data) < Pad / 8 -> 
-			more;
+            more;
         true ->
             << 0:Pad, Rest/binary >> = Data,
             NewPos = Pos + Pad div 8,
@@ -706,34 +703,34 @@ unmarshal_array(_SubType, 0, Data, Acc, Pos, _) ->
 unmarshal_array(SubType, Length, Data, Acc, Pos, Endian) when is_integer(Length), Length > 0 ->
     case unmarshal(SubType, Data, Pos, Endian) of
         more -> 
-			more;
+            more;
         {ok, Value, Data1, Pos1} ->
             Size = Pos1 - Pos,
             unmarshal_array(SubType, Length - Size, Data1, [Value | Acc], Pos1, Endian)
     end.
 
 
-unmarshal_list(Type, Data, Endian) when is_atom(Type), is_binary(Data) ->
+unmarshal_tuple(Type, Data, Endian) when is_atom(Type), is_binary(Data) ->
     unmarshal(Type, Data, 0, Endian);
-unmarshal_list(Types, Data, Endian) when is_list(Types), is_binary(Data) ->
-    unmarshal_list(Types, Data, [], 0, Endian).
+unmarshal_tuple(Types, Data, Endian) when is_list(Types), is_binary(Data) ->
+    unmarshal_tuple(Types, Data, [], 0, Endian).
 
 
-unmarshal_list([], Rest, Acc, Pos, _) ->
-    {ok, lists:reverse(Acc), Rest, Pos};
-unmarshal_list([Type|T], Data, Acc, Pos, Endian) ->
+unmarshal_tuple([], Rest, Acc, Pos, _) ->
+    {ok, list_to_tuple(lists:reverse(Acc)), Rest, Pos};
+unmarshal_tuple([Type|T], Data, Acc, Pos, Endian) ->
     case unmarshal(Type, Data, Pos, Endian) of
         more ->
             more;
         {ok, Value, Rest, Pos1} ->
-            unmarshal_list(T, Rest, [Value | Acc], Pos1, Endian)
+            unmarshal_tuple(T, Rest, [Value | Acc], Pos1, Endian)
     end.
 
 
 unmarshal_string(LenType, Data, Pos, Endian) ->
     case unmarshal(LenType, Data, Pos, Endian) of
         more -> 
-			more;
+            more;
         {ok, Length, Data1, _} when byte_size(Data1) < Length ->
             more;
         {ok, Length, Data1, Pos1} ->
@@ -774,25 +771,25 @@ pad(Type, Pos) when is_atom(Type);
 %%%
 -ifdef(TEST).
 unmarshal_byte_test_() ->
-	[
-	 ?_assertEqual({ok, 4, <<>>, 1}, unmarshal(byte, <<4>>, 0, $l))
-	,?_assertEqual({ok, 4, <<"xyz">>, 1}, unmarshal(byte, <<4, "xyz">>, 0, $l))
-	].
+    [
+     ?_assertEqual({ok, 4, <<>>, 1}, unmarshal(byte, <<4>>, 0, $l))
+    ,?_assertEqual({ok, 4, <<"xyz">>, 1}, unmarshal(byte, <<4, "xyz">>, 0, $l))
+    ].
 
 unmarshal_boolean_test_() ->
-	[
-	 ?_assertEqual({ok, true, <<>>, 4}, unmarshal(boolean, <<1,0,0,0>>, 0, $l))
-	,?_assertEqual({ok, true, <<"xyz">>, 4}, unmarshal(boolean, <<1,0,0,0,"xyz">>, 0, $l))
-	,?_assertEqual({ok, false, <<>>, 4}, unmarshal(boolean, <<0,0,0,0>>, 0, $l))
-	,?_assertEqual(more, unmarshal(boolean, <<"x">>, 0, $l))
-	,?_assertThrow({error, {parse_error, boolean, 2}}, unmarshal(boolean, <<2,0,0,0>>, 0, $l))
-	].
+    [
+     ?_assertEqual({ok, true, <<>>, 4}, unmarshal(boolean, <<1,0,0,0>>, 0, $l))
+    ,?_assertEqual({ok, true, <<"xyz">>, 4}, unmarshal(boolean, <<1,0,0,0,"xyz">>, 0, $l))
+    ,?_assertEqual({ok, false, <<>>, 4}, unmarshal(boolean, <<0,0,0,0>>, 0, $l))
+    ,?_assertEqual(more, unmarshal(boolean, <<"x">>, 0, $l))
+    ,?_assertThrow({error, {parse_error, boolean, 2}}, unmarshal(boolean, <<2,0,0,0>>, 0, $l))
+    ].
 
 unmarshal_endian_test_() ->
-	[
-	 ?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<1,0,0,0>>, 0, $l))
-	,?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<0,0,0,1>>, 0, $B))
-	,?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<1,0,0,0, "xyz">>, 0, $l))
-	,?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<0,0,0,1, "xyz">>, 0, $B))
-	].
+    [
+     ?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<1,0,0,0>>, 0, $l))
+    ,?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<0,0,0,1>>, 0, $B))
+    ,?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<1,0,0,0, "xyz">>, 0, $l))
+    ,?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<0,0,0,1, "xyz">>, 0, $B))
+    ].
 -endif.

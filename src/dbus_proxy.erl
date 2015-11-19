@@ -167,10 +167,10 @@ code_change(_OldVsn, State, _Extra) ->
 handle_call({method, IfaceName, MethodName, Args}, _From, #state{node=Node}=State) ->
     ?debug("Calling ~p:~p.~p(~p)~n", [State#state.path, IfaceName, MethodName, Args]),
     case dbus_introspect:find_method(Node, IfaceName, MethodName) of
-		{ok, Method} ->
-			do_method(IfaceName, Method, Args, State);
-		{error, _}=Err ->
-			{reply, Err, State}
+        {ok, Method} ->
+            do_method(IfaceName, Method, Args, State);
+        {error, _}=Err ->
+            {reply, Err, State}
     end;
 
 handle_call({connect_signal, Name, '_', '_', Path, MFA}, _From, 
@@ -293,7 +293,7 @@ do_method(IfaceName, Method, Args, #state{service=Service, conn=Conn, path=Path}
     case dbus_message:set_body(Method, Args, Msg) of
         #dbus_message{}=M2 ->
             case dbus_connection:call(Conn, M2) of
-                {ok, #dbus_message{body= <<>>}} ->
+                {ok, #dbus_message{body=undefined}} ->
                     {reply, ok, State};
                 {ok, #dbus_message{body=Res}} ->
                     {reply, {ok, Res}, State};
@@ -308,13 +308,16 @@ do_method(IfaceName, Method, Args, #state{service=Service, conn=Conn, path=Path}
 do_introspect(Conn, Service, Path) ->
     ?debug("Introspecting: ~p:~p~n", [Service, Path]),
     case dbus_connection:call(Conn, dbus_message:introspect(Service, Path)) of
-        {ok, #dbus_message{body=Body}} ->
-            try dbus_introspect:from_xml_string(Body) of
+        {ok, #dbus_message{body=Xml}} when is_binary(Xml) ->
+            try dbus_introspect:from_xml_string(Xml) of
                 #dbus_node{}=Node -> {ok, Node}
             catch _:Err ->
                     ?error("Error parsing introspection infos: ~p~n", [Err]),
                     {error, parse_error}
             end;
+        {ok, Msg} ->
+            ?error("Error introspecting object: ~p", [Msg]),
+            {error, invalid_introspect};
         {error, #dbus_message{body=Body}=Msg} ->
             Err = dbus_message:get_field_value(?FIELD_ERROR_NAME, Msg),
             {error, {Err, Body}}
@@ -324,7 +327,11 @@ do_unique_name(Conn, Service) ->
     Msg = dbus_message:call(?DBUS_SERVICE, ?DBUS_PATH, ?DBUS_IFACE, 'GetNameOwner'),
     M2 = dbus_message:set_body(?DBUS_DBUS_GET_NAME_OWNER, [Service], Msg),
     case dbus_connection:call(Conn, M2) of
-        {ok, #dbus_message{body=Unique}} -> Unique;
+        {ok, #dbus_message{body=Unique}} when is_binary(Unique) ->
+            Unique;
+        {ok, Msg} ->
+            ?error("Error getting name owner: ~p", [Msg]),
+            {error, invalid_nameowner};
         {error, #dbus_message{}=Err} ->
             case dbus_message:get_field(?FIELD_ERROR_NAME, Err) of
                 #dbus_variant{value= <<"org.freedesktop.DBus.Error.NameHasNoOwner">>} -> undefined;
