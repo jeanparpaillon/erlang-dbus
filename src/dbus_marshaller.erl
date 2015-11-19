@@ -421,8 +421,13 @@ unmarshal_header_fields(Bin, #dbus_header{endian=Endian, size=Size}=Header) ->
             more;
         {ok, Fields, Rest, Pos} ->
 			Pad = pad(8, Pos),
-			<<0:Pad, Body:Size/binary, Rest2/binary>> = Rest,
-			{ok, Header#dbus_header{fields=unmarshal_known_fields(Fields)}, Body, Rest2}
+			if
+				byte_size(Rest) < Pad/8 + Size ->
+					more;
+				true ->
+					<<0:Pad, Body:Size/binary, Rest2/binary>> = Rest,
+					{ok, Header#dbus_header{fields=unmarshal_known_fields(Fields)}, Body, Rest2}
+			end
     end.
 
 unmarshal_known_fields(Fields) ->
