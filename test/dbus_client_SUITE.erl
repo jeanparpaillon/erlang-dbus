@@ -45,6 +45,8 @@
          signal/1
         ]).
 
+-define(dbus_session_tcp_anonymous, 
+		{"session_tcp_anonymous.conf", "tcp:host=localhost,bind=*,port=55555,family=ipv4"}).
 -define(dbus_session_unix_anonymous, 
 		{"session_unix_anonymous.conf", "unix:path=/tmp/dbus-test"}).
 -define(dbus_session_unix_external,
@@ -71,7 +73,8 @@ end_per_suite(Config) ->
 %%--------------------------------------------------------------------
 all() ->
     [
-     {group, connect_unix_anonymous}
+     {group, connect_tcp_anonymous}
+	,{group, connect_unix_anonymous}
 	,{group, connect_unix_external}
     ,{group, service}
     ].
@@ -80,6 +83,7 @@ all() ->
 groups() ->
     [
      {connect, [parallel, {repeat, 5}], [ connect_system, connect_session ]}
+	,{connect_tcp_anonymous, [], [ connect_session ]}
 	,{connect_unix_anonymous, [], [ connect_session ]}
 	,{connect_unix_external, [], [ connect_session ]}
     ,{service, [parallel, {repeat, 1}], [
@@ -95,6 +99,8 @@ groups() ->
 
 init_per_group(connect, Config) ->
     Config;
+init_per_group(connect_tcp_anonymous, Config) ->
+	start_dbus(Config, ?dbus_session_tcp_anonymous);
 init_per_group(connect_unix_anonymous, Config) ->
 	start_dbus(Config, ?dbus_session_unix_anonymous);
 init_per_group(connect_unix_external, Config) ->
@@ -108,10 +114,10 @@ init_per_group(_Name, Config) ->
 
 end_per_group(connect, _Config) ->
 	{return_group_result, ok};
-end_per_group(connect_unix_anonymous, Config) ->
-    stop_dbus(Config),
-	{return_group_result, ok};
-end_per_group(connect_unix_external, Config) ->
+end_per_group(Group, Config) 
+  when Group =:= connect_tcp_anonymous;
+	   Group =:= connect_unix_anonymous;
+	   Group =:= connect_unix_external ->
     stop_dbus(Config),
 	{return_group_result, ok};
 end_per_group(_Name, Config) ->
