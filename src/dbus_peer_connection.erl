@@ -10,6 +10,11 @@
 -include("dbus.hrl").
 -include("dbus_client.hrl").
 
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 %% api
 -export([start_link/1,
          start_link/2,
@@ -51,9 +56,6 @@
                }).
 
 -define(TIMEOUT, 10000).
-
--define(auth_mechs_tcp, [dbus_auth_cookie_sha1, dbus_auth_anonymous]).
--define(auth_mechs_unix, [dbus_auth_external, dbus_auth_cookie_sha1, dbus_auth_anonymous]).
 
 -spec start_link(bus_id()) -> {ok, dbus_connection()} | {error, term()}.
 start_link(BusId) ->
@@ -127,11 +129,11 @@ init([#bus_id{scheme=tcp,options=BusOptions}, Options, Owner]) ->
                    end,
 
     {ok, Sock} = dbus_transport_tcp:connect(Host, Port, Options),
-    init_connection(Sock, ?auth_mechs_tcp, Owner);
+    init_connection(Sock, Owner);
 
 init([#bus_id{scheme=unix, options=BusOptions}, Options, Owner]) ->
     {ok, Sock} = dbus_transport_unix:connect(BusOptions, Options),
-    init_connection(Sock, ?auth_mechs_unix, Owner).
+    init_connection(Sock, Owner).
 
 
 code_change(_OldVsn, _StateName, State, _Extra) ->
@@ -193,13 +195,12 @@ handle_info({received, <<"OK ", Line/binary>>}, StateName,
             {next_state, authenticated, State#state{waiting=[], guid=Guid, unix_fd=false}}
     end;
 
-handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName,
-            #state{mechs=[]}=State) 
+handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName, #state{mechs=[]}=State) 
   when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
+    ?error("No more authentication mechanisms", []),
     {stop, disconnect, State};
 
-handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName,
-            #state{sock=Sock, mechs=[Mech|Rest]}=State) 
+handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName, #state{sock=Sock, mechs=[Mech|Rest]}=State) 
   when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
     ?debug("Trying next authentication mechanism~n", []),
     case Mech:init() of 
@@ -252,6 +253,9 @@ handle_info({received, _Bin}, waiting_for_data, #state{sock=Sock}=State) ->
 handle_info({received, <<"REJECTED ", Line/binary>>}, waiting_for_reject,
             #state{sock=Sock}=State) ->
     case parse_mechs(strip_eol(Line)) of
+        {ok, []} ->
+            ?error("No supported authentication mechanism", []),
+            {stop, disconnect, State};
         {ok, [Mech|Rest]} ->
             case Mech:init() of 
                 {ok, Resp} ->
@@ -264,7 +268,7 @@ handle_info({received, <<"REJECTED ", Line/binary>>}, waiting_for_reject,
                     {next_state, waiting_for_data, State#state{mechs=Rest, mech_state={Mech, MechState}}}
             end;
         {error, Err} ->
-            ?error("Invalid mechanismes: ~p~n", [Err]),
+            ?error("Invalid mechanisms: ~p~n", [Err]),
             {stop, disconnect, State}
     end;
 
@@ -331,22 +335,19 @@ terminate(_Reason, _StateName, #state{sock=Sock}) ->
 %%%
 connected(auth, {_Pid, Tag}=From, #state{sock=Sock, mechs=[]}=State) ->
     dbus_transport:send(Sock, <<"AUTH\r\n">>),
-    {reply, {ok, {self(), Tag}}, waiting_for_reject, 
-     State#state{waiting=[From]}};
+    {reply, {ok, {self(), Tag}}, waiting_for_reject, State#state{waiting=[From]}};
 connected(auth, {_Pid, Tag}=From, #state{sock=Sock, mechs=[Mech|Rest]}=State) ->
     case Mech:init() of
         {ok, Resp} ->
             ?debug("DBUS auth: sending initial data~n", []),
             dbus_transport:send(Sock, Resp),
             {reply, {ok, {self(), Tag}}, waiting_for_ok, 
-             State#state{waiting=[From],
-                         mechs=Rest}};
+             State#state{waiting=[From], mechs=Rest}};
         {continue, Resp, MechState} ->
             ?debug("DBUS auth: sending initial data (continue)~n", []),
             dbus_transport:send(Sock, Resp),
             {reply, {ok, {self(), Tag}}, waiting_for_data,
-             State#state{waiting=[From],
-                         mechs=Rest, mech_state={Mech, MechState}}}
+             State#state{waiting=[From], mechs=Rest, mech_state={Mech, MechState}}}
     end;
 
 connected({call, _}, _From, State) ->
@@ -383,8 +384,7 @@ waiting_for_reject({call, _}, _From, State) ->
     {reply, {error, authentication_needed}, waiting_for_reject, State};
 
 waiting_for_reject(auth, {_Pid, Tag}=From, #state{waiting=Waiting}=State) ->
-    {reply, {ok, {self(), Tag}}, waiting_for_reject, 
-     State#state{waiting=[From|Waiting]}};
+    {reply, {ok, {self(), Tag}}, waiting_for_reject, State#state{waiting=[From|Waiting]}};
 waiting_for_reject(_Evt, _From, State) ->
     ?debug("Unexpected event: ~p~n", [_Evt]),
     {reply, {error, invalid_event}, waiting_for_reject, State}.
@@ -465,11 +465,11 @@ handle_message(Type, Msg, State) ->
     ?debug("Ignore ~p ~p~n", [Type, Msg]),
     {error, unexpected_message, State}.
 
-init_connection(Sock, Mechs, Owner) ->
+init_connection(Sock, Owner) ->
     ok = dbus_transport:send(Sock, <<0>>),
     {ok, connected, #state{sock=Sock,
                            pending=ets:new(pending, [private]), 
-                           mechs=Mechs,
+                           mechs=[],
                            owner=Owner}}.
 
 strip_eol(Bin) ->
@@ -484,25 +484,50 @@ strip_eol(<<$\n, Rest/binary>>, Acc) ->
 strip_eol(<<C:8, Rest/binary>>, Acc) ->
     strip_eol(Rest, <<C, Acc/binary>>).
 
-parse_mechs(<<>>) ->
-    {error, invalid_mechanisms};
-parse_mechs(<<$\s, Rest/bits>>) ->
-    parse_mechs(Rest);
 parse_mechs(Bin) ->
-    parse_mech(Bin, <<>>, []).
+    parse_mechs(Bin, []).
 
-parse_mech(<<>>, SoFar, Mechs) ->
-    case valid_mech(SoFar) of
-        {ok, Mod} -> lists:reverse([Mod | Mechs]);
-        error -> {error, {unsupported_mechanism, SoFar}}
-    end;
-parse_mech(<<$\s, Rest/bits>>, SoFar, Mechs) ->
-    parse_mech(Rest, SoFar, Mechs);
-parse_mech(<<C:8, Rest/bits>>, SoFar, Mechs) ->
-    parse_mech(Rest, << SoFar/binary, C>>, Mechs).
+parse_mechs(<<>>, Acc) ->
+    {ok, lists:reverse(Acc)};
+parse_mechs(<<$\s, Rest/bits>>, Acc) ->
+    parse_mechs(Rest, Acc);
+parse_mechs(Bin, Acc) ->
+    case parse_mech(Bin) of
+        {ok, Mech, Rest} ->
+            parse_mechs(Rest, [Mech | Acc]);
+        {unsupported, Rest} ->
+            parse_mechs(Rest, Acc)
+    end.
 
-valid_mech(<<"DBUS_COOKIE_SHA1">>) -> {ok, bus_auth_cookie_sha1};
-valid_mech(<<"EXTERNAL">>) -> {ok, dbus_auth_external};
-valid_mech(<<"KERBEROS_V4">>) -> error;
-valid_mech(<<"SKEY">>) -> error;
-valid_mech(_) -> error.
+
+parse_mech(Bin) ->
+    parse_mech(Bin, <<>>).
+
+parse_mech(<<>>, Acc) ->
+    valid_mech(Acc, <<>>);
+parse_mech(<<$\s, Rest/bits>>, Acc) ->
+    valid_mech(Acc, Rest);
+parse_mech(<<C:8, Rest/bits>>, SoFar) ->
+    parse_mech(Rest, << SoFar/binary, C>>).
+
+valid_mech(<<"DBUS_COOKIE_SHA1">>, Rest) -> {ok, dbus_auth_cookie_sha1, Rest};
+valid_mech(<<"EXTERNAL">>, Rest) -> {ok, dbus_auth_external, Rest};
+valid_mech(<<"ANONYMOUS">>, Rest) -> {ok, dbus_auth_anonymous, Rest};
+valid_mech(<<"KERBEROS_V4">>, Rest) -> {unsupported, Rest};
+valid_mech(<<"SKEY">>, Rest) -> {unsupported, Rest};
+valid_mech(_, Rest) -> {unsupported, Rest}.
+
+%%%
+%%% eunit
+%%%
+-ifdef(TEST).
+parse_mechs_test_() ->
+    [
+     ?_assertEqual({ok, []}, parse_mechs(<<>>))
+    ,?_assertEqual({ok, []}, parse_mechs(<<"INVALID UNKNOWN AND CIE">>))
+    ,?_assertEqual({ok, [dbus_auth_external, dbus_auth_cookie_sha1, dbus_auth_anonymous]},
+                   parse_mechs(<<"EXTERNAL DBUS_COOKIE_SHA1 ANONYMOUS">>))
+    ,?_assertEqual({ok, [dbus_auth_external, dbus_auth_cookie_sha1, dbus_auth_anonymous]},
+                   parse_mechs(<<"EXTERNAL DBUS_COOKIE_SHA1 INVALID     ANONYMOUS">>))
+    ].
+-endif.
