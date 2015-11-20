@@ -200,19 +200,9 @@ handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName, #state{mechs=[
     ?error("No more authentication mechanisms", []),
     {stop, disconnect, State};
 
-handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName, #state{sock=Sock, mechs=[Mech|Rest]}=State) 
+handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName, State) 
   when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
-    ?debug("Trying next authentication mechanism~n", []),
-    case Mech:init() of 
-        {ok, Resp} ->
-            ?debug("DBUS auth: waiting for OK~n", []),
-            dbus_transport:send(Sock, Resp),
-            {next_state, waiting_for_ok, State#state{mechs=Rest}};
-        {continue, Resp, MechState} ->
-            ?debug("DBUS auth: waiting for Data~n", []),
-            dbus_transport:send(Sock, Resp),
-            {next_state, waiting_for_data, State#state{mechs=Rest, mech_state={Mech, MechState}}}
-    end;
+    try_next_auth(State);
 
 %% STATE: waiting_for_ok
 handle_info({received, <<"DATA ", _Line/binary>>}, waiting_for_ok, 
@@ -471,6 +461,30 @@ init_connection(Sock, Owner) ->
                            pending=ets:new(pending, [private]), 
                            mechs=[],
                            owner=Owner}}.
+
+
+try_next_auth(#state{mechs=[]}=State) ->
+    ?error("No more authentication mechanisms", []),
+    {stop, disconnect, State};
+try_next_auth(#state{sock=Sock, mechs=[Mech | Rest]}=State) ->
+    ?debug("Trying next authentication mechanism~n", []),
+    try Mech:init() of
+        {ok, Resp} ->
+            ?debug("DBUS auth: waiting for OK~n", []),
+            dbus_transport:send(Sock, Resp),
+            {next_state, waiting_for_ok, State#state{mechs=Rest}};
+        {continue, Resp, MechState} ->
+            ?debug("DBUS auth: waiting for Data~n", []),
+            dbus_transport:send(Sock, Resp),
+            {next_state, waiting_for_data, State#state{mechs=Rest, mech_state={Mech, MechState}}};
+        {error, Err} ->
+            ?error("Error initializing authentication mechanism (~p): ~p", [Mech, Err]),
+            try_next_auth(State#state{mechs=Rest})
+	catch _Cls:Err ->
+			?error("Exception initializing authentication mechanism (~p): ~p", [Mech, Err]),
+            try_next_auth(State#state{mechs=Rest})
+    end.
+
 
 strip_eol(Bin) ->
     strip_eol(Bin, <<>>).

@@ -9,7 +9,8 @@
 
 -callback init() ->
     {ok, Resp :: binary()} |
-    {continue, Resp :: binary(), State :: term()}.
+    {continue, Resp :: binary(), State :: term()} |
+    {error, term()}.
 
 -callback challenge(Chall :: binary(), State :: term()) ->
     {ok, Resp :: binary()} |

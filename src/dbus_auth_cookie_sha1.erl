@@ -17,9 +17,14 @@
 
 init() ->
     ?debug("Init DBUS_AUTH_COOKIE_SHA1 authentication~n", []),
-    User = os:getenv("USER"),
-    HexUser = dbus_hex:to(list_to_binary(User)),
-    {continue, <<"AUTH DBUS_COOKIE_SHA1 ", HexUser/binary, "\r\n">>, waiting_challenge}.
+    case os:getenv("USER") of
+        false ->
+            ?error("DBUS_AUTH_COOKIE_SHA1 can not be used without USER env", []),
+            {error, invalid_user};
+        User ->
+            HexUser = dbus_hex:to(list_to_binary(User)),
+            {continue, <<"AUTH DBUS_COOKIE_SHA1 ", HexUser/binary, "\r\n">>, waiting_challenge}
+    end.
 
 challenge(Chall, waiting_challenge) ->
     case binary:split(Chall, <<$\ >>, [global]) of
@@ -59,15 +64,19 @@ read_cookie(Context, CookieId) ->
     Name = filename:join([os:getenv("HOME"),
                           ".dbus-keyrings",
                           Context]),
-    {ok, File} = file:open(Name, [read, binary]),
-    Result = read_cookie2(File, CookieId),
-    ok = file:close(File),
-    Result.
+    case file:open(Name, [read, binary]) of
+        {ok, File} ->
+            Result = read_cookie2(File, CookieId),
+            ok = file:close(File),
+            Result;
+        {error, Err}->
+            {error, Err}
+    end.
 
 read_cookie2(Device, CookieId) ->
     case io:get_line(Device, "") of
         eof ->
-            error;
+            {error, no_cookie};
         Line ->
             case binary:split(strip_eol(Line), <<$\ >>, [global]) of
                 [CookieId1, _Time, Cookie] ->
@@ -78,7 +87,7 @@ read_cookie2(Device, CookieId) ->
                             read_cookie2(Device, CookieId)
                     end;
                 _ ->
-                    error
+                    {error, no_cookie}
             end
     end.
 
