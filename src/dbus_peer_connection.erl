@@ -496,7 +496,7 @@ strip_eol(<<$\r, Rest/binary>>, Acc) ->
 strip_eol(<<$\n, Rest/binary>>, Acc) ->
     strip_eol(Rest, Acc);
 strip_eol(<<C:8, Rest/binary>>, Acc) ->
-    strip_eol(Rest, <<C, Acc/binary>>).
+    strip_eol(Rest, <<Acc/binary, C>>).
 
 parse_mechs(Bin) ->
     parse_mechs(Bin, []).
@@ -535,6 +535,12 @@ valid_mech(_, Rest) -> {unsupported, Rest}.
 %%% eunit
 %%%
 -ifdef(TEST).
+parse_strip_eol_test_() ->
+	[
+	 ?_assertEqual(<<"  ">>, strip_eol(<<"  \r\n">>))
+	,?_assertEqual(<<" HOP  ">>, strip_eol(<<" HOP  \r\n">>))
+	].
+
 parse_mechs_test_() ->
     [
      ?_assertEqual({ok, []}, parse_mechs(<<>>))
