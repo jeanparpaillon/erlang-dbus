@@ -11,31 +11,32 @@
 -include("dbus_properties.hrl").
 
 -export([get/3,
-	 set/4,
-	 get_all/2,
-	 connect/2]).
+         set/4,
+         get_all/2,
+         connect/2]).
 
 -spec get(Proxy :: dbus_proxy:t(), Iface :: dbus_name(), Prop :: dbus_name()) -> term().
 get(Proxy, Iface, Prop) ->
     case dbus_proxy:call(Proxy, ?DBUS_IFACE_PROPERTIES, <<"Get">>, [Iface, Prop]) of
-	{ok, #dbus_variant{value={_, Value}}} -> Value;
-	{error, Err} -> throw(Err)
+        {ok, #dbus_variant{value=Value}} -> 
+			Value;
+        {error, Err} -> throw(Err)
     end.
 
 
 -spec set(Proxy :: dbus_proxy:t(), Iface :: dbus_name(), Prop :: dbus_name(), Val :: term()) -> ok.
 set(Proxy, Iface, Prop, Value) ->
     case dbus_proxy:call(Proxy, ?DBUS_IFACE_PROPERTIES, <<"Set">>, [Iface, Prop, Value]) of
-	{ok, []} -> ok;
-	{error, Err} -> throw(Err)
+        {ok, []} -> ok;
+        {error, Err} -> throw(Err)
     end.
 
 
 -spec get_all(Proxy :: dbus_proxy:t(), Iface :: dbus_name()) -> [{dbus_name(), dbus_variant()}].
 get_all(Proxy, Iface) ->
     case dbus_proxy:call(Proxy, ?DBUS_IFACE_PROPERTIES, <<"GetAll">>, [Iface]) of
-	{ok, [Props]} -> Props;
-	{error, Err} -> throw(Err)
+        {ok, [Props]} -> Props;
+        {error, Err} -> throw(Err)
     end.
 
 
