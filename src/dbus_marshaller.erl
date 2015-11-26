@@ -189,18 +189,25 @@ marshal(variant, true=Value, Pos) ->
 marshal(variant, false=Value, Pos) ->
     marshal_variant(boolean, Value, Pos);
 
+marshal(variant, Value, Pos) when is_float(Value) ->
+    marshal_variant(double, Value, Pos);
+
 marshal(variant, Value, Pos) when is_integer(Value), Value < 0 ->
     marshal_int_variant(Value, Pos);
 
 marshal(variant, Value, Pos) when is_integer(Value), Value >= 0 ->
     marshal_uint_variant(Value, Pos);
 
-marshal(variant, Value, Pos) when is_tuple(Value) ->
-    Type = infer_type(Value),
-    marshal_variant(Type, Value, Pos);
-
 marshal(variant, Value, Pos) when is_list(Value) ->
-    marshal(variant, list_to_binary(Value), Pos).
+    marshal(variant, list_to_binary(Value), Pos);
+
+marshal(variant, Value, Pos) when is_atom(Value) ->
+    marshal_variant(string, atom_to_binary(Value, utf8), Pos);
+
+marshal(variant, Value, Pos) ->
+    Type = infer_type(Value),
+    marshal_variant(Type, Value, Pos).
+
 
 infer_type(Value) when is_binary(Value)->
     {array, byte};
