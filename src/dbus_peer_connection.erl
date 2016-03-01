@@ -269,6 +269,7 @@ handle_info({received, _Bin}, waiting_for_reject, State) ->
 %% STATE: waiting_for_agree
 handle_info({received, <<"AGREE_UNIX_FD\r\n">>}, waiting_for_agree,
             #state{sock=Sock, waiting=Waiting}=State) ->
+	?debug("UNIX_FD supported, starting raw mode~n", []),
     ok = dbus_transport:send(Sock, <<"BEGIN \r\n">>),
     lists:foreach(fun ({Pid, Tag}) ->
                           Pid ! {authenticated, {self(), Tag}}
@@ -276,8 +277,9 @@ handle_info({received, <<"AGREE_UNIX_FD\r\n">>}, waiting_for_agree,
     ok = dbus_transport:set_raw(Sock, true),
     {next_state, authenticated, State#state{unix_fd=true, waiting=[]}};
 
-handle_info({received, <<"ERROR ", _Line/binary>>}, waiting_for_agree,
+handle_info({received, <<"ERROR", _Line/binary>>}, waiting_for_agree,
             #state{sock=Sock, waiting=Waiting}=State) ->
+	?debug("UNIX_FD not supported, starting raw mode~n", []),
     ok = dbus_transport:send(Sock, <<"BEGIN \r\n">>),
     lists:foreach(fun ({Pid, Tag}) ->
                           Pid ! {authenticated, {self(), Tag}}
