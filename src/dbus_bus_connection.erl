@@ -29,10 +29,22 @@
 -define(PARAM_DELIM, $,).
 -define(KEY_DELIM, $=).
 
+
+%% @doc Retrieve bus_id from well-known names
+%% 
+%% @throws {unsupported, [#bus_id{}]}
+%% @end
 -spec get_bus_id(dbus_known_bus()) -> bus_id().
 get_bus_id(session) ->
-    [BusId|_R] = env_to_bus_id(),
-    BusId;
+	Ids = env_to_bus_id(),
+	case lists:filter(fun (#bus_id{scheme=unix}) -> true;
+						  (#bus_id{scheme=tcp}) -> true;
+						  (_) -> false
+					  end, Ids) of
+		[] -> {unsupported, Ids};
+		[Id | _] -> Id
+	end;
+
 get_bus_id(system) ->
     ?DEFAULT_BUS_SYSTEM.
 
