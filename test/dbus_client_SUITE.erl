@@ -24,22 +24,22 @@
 -compile([export_all]).
 
 -define(dbus_session_tcp_anonymous, 
-		{"session_tcp_anonymous.conf", "tcp:host=localhost,bind=*,port=55555,family=ipv4"}).
+	{"session_tcp_anonymous.conf", "tcp:host=localhost,bind=*,port=55555,family=ipv4"}).
 -define(dbus_session_unix_anonymous, 
-		{"session_unix_anonymous.conf", "unix:path=/tmp/dbus-test"}).
+	{"session_unix_anonymous.conf", "unix:path=/tmp/dbus-test"}).
 -define(dbus_session_unix_external,
-		{"session_unix_external.conf", "unix:path=/tmp/dbus-test"}).
+	{"session_unix_external.conf", "unix:path=/tmp/dbus-test"}).
 
 suite() ->
     [{timetrap,{seconds,30}}].
 
 init_per_suite(Config) ->
-	application:ensure_all_started(dbus),
+    application:ensure_all_started(dbus),
     Config.
 
 end_per_suite(Config) ->
     application:stop(dbus),
-	Config.
+    Config.
 
 %%--------------------------------------------------------------------
 %% @spec all() -> GroupsAndTestCases | {skip,Reason}
@@ -52,52 +52,52 @@ end_per_suite(Config) ->
 all() ->
     [
      {group, connect_tcp_anonymous}
-	,{group, connect_unix_anonymous}
-	,{group, connect_unix_external}
+    ,{group, connect_unix_anonymous}
+    ,{group, connect_unix_external}
     ,{group, service}
     ].
 
 
 groups() ->
     [
-	 {connect_tcp_anonymous, [], [ connect_session ]}
-	,{connect_unix_anonymous, [], [ connect_session ]}
-	,{connect_unix_external, [], [ connect_session ]}
+     {connect_tcp_anonymous, [], [ connect_session ]}
+    ,{connect_unix_anonymous, [], [ connect_session ]}
+    ,{connect_unix_external, [], [ connect_session ]}
     ,{service, [], [
-					connect_service
-				   ,walk_node
-				   ,interface
-				   ,call_method
-				   ,signal_all
-				   ,signal
-				   ]}
+		    connect_service
+		   ,walk_node
+		   ,interface
+		   ,call_method
+		   ,signal_all
+		   ,signal
+		   ]}
     ].
 
 
 init_per_group(connect_tcp_anonymous, Config) ->
-	start_dbus(Config, ?dbus_session_tcp_anonymous);
+    start_dbus(Config, ?dbus_session_tcp_anonymous);
 init_per_group(connect_unix_anonymous, Config) ->
-	start_dbus(Config, ?dbus_session_unix_anonymous);
+    start_dbus(Config, ?dbus_session_unix_anonymous);
 init_per_group(connect_unix_external, Config) ->
-	start_dbus(Config, ?dbus_session_unix_external);
+    start_dbus(Config, ?dbus_session_unix_external);
 init_per_group(_Name, Config) ->
-	Config0 = start_dbus(Config, ?dbus_session_unix_external),
-	ServicePath = get_data_path(?SCRIPT, Config0),
+    Config0 = start_dbus(Config, ?dbus_session_unix_external),
+    ServicePath = get_data_path(?SCRIPT, Config0),
     ServicePid = start_cmd(ServicePath),
-	timer:sleep(1000),
+    timer:sleep(1000),
     [ {service_port, ServicePid}, {connect, true} | Config0 ].
 
 
 end_per_group(Group, Config) 
   when Group =:= connect_tcp_anonymous;
-	   Group =:= connect_unix_anonymous;
-	   Group =:= connect_unix_external ->
+       Group =:= connect_unix_anonymous;
+       Group =:= connect_unix_external ->
     stop_dbus(Config),
-	{return_group_result, ok};
+    {return_group_result, ok};
 end_per_group(_Name, Config) ->
-	stop_cmd(?config(service_port, Config)),
-	stop_dbus(Config),
-	{return_group_result, ok}.
+    stop_cmd(?config(service_port, Config)),
+    stop_dbus(Config),
+    {return_group_result, ok}.
 
 
 init_per_testcase(_, Config) ->
@@ -119,7 +119,7 @@ end_per_testcase(_, Config) ->
 %%% Test cases
 %%%
 connect_session(_Config) ->
-	{ok, Bus} = dbus_bus_connection:connect(session),
+    {ok, Bus} = dbus_bus_connection:connect(session),
     ?assertMatch(ok, dbus_bus_connection:close(Bus)).
 
 connect_system(_Config) ->
@@ -127,7 +127,7 @@ connect_system(_Config) ->
     ?assertMatch(ok, dbus_bus_connection:close(Bus)).
 
 connect_service(Config) ->
-	?assertEqual(["/tmp/dbus-test"], filelib:wildcard("/tmp/dbus-test")),
+    ?assertEqual(["/tmp/dbus-test"], filelib:wildcard("/tmp/dbus-test")),
     {ok, Service} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE),
     ?assert(is_pid(Service)),
     ok.
@@ -223,41 +223,41 @@ get_data_path(Path, Config) ->
     filename:join([DataDir, Path]).
 
 start_dbus(Config, {DBusConfig, DBusEnv}) ->
-	File = get_data_path(DBusConfig, Config),
-	Port = start_cmd("dbus-daemon --config-file=" ++ File),
-	os:putenv("DBUS_SESSION_BUS_ADDRESS", DBusEnv),
-	[ {dbus, Port}, {dbus_env, DBusEnv} | Config ].
+    File = get_data_path(DBusConfig, Config),
+    Port = start_cmd("dbus-daemon --config-file=" ++ File),
+    os:putenv("DBUS_SESSION_BUS_ADDRESS", DBusEnv),
+    [ {dbus, Port}, {dbus_env, DBusEnv} | Config ].
 
 stop_dbus(Config) ->
-	stop_cmd(?config(dbus, Config)),
-	proplists:delete(dbus_env, 
-					 proplists:delete(dbus, Config)).
+    stop_cmd(?config(dbus, Config)),
+    proplists:delete(dbus_env, 
+		     proplists:delete(dbus, Config)).
 
 
 start_cmd(Cmd) ->
-	spawn(?MODULE, init_cmd, [Cmd]).
+    spawn(?MODULE, init_cmd, [Cmd]).
 
 init_cmd(Cmd) ->
-	Port = erlang:open_port({spawn, Cmd}, [exit_status]),
-	loop(Port, Cmd).
+    Port = erlang:open_port({spawn, Cmd}, [exit_status]),
+    loop(Port, Cmd).
 
 
 loop(Port, Cmd) ->
-	receive
-		{Port, {exit_status, Status}} ->
-			throw({command_error, {Cmd, Status}});
-		{command, exit} ->
-			{os_pid, Pid} = erlang:port_info(Port, os_pid),
-			erlang:port_close(Port),
-			os:cmd(io_lib:format("kill -9 ~p", [Pid]));
-		{command, From, pid} ->
-			{os_pid, Pid} = erlang:port_info(Port, os_pid),
-			From ! {self(), Pid},
-			loop(Port, Cmd);
-		_ ->
-			loop(Port, Cmd)
-	end.
+    receive
+	{Port, {exit_status, Status}} ->
+	    throw({command_error, {Cmd, Status}});
+	{command, exit} ->
+	    {os_pid, Pid} = erlang:port_info(Port, os_pid),
+	    erlang:port_close(Port),
+	    os:cmd(io_lib:format("kill -9 ~p", [Pid]));
+	{command, From, pid} ->
+	    {os_pid, Pid} = erlang:port_info(Port, os_pid),
+	    From ! {self(), Pid},
+	    loop(Port, Cmd);
+	_ ->
+	    loop(Port, Cmd)
+    end.
 
 
 stop_cmd(Pid) ->
-	Pid ! {command, exit}.
+    Pid ! {command, exit}.
