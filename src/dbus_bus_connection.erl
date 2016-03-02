@@ -15,12 +15,12 @@
 -include("dbus_introspectable.hrl").
 
 -export([get_bus_id/1,
-		 connect/1]).
+	 connect/1]).
 
 %% dbus_connection callbacks
 -export([close/1,
-		 call/2,
-		 cast/2]).
+	 call/2,
+	 cast/2]).
 
 -define(DEFAULT_BUS_SYSTEM, #bus_id{scheme=unix,options=[{path, "/var/run/dbus/system_bus_socket"}]}).
 -define(SESSION_ENV, "DBUS_SESSION_BUS_ADDRESS").
@@ -36,14 +36,14 @@
 %% @end
 -spec get_bus_id(dbus_known_bus()) -> bus_id().
 get_bus_id(session) ->
-	Ids = env_to_bus_id(),
-	case lists:filter(fun (#bus_id{scheme=unix}) -> true;
-						  (#bus_id{scheme=tcp}) -> true;
-						  (_) -> false
-					  end, Ids) of
-		[] -> {unsupported, Ids};
-		[Id | _] -> Id
-	end;
+    Ids = env_to_bus_id(),
+    case lists:filter(fun (#bus_id{scheme=unix}) -> true;
+			  (#bus_id{scheme=tcp}) -> true;
+			  (_) -> false
+		      end, Ids) of
+	[] -> {unsupported, Ids};
+	[Id | _] -> Id
+    end;
 
 get_bus_id(system) ->
     ?DEFAULT_BUS_SYSTEM.
@@ -52,30 +52,30 @@ get_bus_id(system) ->
 -spec connect(bus_id() | dbus_known_bus()) -> {ok, dbus_connection()} | {error, term()}.
 connect(#bus_id{}=BusId) ->
     case dbus_peer_connection:start_link(BusId) of
-		{ok, {dbus_peer_connection, PConn}=Conn} ->
-			case dbus_peer_connection:auth(PConn) of
-				{ok, undefined} ->
-					case dbus_proxy:start_link(Conn, ?DBUS_SERVICE, <<"/">>, ?DBUS_NODE) of
-						{ok, DBus} ->
-							ConnId = hello(DBus),
-							?debug("Hello connection id: ~p~n", [ConnId]),
-							dbus_peer_connection:set_controlling_process(PConn, DBus),
-							{ok, {?MODULE, DBus}};
-						{error, Err} -> {error, Err}
-					end;
-				{ok, ConnId} ->
-					case dbus_proxy:start_link(Conn, ?DBUS_SERVICE, <<"/">>, ?DBUS_NODE) of
-						{ok, DBus} ->
-							?debug("Acquired connection id: ~p~n", [ConnId]),	
-							dbus_peer_connection:set_controlling_process(PConn, DBus),
-							{ok, {?MODULE, DBus}};
-						{error, Err} -> {error, Err}
-					end
-			end;
-		{error, Err} -> {error, Err}
+	{ok, {dbus_peer_connection, PConn}=Conn} ->
+	    case dbus_peer_connection:auth(PConn) of
+		{ok, undefined} ->
+		    case dbus_proxy:start_link(Conn, ?DBUS_SERVICE, <<"/">>, ?DBUS_NODE) of
+			{ok, DBus} ->
+			    ConnId = hello(DBus),
+			    ?debug("Hello connection id: ~p~n", [ConnId]),
+			    dbus_peer_connection:set_controlling_process(PConn, DBus),
+			    {ok, {?MODULE, DBus}};
+			{error, Err} -> {error, Err}
+		    end;
+		{ok, ConnId} ->
+		    case dbus_proxy:start_link(Conn, ?DBUS_SERVICE, <<"/">>, ?DBUS_NODE) of
+			{ok, DBus} ->
+			    ?debug("Acquired connection id: ~p~n", [ConnId]),	
+			    dbus_peer_connection:set_controlling_process(PConn, DBus),
+			    {ok, {?MODULE, DBus}};
+			{error, Err} -> {error, Err}
+		    end
+	    end;
+	{error, Err} -> {error, Err}
     end;
 connect(BusName) when BusName =:= system;
-					  BusName =:= session ->
+		      BusName =:= session ->
     connect(get_bus_id(BusName)).
 
 close({?MODULE, Bus}) ->     dbus_proxy:stop(Bus);
@@ -104,9 +104,9 @@ list_to_bus_id([L|Rest], Acc) ->
 
 to_bus_id(Server) when is_list(Server) ->
     {Transport, [?TRANSPORT_DELIM | Params]} =
-		lists:splitwith(fun(A) -> A =/= ?TRANSPORT_DELIM end, Server),
+	lists:splitwith(fun(A) -> A =/= ?TRANSPORT_DELIM end, Server),
     #bus_id{scheme=list_to_existing_atom(Transport),
-			options=parse_params(Params)}.
+	    options=parse_params(Params)}.
 
 parse_params(Params) when is_list(Params) ->
     parse_params(string:tokens(Params, [?PARAM_DELIM]), []).
@@ -118,7 +118,7 @@ parse_params([Param|Rest], Acc) ->
 
 parse_param(Param) when is_list(Param) ->
     {Key, [?KEY_DELIM | Value]} =
-		lists:splitwith(fun(A) -> A =/= ?KEY_DELIM end, Param),
+	lists:splitwith(fun(A) -> A =/= ?KEY_DELIM end, Param),
     Key_name =
         case catch list_to_existing_atom(Key) of
             {'EXIT', {badarg, _Reason}} ->

@@ -25,7 +25,7 @@
 	 handle_info/2,
 	 terminate/2]).
 
-% Needed for spawn_link
+%% Internal
 -export([do_read/3]).
 
 -record(state, {sock, 
@@ -125,7 +125,7 @@ terminate(_Reason, #state{sock=Sock, loop=Loop}) ->
 	undefined -> ignore;
 	_ -> 
 	    exit(Loop, kill),
-	    % Avoid do_read loop polling on closed fd
+	    %% Avoid do_read loop polling on closed fd
 	    timer:sleep(100),
 	    procket:close(Sock)
     end,
@@ -141,7 +141,7 @@ do_read(PollID, Sock, Pid) ->
 	    do_read(PollID, Sock, Pid);
 	{error, _Err} ->
 	    ok;
-	% EOF
+	%% EOF
 	{ok, <<>>} ->
 	    ok;
 	{ok, Buf} ->

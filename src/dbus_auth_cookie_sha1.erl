@@ -11,7 +11,7 @@
 
 -behaviour(dbus_auth).
 
-                                                % dbus_auth callbacks
+%% dbus_auth callbacks
 -export([init/0,
          challenge/2]).
 

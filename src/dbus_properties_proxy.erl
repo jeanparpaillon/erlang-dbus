@@ -19,7 +19,7 @@
 get(Proxy, Iface, Prop) ->
     case dbus_proxy:call(Proxy, ?DBUS_IFACE_PROPERTIES, <<"Get">>, [Iface, Prop]) of
         {ok, #dbus_variant{value=Value}} -> 
-			Value;
+	    Value;
         {error, Err} -> throw(Err)
     end.
 

@@ -11,7 +11,7 @@
 
 -include("dbus.hrl").
 
-% api
+%% api
 -export([
 	 start_link/0,
 	 get_bus/1,

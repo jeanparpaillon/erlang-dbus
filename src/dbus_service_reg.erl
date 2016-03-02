@@ -96,7 +96,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 	    ok = dbus_bus_reg:unexport_service(Pid, ServiceName),
 	    Services1 =
 		lists:keydelete(Pid, 2, Services),
-		    {noreply, State#state{services=Services1}};
+	    {noreply, State#state{services=Services1}};
 	false ->
 	    if
 		Reason /= normal ->

@@ -29,7 +29,7 @@ start_link() ->
 
 
 init([]) ->
-%%     Dbus = {dbus,{dbus,start_link,[]}, permanent, 10000, worker, [dbus]},
+    %%Dbus = {dbus,{dbus,start_link,[]}, permanent, 10000, worker, [dbus]},
     BusReg = {dbus_bus_reg,{dbus_bus_reg,start_link,[]}, permanent, 10000, worker, [dbus_bus_reg]},
     ServiceReg = {dbus_service_reg,{dbus_service_reg,start_link,[]}, permanent, 10000, worker, [dbus_service_reg]},
     {ok, {{one_for_one, 10, 60}, [BusReg, ServiceReg]}}.

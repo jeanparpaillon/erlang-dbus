@@ -136,7 +136,7 @@ handle_release_object(Object, Pid, #state{objects=Reg}=State) ->
 		    Pids2 = sets:del_element(Pid, Pids),
 		    case sets:size(Pids2) of
 			0 ->
-			    % No more pids, remove object
+						% No more pids, remove object
 			    ?debug("object terminated ~p ~p~n", [Object, Path]),
 			    ets:delete(Reg, Path),
 			    case ets:info(Reg, size) of
@@ -147,12 +147,12 @@ handle_release_object(Object, Pid, #state{objects=Reg}=State) ->
 				    {ok, State}
 			    end;
 			_ ->
-			    % Update registry entry
+						% Update registry entry
 			    ets:insert(Reg, {Path, Object, Pids2}),
 			    {ok, State}
 		    end;
 		false ->
-		    % Pid was not in Pids
+						% Pid was not in Pids
 		    {error, not_resgitered, State}
 	    end;
 	[] ->

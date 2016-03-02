@@ -186,10 +186,10 @@ handle_release_service(Service, Pid, #state{services=Reg}=State) ->
 		    Pids2 = sets:del_element(Pid, Pids),
 		    case sets:size(Pids2) of
 			0 ->
-			    % No more pids
+						% No more pids
 			    {reply, ok, State};
 			_ ->
-			    % Update registery entry
+						% Update registery entry
 			    ets:insert(Reg, {Name, Service, Pids2}),
 			    {reply, ok, State}
 		    end;
