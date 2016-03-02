@@ -9,6 +9,8 @@
 
 -include("dbus_client.hrl").
 -include("dbus_dbus.hrl").
+-include_lib("annotations/include/annotations.hrl").
+
 
 -behaviour(gen_server).
 
@@ -164,6 +166,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
+-logging(debug).
 handle_call({method, IfaceName, MethodName, Args}, _From, #state{node=Node}=State) ->
     ?debug("Calling ~p:~p.~p(~p)~n", [State#state.path, IfaceName, MethodName, Args]),
     case dbus_introspect:find_method(Node, IfaceName, MethodName) of
@@ -179,20 +182,20 @@ handle_call({connect_signal, Name, '_', '_', Path, MFA}, _From,
          {sender, Name},
          {path_namespace, Path}], 
     case do_method(?DBUS_IFACE, ?DBUS_DBUS_ADD_MATCH, [build_match(Match, <<>>)], State) of
-    {reply, ok, S2} -> 
-        Handler = #signal_handler{sender=Name, interface='_', member='_', 
-                      path={Path, true}, mfa=MFA},
-        {reply, ok, S2#state{handlers=[ Handler | Handlers ]}};
-    {reply, {error, Err}, S2} -> {stop, {error, Err}, S2}
+	{reply, ok, S2} -> 
+	    Handler = #signal_handler{sender=Name, interface='_', member='_', 
+				      path={Path, true}, mfa=MFA},
+	    {reply, ok, S2#state{handlers=[ Handler | Handlers ]}};
+	{reply, {error, Err}, S2} -> {stop, {error, Err}, S2}
     end;
 
 handle_call({connect_signal, Name, IfaceName, SignalName, Path, MFA}, _From, 
-        #state{handlers=Handlers}=State) ->
+	    #state{handlers=Handlers}=State) ->
     Match = [{type, signal},
-         {sender, Name},
-         {interface, IfaceName},
-         {member, SignalName},
-         {path, Path}],
+	     {sender, Name},
+	     {interface, IfaceName},
+	     {member, SignalName},
+	     {path, Path}],
     case do_method(?DBUS_IFACE, ?DBUS_DBUS_ADD_MATCH, [build_match(Match, <<>>)], State) of
         {reply, ok, S2} -> 
             Handler = #signal_handler{sender=Name, interface=IfaceName, member=SignalName, 
