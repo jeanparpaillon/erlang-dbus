@@ -9,7 +9,7 @@
 
 -include("dbus.hrl").
 -include("dbus_client.hrl").
-
+%%-include_lib("annotations/include/annotations.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -46,15 +46,18 @@
                 owner,
                 mod,
                 sock,
-                buf      = <<>>,
-                pending           :: term(),  % tid(),
-                waiting  = [],
-                mechs    = [],
-                mech_state,
-                guid,
-                unix_fd           :: boolean()
+                buf         = <<>>    :: binary(),
+                pending               :: ets:tid(),
+                waiting     = []      :: list(),
+                mechs       = []      :: list(),
+		got_mechs   = false   :: boolean(),
+                mech_state            :: term(),
+                guid                  :: binary(),
+                unix_fd               :: boolean(),
+		side        = client  :: client | server
                }).
 
+-define(ALL_MECHANISMS, [dbus_auth_external, dbus_auth_cookie_sha1, dbus_auth_anonymous]).
 -define(TIMEOUT, 10000).
 
 -spec start_link(bus_id()) -> {ok, dbus_connection()} | {error, term()}.
@@ -160,136 +163,88 @@ handle_event(Evt, StateName, State) ->
 
 
 %% STATE: connected
-handle_info({received, _Bin}, connected, #state{sock=Sock}=State) ->
-    ?error("Unexpected info: ~p", [_Bin]),
-    ok = dbus_transport:send(Sock, <<"ERROR \r\n">>),
+%%-logging(debug).
+handle_info({received, Bin}, connected, State) ->
+    ?debug("Unknown command: ~s", [Bin]),
+    send_error(State, <<"Unknown command">>),
     {next_state, connected, State};
 
-%% STATE: waiting_for_ok OR waiting_for_data
-handle_info({received, <<"ERROR ", _Line/binary>>}, StateName,
-            #state{mechs=[]}=State) 
-  when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
-    {stop, disconnect, State};
-
-handle_info({received, <<"ERROR ", _Line/binary>>}, StateName,
-            #state{sock=Sock, mechs=[_|Mechs]}=State) 
-  when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
-    ok = dbus_transport:send(Sock, <<"CANCEL \r\n">>),
-    {next_state, waiting_for_reject, #state{mechs=Mechs}=State};    
-
-handle_info({received, <<"OK ", Line/binary>>}, StateName, 
-            #state{sock=Sock, waiting=Waiting}=State) 
-  when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
-    Guid = strip_eol(Line),
-    ?debug("Authenticated: GUID=~p~n", [Guid]),
-    case dbus_transport:support_unix_fd(Sock) of
-        true ->
-            ok = dbus_transport:send(Sock, <<"NEGOTIATE_UNIX_FD \r\n">>),
-            {next_state, waiting_for_agree, State#state{guid=Guid}};
-        false ->
-            ok = dbus_transport:send(Sock, <<"BEGIN \r\n">>),
-            lists:foreach(fun ({Pid, Tag}) ->
-                                  Pid ! {authenticated, {self(), Tag}}
-                          end, Waiting),
-            ok = dbus_transport:set_raw(Sock, true),
-            {next_state, authenticated, State#state{waiting=[], guid=Guid, unix_fd=false}}
-    end;
-
-handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName, #state{mechs=[]}=State) 
-  when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
-    ?error("No more authentication mechanisms", []),
-    {stop, disconnect, State};
-
-handle_info({received, <<"REJECTED ", _Line/binary>>}, StateName, State) 
-  when StateName =:= waiting_for_ok; StateName =:= waiting_for_data ->
-    try_next_auth(State);
-
-%% STATE: waiting_for_ok
-handle_info({received, <<"DATA ", _Line/binary>>}, waiting_for_ok, 
-            #state{sock=Sock}=State) ->
-    ok = dbus_transport:send(Sock, <<"CANCEL \r\n">>),
-    {next_state, waiting_for_reject, State};
-
-handle_info({received, _Bin}, waiting_for_ok, #state{sock=Sock}=State) ->
-    ?error("Unexpected info: ~p", [_Bin]),
-    ok = dbus_transport:send(Sock, <<"ERROR \r\n">>),
-    {next_state, waiting_for_ok, State};
-
 %% STATE: waiting_for_data
-handle_info({received, <<"DATA ", Line/binary>>}, waiting_for_data,
-            #state{sock=Sock, mech_state={Mech, MechState}}=State) ->
-    Bin = dbus_hex:from(strip_eol(Line)),
-    case Mech:challenge(Bin, MechState) of
-        {ok, Resp} ->
-            ?debug("DBUS auth: answering challenge~n", []),
-            dbus_transport:send(Sock, Resp),
-            {next_state, waiting_for_ok, State};
-        {continue, Resp, MechState} ->
-            ?debug("DBUS auth: answering challenge (continue)~n", []),
-            dbus_transport:send(Sock, Resp),
-            {next_state, waiting_for_data, State#state{mech_state={Mech, MechState}}};
-        {error, Err} ->
-            ?debug("Error with authentication challenge: ~p~n", [Err]),
-            ok = dbus_transport:send(<<"CANCEL \r\n">>),
-            {next_state, waiting_for_reject, State}
-    end;
+handle_info({received, <<"DATA ", Line/binary>>}, waiting_for_data, State) ->
+    process_data(Line, State);
 
-handle_info({received, _Bin}, waiting_for_data, #state{sock=Sock}=State) ->
-    ?error("Unexpected info: ~p", [_Bin]),
-    ok = dbus_transport:send(Sock, <<"ERROR \r\n">>),
+handle_info({received, <<"REJECTED", Line/binary>>}, waiting_for_data, State) ->
+    process_rejected(Line, State);
+
+handle_info({received, <<"OK", Line/binary>>}, waiting_for_data, State) ->
+    process_ok(Line, State);
+
+handle_info({received, <<"ERROR", Line/binary>>}, waiting_for_data, State) ->
+    ?debug("state: waiting_for_data, error: ~s", [parse_error(Line)]),
+    ok = send_cancel(State),
+    {stop, waiting_for_reject, State};
+
+handle_info({received, Bin}, waiting_for_data, State) ->
+    ?debug("Unknown command waiting for data: ~s", [Bin]),
+    send_error(State, <<"Unknown command">>),
     {next_state, waiting_for_data, State};
 
-%% STATE: waiting_for_reject
-handle_info({received, <<"REJECTED ", Line/binary>>}, waiting_for_reject,
-            #state{sock=Sock}=State) ->
-    case parse_mechs(strip_eol(Line)) of
-        {ok, []} ->
-            ?error("No supported authentication mechanism", []),
-            {stop, disconnect, State};
-        {ok, [Mech|Rest]} ->
-            case Mech:init() of 
-                {ok, Resp} ->
-                    ?debug("DBUS auth: waiting for OK~n", []),
-                    dbus_transport:send(Sock, Resp),
-                    {next_state, waiting_for_ok, State#state{mechs=Rest}};
-                {continue, Resp, MechState} ->
-                    ?debug("DBUS auth: waiting for Data~n", []),
-                    dbus_transport:send(Sock, Resp),
-                    {next_state, waiting_for_data, State#state{mechs=Rest, mech_state={Mech, MechState}}}
-            end;
-        {error, Err} ->
-            ?error("Invalid mechanisms: ~p~n", [Err]),
-            {stop, disconnect, State}
-    end;
+%% STATE: waiting_for_ok
+handle_info({received, <<"REJECTED", Line/binary>>}, waiting_for_ok, State) ->
+    process_rejected(Line, State);
 
-handle_info({received, _Bin}, waiting_for_reject, State) ->
-    ?error("Unexpected info: ~p", [_Bin]),
+handle_info({received, <<"OK", Line/binary>>}, waiting_for_ok, State) ->
+    process_ok(Line, State);
+
+handle_info({received, <<"DATA ", Data/binary>>}, waiting_for_ok, State) ->
+    ?debug("Unexpected data: ~s", Data),
+    ok = send_cancel(State),
+    {next_state, waiting_for_ok, State};
+
+handle_info({received, <<"ERROR", Data/binary>>}, waiting_for_ok, State) ->
+    ?debug("state: waiting_for_ok, error: ~s", [parse_error(Data)]),
+    ok = send_cancel(State),
+    {stop, waiting_for_ok, State};
+
+handle_info({received, Bin}, waiting_for_ok, State) ->
+    ?debug("Unknown command waiting for ok: ~p", [Bin]),
+    ok = send_error(State, <<"Unknown command">>),
+    {next_state, waiting_for_ok, State};
+
+%% STATE: waiting_for_reject
+handle_info({received, <<"REJECTED", Line/binary>>}, waiting_for_reject, State) ->
+    process_rejected(Line, State);
+
+handle_info({received, Bin}, waiting_for_reject, State) ->
+    ?debug("Unknown command waiting for reject: ~s", [Bin]),
     {stop, disconnect, State};
 
 %% STATE: waiting_for_agree
-handle_info({received, <<"AGREE_UNIX_FD\r\n">>}, waiting_for_agree,
-            #state{sock=Sock, waiting=Waiting}=State) ->
-    ?debug("UNIX_FD supported, starting raw mode~n", []),
-    ok = dbus_transport:send(Sock, <<"BEGIN \r\n">>),
-    lists:foreach(fun ({Pid, Tag}) ->
-                          Pid ! {authenticated, {self(), Tag}}
-                  end, Waiting),
-    ok = dbus_transport:set_raw(Sock, true),
-    {next_state, authenticated, State#state{unix_fd=true, waiting=[]}};
+handle_info({received, <<"AGREE_UNIX_FD\r\n">>}, waiting_for_agree, #state{sock=Sock}=State) ->
+    case dbus_transport:support_unix_fd(Sock) of
+	true ->
+	    ?debug("Succesfully negotiated UNIX FD passing~n", []),
+	    begin_session(State#state{unix_fd=true});
+	false ->
+	    ?debug("Unknown command waiting for agree unix fd: AGREE_UNIX_FD", []),
+	    ok = send_error(State, <<"Unknown command">>),
+	    {next_state, waiting_for_agree}
+    end;
 
-handle_info({received, <<"ERROR", _Line/binary>>}, waiting_for_agree,
-            #state{sock=Sock, waiting=Waiting}=State) ->
-    ?debug("UNIX_FD not supported, starting raw mode~n", []),
-    ok = dbus_transport:send(Sock, <<"BEGIN \r\n">>),
-    lists:foreach(fun ({Pid, Tag}) ->
-                          Pid ! {authenticated, {self(), Tag}}
-                  end, Waiting),
-    ok = dbus_transport:set_raw(Sock, true),
-    {next_state, authenticated, State#state{unix_fd=false, waiting=[]}};    
+handle_info({received, <<"ERROR", Line/binary>>}, waiting_for_agree, #state{sock=Sock}=State) ->
+    case dbus_transport:support_unix_fd(Sock) of
+	true ->
+	    ?debug("Failed to negotiate UNIX FD passing~n", []),
+	    begin_session(State#state{unix_fd=false});
+	false ->
+	    ?debug("Unknown command waiting for agree unix fd : ~s", [Line]),
+	    ok = send_error(State, <<"Unknown command">>),
+	    {next_state, waiting_for_agreee, State}
+    end;
 
-handle_info({received, _Bin}, waiting_for_agree, State) ->
-    ?error("Unexpected info: ~p", [_Bin]),
-    {stop, disconnect, State};
+handle_info({received, Bin}, waiting_for_agree, State) ->
+    ?debug("Unknown command waiting for agree unix fd : ~s", [Bin]),
+    {next_state, waiting_for_agree, State};
 
 %% STATE: authenticated
 handle_info({received, Data}, authenticated, #state{buf=Buf}=State) ->
@@ -325,9 +280,11 @@ terminate(_Reason, _StateName, #state{sock=Sock}) ->
 %%%
 %%% gen_fsm states
 %%%
-connected(auth, {_Pid, Tag}=From, #state{sock=Sock, mechs=[]}=State) ->
-    dbus_transport:send(Sock, <<"AUTH\r\n">>),
-    {reply, {ok, {self(), Tag}}, waiting_for_reject, State#state{waiting=[From]}};
+%% @doc Default is to use EXTERNAL mechanism first. If it fails, server
+%% will answer with list of possible authentications.
+%% Mimic C implementation
+%%
+%% @end
 connected(auth, {_Pid, Tag}=From, #state{sock=Sock, mechs=[Mech|Rest]}=State) ->
     case Mech:init() of
         {ok, Resp} ->
@@ -461,15 +418,71 @@ init_connection(Sock, Owner) ->
     ok = dbus_transport:send(Sock, <<0>>),
     {ok, connected, #state{sock=Sock,
                            pending=ets:new(pending, [private]), 
-                           mechs=[],
+                           mechs=?ALL_MECHANISMS,
                            owner=Owner}}.
 
 
-try_next_auth(#state{mechs=[]}=State) ->
-    ?error("No more authentication mechanisms", []),
+process_ok(Data, #state{sock=Sock, waiting=Waiting}=State) ->
+    Guid = parse_guid(Data),
+    ?debug("Got GUID '~s' from the server~n", [Guid]),
+    case dbus_transport:support_unix_fd(Sock) of
+        true ->
+            ok = dbus_transport:send(Sock, <<"NEGOTIATE_UNIX_FD\r\n">>),
+            {next_state, waiting_for_agree, State#state{guid=Guid}};
+        false ->
+	    ?debug("not negotiating unix fd passing, since not possible~n", []),
+            ok = dbus_transport:send(Sock, <<"BEGIN\r\n">>),
+            lists:foreach(fun ({Pid, Tag}) ->
+                                  Pid ! {authenticated, {self(), Tag}}
+                          end, Waiting),
+            ok = dbus_transport:set_raw(Sock, true),
+            {next_state, authenticated, State#state{waiting=[], guid=Guid, unix_fd=false}}
+    end.
+
+
+process_data(Data, #state{sock=Sock, mech_state={Mech, MechState}}=State) ->
+    Hex = try dbus_hex:from(Data) of
+	      Bin -> Bin
+	  catch throw:invalid_encoding ->
+		  ?debug("Invalid hex encoding: ~p", [Data]),
+		  dbus_transport:send(<<"ERROR \"Invalid hex encoding\"\r\n">>),
+		  <<>>
+	  end, 
+    case Mech:challenge(Hex, MechState) of
+        {ok, Resp} ->
+            ?debug("DBUS auth: answering challenge~n", []),
+            dbus_transport:send(Sock, Resp),
+            {next_state, waiting_for_ok, State};
+        {continue, Resp, MechState} ->
+            ?debug("DBUS auth: answering challenge (continue)~n", []),
+            dbus_transport:send(Sock, Resp),
+            {next_state, waiting_for_data, State#state{mech_state={Mech, MechState}}};
+        {error, Err} ->
+            ?debug("Error with authentication challenge: ~p~n", [Err]),
+            ok = dbus_transport:send(<<"CANCEL\r\n">>),
+            {next_state, waiting_for_reject, State}
+    end.
+
+
+process_rejected(_Data, #state{mechs=[], got_mechs=true}=State) ->
+    ?debug("~s: Disconnecting because we are out of mechanisms to try using~n", [State#state.side]),
     {stop, disconnect, State};
-try_next_auth(#state{sock=Sock, mechs=[Mech | Rest]}=State) ->
-    ?debug("Trying next authentication mechanism~n", []),
+
+process_rejected(Data, #state{mechs=[], got_mechs=false}=State) ->
+    case record_mechs(Data, State) of
+	#state{mechs=[]} ->
+	    ?debug("~s: Disconnecting because we are out of mechanisms to try using~n", [State#state.side]),
+	    {stop, disconnect, State};
+	State2 ->
+	    try_next_auth(State2)
+    end;
+
+process_rejected(_Data, State) ->
+    try_next_auth(State).
+
+
+try_next_auth(#state{sock=Sock, mechs=[ Mech | Rest ]}=State) ->
+    ?debug("~s: Trying mechanism ~s~n", [State#state.side, Mech]),
     try Mech:init() of
         {ok, Resp} ->
             ?debug("DBUS auth: waiting for OK~n", []),
@@ -480,76 +493,107 @@ try_next_auth(#state{sock=Sock, mechs=[Mech | Rest]}=State) ->
             dbus_transport:send(Sock, Resp),
             {next_state, waiting_for_data, State#state{mechs=Rest, mech_state={Mech, MechState}}};
         {error, Err} ->
-            ?error("Error initializing authentication mechanism (~p): ~p", [Mech, Err]),
+            ?error("Error initializing authentication mechanism (~s): ~p", [Mech, Err]),
             try_next_auth(State#state{mechs=Rest})
     catch _Cls:Err ->
-	    ?error("Exception initializing authentication mechanism (~p): ~p", [Mech, Err]),
+	    ?error("Exception initializing authentication mechanism (~s): ~p", [Mech, Err]),
             try_next_auth(State#state{mechs=Rest})
     end.
 
 
-strip_eol(Bin) ->
-    strip_eol(Bin, <<>>).
+send_cancel(#state{sock=Sock}) ->
+    dbus_transport:send(Sock, <<"CANCEL\r\n">>).
 
-strip_eol(<<>>, Acc) ->
-    Acc;
-strip_eol(<<$\r, Rest/binary>>, Acc) ->
-    strip_eol(Rest, Acc);
-strip_eol(<<$\n, Rest/binary>>, Acc) ->
-    strip_eol(Rest, Acc);
-strip_eol(<<C:8, Rest/binary>>, Acc) ->
-    strip_eol(Rest, <<Acc/binary, C>>).
 
-parse_mechs(Bin) ->
-    parse_mechs(Bin, []).
+send_error(#state{sock=Sock}, Err) ->
+    dbus_transport:send(Sock, <<"ERROR \"", Err/binary, "\"\r\n">>).
 
-parse_mechs(<<>>, Acc) ->
-    {ok, lists:reverse(Acc)};
-parse_mechs(<<$\s, Rest/bits>>, Acc) ->
-    parse_mechs(Rest, Acc);
-parse_mechs(Bin, Acc) ->
+
+begin_session(#state{sock=Sock, waiting=Waiting}=State) ->
+    ok = dbus_transport:send(Sock, <<"BEGIN\r\n">>),
+    lists:foreach(fun ({Pid, Tag}) ->
+                          Pid ! {authenticated, {self(), Tag}}
+                  end, Waiting),
+    ok = dbus_transport:set_raw(Sock, true),
+    {next_state, authenticated, State#state{waiting=[]}}.
+
+
+parse_guid(<< $\s, Rest/binary >>) -> parse_guid(Rest);
+
+parse_guid(Rest) -> pg(Rest, <<>>).
+
+pg(<< $\r, _Rest/binary >>, Acc) -> Acc;
+
+pg(<< C:8, Rest/binary >>, Acc) -> pg(Rest, << Acc/binary, C >>).
+
+
+record_mechs(<<>>, S) ->
+    S#state{got_mechs=true};
+
+record_mechs(<<$\s, Rest/bits>>, S) ->
+    record_mechs(Rest, S);
+
+record_mechs(Bin, #state{mechs=Mechs}=S) ->
     case parse_mech(Bin) of
-        {ok, Mech, Rest} ->
-            parse_mechs(Rest, [Mech | Acc]);
-        {unsupported, Rest} ->
-            parse_mechs(Rest, Acc)
+	{unsupported, Name, Rest} ->
+	    ?debug("~s: Server offered mechanism \"~s\" that we don't know how to use~n", [S#state.side, Name]),
+            record_mechs(Rest, S);
+        {Mech, Name, Rest} ->
+	    case lists:member(Mech, ?ALL_MECHANISMS) of
+		true ->
+		    ?debug("~s: Already tried mechanism ~s; not adding to list we will try~n", [S#state.side, Name]),
+		    record_mechs(Rest, S);
+		false ->
+		    ?debug("~s: Adding mechanism ~s to list we will try~n", [S#state.side, Name]),
+		    record_mechs(Rest, S#state{mechs=[ Mech | Mechs ]})
+	    end
     end.
 
 
 parse_mech(Bin) ->
     parse_mech(Bin, <<>>).
 
+
 parse_mech(<<>>, Acc) ->
     valid_mech(Acc, <<>>);
+
 parse_mech(<<$\s, Rest/bits>>, Acc) ->
     valid_mech(Acc, Rest);
+
 parse_mech(<<C:8, Rest/bits>>, SoFar) ->
     parse_mech(Rest, << SoFar/binary, C>>).
 
-valid_mech(<<"DBUS_COOKIE_SHA1">>, Rest) -> {ok, dbus_auth_cookie_sha1, Rest};
-valid_mech(<<"EXTERNAL">>, Rest) -> {ok, dbus_auth_external, Rest};
-valid_mech(<<"ANONYMOUS">>, Rest) -> {ok, dbus_auth_anonymous, Rest};
-valid_mech(<<"KERBEROS_V4">>, Rest) -> {unsupported, Rest};
-valid_mech(<<"SKEY">>, Rest) -> {unsupported, Rest};
-valid_mech(_, Rest) -> {unsupported, Rest}.
+
+valid_mech(<<"DBUS_COOKIE_SHA1">> = Name, Rest) -> {dbus_auth_cookie_sha1, Name, Rest};
+
+valid_mech(<<"EXTERNAL">> = Name, Rest) -> {dbus_auth_external, Name, Rest};
+
+valid_mech(<<"ANONYMOUS">> = Name, Rest) -> {dbus_auth_anonymous, Name, Rest};
+
+valid_mech(<<"KERBEROS_V4">> = Name, Rest) -> {unsupported, Name, Rest};
+
+valid_mech(<<"SKEY">> = Name, Rest) -> {unsupported, Name, Rest};
+
+valid_mech(Name, Rest) -> {unsupported, Name, Rest}.
+
+
+parse_error(Bin) -> pe_begin(Bin).
+
+
+pe_begin(<< $", Rest/binary >>) -> pe_text(Rest, <<>>).
+
+
+pe_text(<< $", _Rest/binary >>, Acc) ->
+    Acc;
+
+pe_text(<< C, Rest/binary >>, Acc) ->
+    pe_text(Rest, << Acc/binary, C >>).
+
+    
+
 
 %%%
 %%% eunit
 %%%
 -ifdef(TEST).
-parse_strip_eol_test_() ->
-    [
-     ?_assertEqual(<<"  ">>, strip_eol(<<"  \r\n">>))
-    ,?_assertEqual(<<" HOP  ">>, strip_eol(<<" HOP  \r\n">>))
-    ].
-
-parse_mechs_test_() ->
-    [
-     ?_assertEqual({ok, []}, parse_mechs(<<>>))
-    ,?_assertEqual({ok, []}, parse_mechs(<<"INVALID UNKNOWN AND CIE">>))
-    ,?_assertEqual({ok, [dbus_auth_external, dbus_auth_cookie_sha1, dbus_auth_anonymous]},
-                   parse_mechs(<<"EXTERNAL DBUS_COOKIE_SHA1 ANONYMOUS">>))
-    ,?_assertEqual({ok, [dbus_auth_external, dbus_auth_cookie_sha1, dbus_auth_anonymous]},
-                   parse_mechs(<<"EXTERNAL DBUS_COOKIE_SHA1 INVALID     ANONYMOUS">>))
-    ].
 -endif.

@@ -23,7 +23,7 @@ init() ->
             {error, invalid_user};
         User ->
             HexUser = dbus_hex:to(list_to_binary(User)),
-            {continue, <<"AUTH DBUS_COOKIE_SHA1 ", HexUser/binary, "\r\n">>, waiting_challenge}
+            {continue, <<"AUTH DBUS_COOKIE_SHA1", HexUser/binary, "\r\n">>, waiting_challenge}
     end.
 
 challenge(Chall, waiting_challenge) ->

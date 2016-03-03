@@ -29,27 +29,40 @@ to(Binary) when is_binary(Binary) ->
 %% Descrip.: Convert hex string into an integer.
 %% Returns : integer()
 %%--------------------------------------------------------------------
+from(<< $\s, Rest/binary >>) ->
+    from(Rest);
+
 from(Bin) ->
-    from(Bin, 0).
+    case parse(Bin, 0) of
+	invalid -> throw(invalid_encoding);
+	I when is_integer(I) -> I
+    end.
 
 %% N keeps the current acumulated value, each new char encountered when
 %% scaning to the right, is added and N is shifted 4 bits to the left
 %% Note: "N * 16" could be replaced by "N bsl 4"
 
-from(<<>>, N) ->
+parse(<<>>, N) ->
     N;
 
-from(<<C:8, Rest/binary>>, N) when C >= $0, C =< $9 ->
+parse(<< C:8, _Rest/binary >>, N) when C =:= $\s; C =:= $\r; C =:= $\n->
+    N;
+
+parse(<<C:8, Rest/binary>>, N) when C >= $0, C =< $9 ->
     M = N * 16 + (C - $0),
-    from(Rest, M);
+    parse(Rest, M);
 
-from(<<C:8, Rest/binary>>, N) when C >= $a, C =< $f ->
+parse(<<C:8, Rest/binary>>, N) when C >= $a, C =< $f ->
     M = N * 16 + (C - $a + 10),
-    from(Rest, M);
+    parse(Rest, M);
 
-from(<<C:8, Rest/binary>>, N) when C >= $A, C =< $F ->
+parse(<<C:8, Rest/binary>>, N) when C >= $A, C =< $F ->
     M = N * 16 + (C - $A + 10),
-    from(Rest, M).
+    parse(Rest, M);
+
+parse(_, _) ->
+    invalid.
+
 
 %%%
 %%% Priv

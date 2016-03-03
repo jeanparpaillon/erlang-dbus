@@ -9,7 +9,7 @@
 
 -include("dbus_client.hrl").
 -include("dbus_dbus.hrl").
--include_lib("annotations/include/annotations.hrl").
+%%-include_lib("annotations/include/annotations.hrl").
 
 
 -behaviour(gen_server).
@@ -166,7 +166,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
--logging(debug).
+%%-logging(debug).
 handle_call({method, IfaceName, MethodName, Args}, _From, #state{node=Node}=State) ->
     ?debug("Calling ~p:~p.~p(~p)~n", [State#state.path, IfaceName, MethodName, Args]),
     case dbus_introspect:find_method(Node, IfaceName, MethodName) of

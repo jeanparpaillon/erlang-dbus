@@ -92,6 +92,7 @@ handle_cast({send, Data}, State) when is_list(Data) ->
     handle_cast({send, iolist_to_binary(Data)}, State);
 
 handle_cast({send, Data}, #state{sock=Sock}=State) when is_binary(Data) ->
+    %%?debug("unix send(~p)~n", [Data]),
     procket:sendto(Sock, Data, 0, <<>>),
     {noreply, State};
 
@@ -107,6 +108,7 @@ handle_cast(Request, State) ->
 
 
 handle_info({unix, Data}, #state{owner=Owner}=State) ->
+    %%?debug("unix received(~p)~n", [Data]),
     Owner ! {received, Data},
     {noreply, State};
 

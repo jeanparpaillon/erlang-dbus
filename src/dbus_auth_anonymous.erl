@@ -14,7 +14,7 @@
          challenge/2]).
 
 init() ->
-    {ok, <<"AUTH ANONYMOUS \r\n">>}.
+    {ok, <<"AUTH ANONYMOUS\r\n">>}.
 
 challenge(_, _) ->
     {error, invalid_challenge}.
