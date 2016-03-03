@@ -10,15 +10,7 @@ The erlang platform needs an erlang native implementation.
 
 [![Build Status](https://travis-ci.org/lizenn/erlang-dbus.svg?branch=master)](https://travis-ci.org/lizenn/erlang-dbus)
 
-# Examples
+## Documentation
 
-## Connecting to a remote service
-
-```
-{ok, Bus} = dbus_bus_connection(system).
-{ok, Service} = dbus_proxy:start_link(Bus, <<"org.freedesktop.Accounts">>).
-```
-
-# dbus application parameters
-
-* external_cookie: magic cookie for external authentication (default: 31303030)
+* [API documentation](./blob/master/doc/README.md)
+* [Manuel](./wiki)
