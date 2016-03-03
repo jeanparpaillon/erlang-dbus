@@ -1,11 +1,13 @@
 %%
-%% @copyright 2006-2007 Mikael Magnusson
-%% @copyright 2014 Jean Parpaillon
+%% @copyright 2006-2007 Mikael Magnusson, 2014-2016 Jean Parpaillon
 %%
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
 %% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%% @doc message module. Builds error and result messages
+%% @doc Build messages
 %%
+%% See <a href="https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-messages" >D-Bus Specification</a>
+%%
+%% @end
 -module(dbus_message).
 
 -include("dbus.hrl").
@@ -33,16 +35,22 @@
 %%%
 %%% API
 %%%
+
+%% @equiv call(Destination, Path, Interface, Member, [])
+%% @end
 -spec call(Destination :: dbus_name(), 
 	   Path        :: dbus_name(), 
 	   Interface   :: dbus_name(),
 	   Member      :: dbus_name() | dbus_method()) -> dbus_message().
 call(Destination, Path, Interface, #dbus_method{name=Name}) ->
     call(Destination, Path, Interface, Name);
+
 call(Destination, Path, Interface, Member) ->
     call(Destination, Path, Interface, Member, []).
 
 
+%% @doc Build a method call message
+%% @end
 -spec call(Destination :: dbus_name(), 
 	   Path        :: dbus_name(), 
 	   Interface   :: dbus_name(),
@@ -50,6 +58,7 @@ call(Destination, Path, Interface, Member) ->
 	   Opts        :: [dbus_option()]) -> dbus_message().
 call(Destination, Path, Interface, #dbus_method{name=Name}, Opts) ->
     call(Destination, Path, Interface, Name, Opts);
+
 call(Destination, Path, Interface, Member, Opts) ->
     Fields = [
 	      {?FIELD_PATH, #dbus_variant{type=object_path, value=Path}},
@@ -64,6 +73,8 @@ call(Destination, Path, Interface, Member, Opts) ->
     #dbus_message{header=Header, body= <<>>}.
 
 
+%% @equiv signal(Destination, Path, Interface, Signal, Args, [])
+%% @end
 -spec signal(Destination :: dbus_name(),
 	     Path        :: dbus_name(),
 	     Interface   :: dbus_name(),
@@ -72,6 +83,9 @@ call(Destination, Path, Interface, Member, Opts) ->
 signal(Destination, Path, Interface, Signal, Args) ->
     signal(Destination, Path, Interface, Signal, Args, []).
 
+
+%% @doc Build a signal message
+%% @end
 -spec signal(Destination :: dbus_name(),
 	     Path        :: dbus_name(),
 	     Interface   :: dbus_name(),
@@ -96,6 +110,8 @@ signal(Destination, Path, Interface,
     {ok, #dbus_message{header=Header, body=Body}}.
 
 
+%% @doc Build an error message
+%% @end
 -spec error(Orig      :: dbus_message(),
 	    ErrName   :: binary(),
 	    ErrText   :: binary()) -> dbus_message().
@@ -117,6 +133,9 @@ error(#dbus_message{}=Orig, ErrName, ErrText) when is_binary(ErrName),
 			  fields=Fields},
     #dbus_message{header=Header, body=Body}.
 
+
+%% @doc Build a return message
+%% @end
 -spec return(Orig       :: dbus_message(),
 	     Types      :: [dbus_type()],
 	     Body       :: term()) -> dbus_message().
@@ -137,17 +156,29 @@ return(#dbus_message{}=Orig, Types, Body) when is_list(Types),
 			  fields=Fields},
     #dbus_message{header=Header, body=BinBody}.
 
+
+%% @doc Get serial number from message
+%% @end
 -spec get_serial(dbus_message()) -> integer().
 get_serial(#dbus_message{header=#dbus_header{serial=Serial}}) ->
     Serial.
 
+
+%% @doc Set serial number of a message
+%% @end
 -spec set_serial(integer(), dbus_message()) -> dbus_message().
 set_serial(Serial, #dbus_message{header=Header}=Message) ->
     Message#dbus_message{header=Header#dbus_header{serial=Serial}}.
 
+
+%% @doc Find a specific field of a message
+%%
+%% Returns `undefined' if not found
+%% @end
 -spec find_field(Code :: integer(), dbus_header() | dbus_message()) -> dbus_variant() | undefined.
 find_field(Code, #dbus_message{header=Header}) ->
     find_field(Code, Header);
+
 find_field(Code, #dbus_header{fields=Fields}) ->
     case proplists:get_value(Code, Fields) of
 	undefined -> undefined;
@@ -155,9 +186,16 @@ find_field(Code, #dbus_header{fields=Fields}) ->
     end.
 
 
+%% @doc Get a specific field of a message.
+%%
+%% Throws error if not found.
+%%
+%% @throws {no_such_field, integer()}
+%% @end
 -spec get_field(Code :: integer(), Header :: #dbus_header{}) -> dbus_variant().
 get_field(Code, #dbus_message{header=Header}) ->
     get_field(Code, Header);
+
 get_field(Code, #dbus_header{fields=Fields}) ->
     case proplists:get_value(Code, Fields) of
 	undefined ->
@@ -165,10 +203,16 @@ get_field(Code, #dbus_header{fields=Fields}) ->
 	Val -> 
 	    Val
     end;
+
 get_field(Code, _) ->
     throw({no_such_field, Code}).
 
 
+%% @doc Get a field value.
+%%
+%% Throws error if not found.
+%% @throws {no_such_field, integer()}
+%% @end
 -spec get_field_value(Code :: integer(), Header :: dbus_header()) -> term().
 get_field_value(Code, #dbus_message{header=Header}) ->
     get_field_value(Code, Header);
@@ -177,6 +221,9 @@ get_field_value(Code, #dbus_header{}=Header) ->
     Val.
 
 
+%% @doc Set body of a message.
+%%
+%% @end
 -spec set_body(Method    :: dbus_method(),
 	       Body      :: term(),
 	       Message   :: dbus_message()) -> dbus_message() | {error, dbus_err()}.
@@ -184,6 +231,9 @@ set_body(#dbus_method{in_sig=Signature, in_types=Types}, Body, Message) ->
     set_body(Signature, Types, Body, Message).
 
 
+%% @doc Set body of a message.
+%%
+%% @end
 -spec set_body(Signature :: binary(),
 	       Types     :: [dbus_type()],
 	       Body      :: term(),
@@ -204,16 +254,19 @@ set_body(Signature, Types, Body, #dbus_message{header=#dbus_header{fields=Fields
     end.
 
 
+%% @doc Check message headers matches some values.
+%% 
+%% '_' means the header exists with any value
 %%
-%% @doc '_' means the header exists with any value
-%%
+%% @end
 -spec match(HeaderMatches :: [{integer(), dbus_name() | '_'}], dbus_message()) -> boolean().
 match(HeaderMatches, #dbus_message{header=#dbus_header{fields=Fields}}) when is_list(HeaderMatches) ->
     match(true, HeaderMatches, Fields).
 
-%%%
-%%% Common messages
-%%%
+
+%% @doc Build `Introspect' method call message
+%%
+%% @end
 -spec introspect(Service :: dbus_name(), Path :: dbus_name()) -> dbus_message().
 introspect(Service, Path) ->
     dbus_message:call(Service, Path, ?DBUS_INTROSPECTABLE_IFACE, 'Introspect').

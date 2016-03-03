@@ -1,5 +1,8 @@
 %% @copyright 2014 Jean Parpaillon
 %% @author Jean Parpaillon <jean.parpaillon@free.fr>
+%% @doc
+%%
+%% @end
 -module(dbus_hex).
 
 %%--------------------------------------------------------------------
@@ -12,23 +15,17 @@
 %% External functions
 %%====================================================================
 
-%%--------------------------------------------------------------------
-%% Function: to(Binary)
-%%           Binary = binary()
-%% Descrip.: Convert a binary (for example the result of erlang:md5/1)
-%%           to a hex binary.
-%% Returns : binary()
-%%--------------------------------------------------------------------
+%% @doc Convert a binary (for example the result of erlang:md5/1)
+%% to a hex binary.
+%% @end
+-spec to(binary()) -> binary().
 to(Binary) when is_binary(Binary) ->
     bin_to_hex(Binary, <<>>).
 
-%%--------------------------------------------------------------------
-%% Function: from(String)
-%%           String = string(), a numeric string of hex values (0-9,
-%%                    A-F and a-f can be used)
-%% Descrip.: Convert hex string into an integer.
-%% Returns : integer()
-%%--------------------------------------------------------------------
+
+%% @doc Convert hex string into an integer.
+%% @end
+-spec from(binary()) -> integer().
 from(<< $\s, Rest/binary >>) ->
     from(Rest);
 
@@ -37,6 +34,10 @@ from(Bin) ->
 	invalid -> throw(invalid_encoding);
 	I when is_integer(I) -> I
     end.
+
+%%%
+%%% Priv
+%%%
 
 %% N keeps the current acumulated value, each new char encountered when
 %% scaning to the right, is added and N is shifted 4 bits to the left
@@ -63,10 +64,6 @@ parse(<<C:8, Rest/binary>>, N) when C >= $A, C =< $F ->
 parse(_, _) ->
     invalid.
 
-
-%%%
-%%% Priv
-%%%
 -define(H(X), (hex(X)):16).
 
 bin_to_hex(<<>>, Acc) -> Acc;

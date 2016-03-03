@@ -2,7 +2,8 @@
 %% @copyright 2006-2007 Mikael Magnusson
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
 %% @doc Register of exported D-BUS services gen_server
-%%
+%% @todo Check if the code is still working, why it is here, ...
+%% @end
 -module(dbus_service_reg).
 
 -behaviour(gen_server).

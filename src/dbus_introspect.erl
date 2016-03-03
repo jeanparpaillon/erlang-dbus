@@ -1,11 +1,13 @@
-%%
-%% @copyright 2006-2007 Mikael Magnusson
-%% @Copyright 2014 Jean Parpaillon
+%% @copyright 2006-2007 Mikael Magnusson, 2014-2016 Jean Parpaillon
 %%
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
-%% @author Jean Parpaillon <jean.parpaillon@free.fr.
-%% @doc introspect support module
+%% @author Jean Parpaillon <jean.parpaillon@free.fr>
+%% @doc API Introspection support module
 %%
+%% See <a href="https://dbus.freedesktop.org/doc/dbus-specification.html#introspection-format" >D-Bus specifications</a>
+%% for introspection XML schema.
+%%
+%% @end
 -module(dbus_introspect).
 
 -include_lib("xmerl/include/xmerl.hrl").
@@ -32,6 +34,9 @@
 %%%
 %%% API
 %%%
+%% @doc Find an interface definition.
+%%
+%% @end
 -spec find_interface(dbus_node(), Iface :: dbus_name()) -> 
                             {ok, dbus_iface()} | {error, dbus_err()}.
 find_interface(#dbus_node{interfaces=Ifaces}, IfaceName) ->
@@ -43,6 +48,8 @@ find_interface(#dbus_node{interfaces=Ifaces}, IfaceName) ->
     end.
 
 
+%% @doc Find a method definition.
+%% @end
 -spec find_method(dbus_node(), Iface :: dbus_name(), Method :: dbus_name()) -> 
                          {ok, dbus_method()} | {error, dbus_err()}.
 find_method(#dbus_node{interfaces=Ifaces}=Node, IfaceName, MethodName) ->
@@ -59,6 +66,8 @@ find_method(#dbus_node{interfaces=Ifaces}=Node, IfaceName, MethodName) ->
     end.
 
 
+%% @doc Find a signal definition
+%% @end
 -spec find_signal(dbus_node(), Iface :: dbus_name(), Signal :: dbus_name()) -> 
                          {ok, dbus_signal()} | {error, dbus_err()}.
 find_signal(#dbus_node{interfaces=Ifaces}=Node, IfaceName, SignalName) ->
@@ -75,10 +84,19 @@ find_signal(#dbus_node{interfaces=Ifaces}=Node, IfaceName, SignalName) ->
     end.
 
 
+%% @doc Export a `dbus_node()' into an XML introspection document.
+%% @end
+-spec to_xml(dbus_node()) -> list().
 to_xml(#dbus_node{}=Node) ->
     Prolog = "<?xml version=\"1.0\" encoding=\"utf-8\" ?><!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\" \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">",
     lists:flatten(xmerl:export_simple([to_xmerl(Node)], xmerl_xml, [{prolog, Prolog}])).
 
+
+%% @doc Parse a `dbus_node() ' from an XML string.
+%% 
+%% @throws {error, parse_error}
+%% @end
+-spec from_xml_string(binary()) -> dbus_node().
 from_xml_string(Data) when is_binary(Data) ->
     Opts = [{event_fun, fun xml_event/3}, 
             {event_state, #state{}},
@@ -91,6 +109,12 @@ from_xml_string(Data) when is_binary(Data) ->
             throw({error, parse_error})
     end.
 
+
+%% @doc Parse a `dbus_node()' from a filename.
+%%
+%% @throws {error, parse_error}
+%% @end
+-spec from_xml(file:filename()) -> dbus_node().
 from_xml(Filename) ->
     Opts = [{event_fun, fun xml_event/3}, 
             {event_state, #state{}},

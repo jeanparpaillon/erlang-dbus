@@ -1,10 +1,11 @@
 %%
-%% @copyright 2006-2007 Mikael Magnusson
-%% @copyright 2014 Jean Parpaillon
+%% @copyright 2006-2007 Mikael Magnusson, 2014-2016 Jean Parpaillon
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
 %% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%% @doc Bus gen_server
+%% @doc Bus gen_server (broken)
 %%
+%% @todo Finish implementation, cleanup, test, ...
+%% @end
 -module(dbus_bus).
 
 -include("dbus.hrl").

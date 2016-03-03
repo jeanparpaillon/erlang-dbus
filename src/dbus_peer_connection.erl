@@ -1,7 +1,9 @@
 %%
 %% @copyright 2015 Jean Parpaillon
 %% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%% @doc
+%% @doc Peer connections
+%% 
+%% @end
 -module(dbus_peer_connection).
 
 -behaviour(gen_fsm).
@@ -9,7 +11,6 @@
 
 -include("dbus.hrl").
 -include("dbus_client.hrl").
-%%-include_lib("annotations/include/annotations.hrl").
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -60,10 +61,17 @@
 -define(ALL_MECHANISMS, [dbus_auth_external, dbus_auth_cookie_sha1, dbus_auth_anonymous]).
 -define(TIMEOUT, 10000).
 
+
+%% @equiv start_link(BusId, [list, {packet, 0}])
+%% @end
 -spec start_link(bus_id()) -> {ok, dbus_connection()} | {error, term()}.
 start_link(BusId) ->
     start_link(BusId, [list, {packet, 0}]).
 
+
+%% @doc Start a connection to a peer
+%% @end
+-spec start_link(bus_id(), list()) -> {ok, dbus_connection()} | {error, term()}.
 start_link(BusId, Options) when is_record(BusId, bus_id),
                                 is_list(Options) ->
     case gen_fsm:start_link(?MODULE, [BusId, Options, self()], []) of
@@ -71,11 +79,16 @@ start_link(BusId, Options) when is_record(BusId, bus_id),
         {error, Err} -> {error, Err}
     end.
 
+
+%% @doc Close the connection
+%% @end
 -spec close(pid()) -> ok.
 close(Conn) when is_pid(Conn) ->
     gen_fsm:send_all_state_event(Conn, close).
 
 
+%% @doc Synchronously send a message
+%% @end
 -spec call(pid(), dbus_message()) -> {ok, term()} | {error, term()}.
 call(Conn, #dbus_message{}=Msg) when is_pid(Conn) ->
     case gen_fsm:sync_send_event(Conn, {call, Msg}) of
@@ -93,10 +106,18 @@ call(Conn, #dbus_message{}=Msg) when is_pid(Conn) ->
             throw({error, Err})
     end.
 
+
+%% @doc Asynchronously send a message
+%% @end
 -spec cast(pid(), dbus_message()) -> ok | {error, term()}.
 cast(Conn, #dbus_message{}=Msg) when is_pid(Conn) ->
     gen_fsm:send_event(Conn, Msg).
 
+
+%% @doc Launch authentication on this connection
+%% No message can be sent before authentication.
+%%
+%% @end
 -spec auth(pid()) -> {ok, ConnexionId :: undefined | binary()} | {error, term()}.
 auth(Conn) ->
     case gen_fsm:sync_send_event(Conn, auth) of
@@ -115,6 +136,11 @@ auth(Conn) ->
             end
     end.
 
+
+%% @doc Change controlling process for the connection.
+%%
+%% If called by someone else than current owner, `{error, unauthorized}' is returned.
+%% @end
 -spec set_controlling_process(Connection :: pid(), Client :: pid()) -> ok | {error, unauthorized}.
 set_controlling_process(Conn, Client) ->
     gen_fsm:sync_send_all_state_event(Conn, {set_controlling_process, Client}).
@@ -163,7 +189,6 @@ handle_event(Evt, StateName, State) ->
 
 
 %% STATE: connected
-%%-logging(debug).
 handle_info({received, Bin}, connected, State) ->
     ?debug("Unknown command: ~s", [Bin]),
     send_error(State, <<"Unknown command">>),

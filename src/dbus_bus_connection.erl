@@ -1,7 +1,13 @@
 %%%
 %%% @copyright 2014 Jean Parpaillon
 %%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%%% @doc dbus_bus_connection is a proxy to a DBus broker
+%%% @doc Implements the connection to a D-Bus bus.
+%%%
+%%% Actually, the following addresses classes are supported:
+%%% * `unix'
+%%% * `tcp'
+%%%
+%%% Other classes are _ignored_, in particular `kernel'.
 %%%
 %%% @end
 %%% Created : 22 Jul 2014 by Jean Parpaillon <jean.parpaillon@free.fr>
@@ -30,11 +36,10 @@
 -define(KEY_DELIM, $=).
 
 
-%% @doc Retrieve bus_id from well-known names
+%% @doc Retrieve a bus_id from well-known names
 %% 
-%% @throws {unsupported, [#bus_id{}]}
 %% @end
--spec get_bus_id(dbus_known_bus()) -> bus_id().
+-spec get_bus_id(dbus_known_bus()) -> bus_id() | {unsupported, [bus_id()]}.
 get_bus_id(session) ->
     Ids = env_to_bus_id(),
     case lists:filter(fun (#bus_id{scheme=unix}) -> true;
@@ -49,6 +54,9 @@ get_bus_id(system) ->
     ?DEFAULT_BUS_SYSTEM.
 
 
+%% @doc Start a proxy to a bus.
+%%
+%% @end
 -spec connect(bus_id() | dbus_known_bus()) -> {ok, dbus_connection()} | {error, term()}.
 connect(#bus_id{}=BusId) ->
     case dbus_peer_connection:start_link(BusId) of
@@ -74,19 +82,31 @@ connect(#bus_id{}=BusId) ->
 	    end;
 	{error, Err} -> {error, Err}
     end;
+
 connect(BusName) when BusName =:= system;
 		      BusName =:= session ->
     connect(get_bus_id(BusName)).
 
+
+%% @doc Stop the bus proxy
+%% @end
+-spec close({?MODULE, dbus_connection()} | dbus_connection()) -> ok.
 close({?MODULE, Bus}) ->     dbus_proxy:stop(Bus);
 close(Bus) ->                dbus_proxy:stop(Bus).
 
+
+%% @doc Send a message to the bus connection, synchronously.
+%% @end
+-spec call({?MODULE, dbus_connection()} | dbus_connection(), dbus_message()) -> {ok, term()} | {error, term()}.
 call({?MODULE, Bus}, Msg) -> dbus_proxy:call(Bus, Msg);
 call(Bus, Msg) ->            dbus_proxy:call(Bus, Msg).
 
+
+%% @doc Send a message to the bus connection, asynchronously.
+%% @end
+-spec cast({?MODULE, dbus_connection()} | dbus_connection(), dbus_message()) -> ok | {error, term()}.
 cast({?MODULE, Bus}, Msg) -> dbus_proxy:cast(Bus, Msg);
 cast(Bus, Msg) ->            dbus_proxy:cast(Bus, Msg).
-
 
 %%%
 %%% Priv

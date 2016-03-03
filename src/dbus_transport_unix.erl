@@ -3,9 +3,9 @@
 %% @author Jean Parpaillon <jean.parpaillon@free.fr>
 %% @doc DBUS transport implementation on UNIX socket
 %%
-%% Messages
-%% {received, Pid, Data}
-%% {closed, Pid}
+%% Support UNIX fd passing.
+%% @todo use OTP mechanism when available, see <a href="https://github.com/erlang/otp/pull/612" >https://github.com/erlang/otp/pull/612</a>
+%% @end
 
 -module(dbus_transport_unix).
 

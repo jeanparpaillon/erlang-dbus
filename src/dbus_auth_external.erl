@@ -1,6 +1,9 @@
 %%% @author Jean Parpaillon <jean.parpaillon@free.fr>
 %%% @copyright (C) 2014, Jean Parpaillon
-%%% @doc
+%%% @doc Implements EXTERNAL SASL mechanism.
+%%%
+%%% See <a href="https://tools.ietf.org/html/rfc4422" >RFC 4422</a> for complete
+%%% specification.
 %%%
 %%% @end
 %%% Created : 5 Jul 2014 by Jean Parpaillon <jean.parpaillon@free.fr>
@@ -15,10 +18,18 @@
 
 -define(cookie, <<"31303030">>).
 
+%% @doc Initialize EXTERNAL mechanism.
+%% 
+%% @end
+-spec init() -> {ok, binary()}.
 init() ->
     Cookie = get_cookie(),
     {ok, <<"AUTH EXTERNAL ", Cookie/binary, "\r\n">>}.
 
+
+%% @doc Not implemented: ANONYMOUS does not require challenge
+%% @end
+-spec challenge(binary(), any()) -> {error, invalid_challenge}.
 challenge(_, _) ->
     {error, invalid_challenge}.
 

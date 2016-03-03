@@ -1,15 +1,13 @@
 %%
-%% @copyright 2006-2007 Mikael Magnusson
-%% @copyright 2014 Jean Parpaillon
+%% @copyright 2006-2007 Mikael Magnusson, 2014-2016 Jean Parpaillon
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
 %% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%% @doc proxy gen server representing a remote D-BUS object
+%% @doc proxy representing a remote D-BUS object
 %%
 -module(dbus_proxy).
 
 -include("dbus_client.hrl").
 -include("dbus_dbus.hrl").
-%%-include_lib("annotations/include/annotations.hrl").
 
 
 -behaviour(gen_server).
@@ -68,62 +66,87 @@
 -type handler() :: mfa() | {fun(), any()} | pid().
 -export_type([t/0, handler/0]).
 
-%%%
-%%% @doc Try to connect "/"
-%%%
+
+%% @equiv start_link(Conn, Service, <<"/">>)
+%% @end
 -spec start_link(Conn :: dbus_connection(), Service :: dbus_name()) -> 
             {ok, dbus_proxy()} | {error, term()}.
 start_link(Conn, Service) ->
     gen_server:start_link(?MODULE, [Conn, Service, <<"/">>], []).
 
 
+%% @doc Connect to an object, and introspect it.
+%% @end
 -spec start_link(Conn :: dbus_connection(), Service :: dbus_name(), Path :: binary()) -> 
             {ok, dbus_proxy()} | {error, term()}.
 start_link(Conn, Service, Path) when is_binary(Path) ->
     gen_server:start_link(?MODULE, [Conn, Service, Path], []).
 
 
+%% @doc Connect to an object, with known interfaces.
+%% @end
 -spec start_link(Conn :: dbus_connection(), Service :: dbus_name(), Path :: binary(), Node :: dbus_node()) -> 
             {ok, dbus_proxy()} | {error, term()}.
 start_link(Conn, Service, Path, #dbus_node{}=Node) when is_binary(Path) ->
     gen_server:start_link(?MODULE, [Conn, Service, Path, Node], []).
 
 
+%% @doc Disconnect proxy
+%% @end
 -spec stop(dbus_proxy()) -> ok.
 stop(Proxy) ->
     gen_server:cast(Proxy, stop).
 
 
+%% @doc Sync send an arbitrary message
+%% @end
 -spec call(Proxy :: dbus_proxy(), Msg :: dbus_message()) -> {ok, term()} | {error, term()}.
 call(Proxy, #dbus_message{}=Msg) ->
     gen_server:call(Proxy, {call, Msg}).
 
+
+%% @doc Sync call a method
+%% @end
 -spec call(Proxy :: dbus_proxy(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term()) -> 
           ok | {ok, term()} | {error, term()}.
 call(Proxy, IfaceName, MethodName, Args) when is_pid(Proxy) ->
     gen_server:call(Proxy, {method, IfaceName, MethodName, Args}).
 
 
+%% @doc Async send a message
+%% @end
 -spec cast(Proxy :: dbus_proxy(), Msg :: dbus_message()) -> ok | {error, term()}.
 cast(Proxy, #dbus_message{}=Msg) ->
     gen_server:call(Proxy, {cast, Msg}).
 
+
+%% @doc Async call a method
+%% @end
 -spec cast(Proxy :: dbus_proxy(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term()) -> ok.
 cast(Proxy, IfaceName, MethodName, Args) ->
     gen_server:cast(Proxy, {method, IfaceName, MethodName, Args}).
 
+
+%% @doc Get children of an object
+%% @end
 -spec children(Proxy :: dbus_proxy()) -> [binary()].
 children(Proxy) ->
     gen_server:call(Proxy, children).
 
-%%
 %% @doc Connect to every signal (eg for object manager)
 %%
+%% @todo Describe handlers
+%% @end
 -spec connect_signal(Proxy :: dbus_proxy(), Handler :: handler()) -> 
                 ok | {error, term()}.
 connect_signal(Proxy, MFA) ->
     gen_server:call(Proxy, {connect_signal, MFA}).
 
+
+%% @doc Connect to a particular signal
+%% 
+%% @todo Describe handlers
+%% @end
 -spec connect_signal(Proxy :: dbus_proxy(), 
              IfaceName :: dbus_name(), 
              SignalName :: dbus_name(), 
@@ -132,6 +155,9 @@ connect_signal(Proxy, MFA) ->
 connect_signal(Proxy, IfaceName, SignalName, MFA) ->
     gen_server:call(Proxy, {connect_signal, IfaceName, SignalName, MFA}).
 
+
+%% @doc Connect to a particular signal on a particular children object
+%% @end
 -spec connect_signal(Proxy :: dbus_proxy(), 
              Service :: dbus_name(), 
              IfaceName :: dbus_name(), 
@@ -142,6 +168,9 @@ connect_signal(Proxy, IfaceName, SignalName, MFA) ->
 connect_signal(Proxy, Service, IfaceName, SignalName, Path, MFA) ->
     gen_server:call(Proxy, {connect_signal, Service, IfaceName, SignalName, Path, MFA}).
 
+
+%% @doc Check if object implements the given interface
+%% @end
 -spec has_interface(Proxy :: dbus_proxy(), InterfaceName :: dbus_name()) -> true | false.
 has_interface(Proxy, InterfaceName) ->
     gen_server:call(Proxy, {has_interface, InterfaceName}).

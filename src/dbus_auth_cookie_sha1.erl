@@ -1,6 +1,9 @@
 %%% @author Jean Parpaillon <jean.parpaillon@free.fr>
 %%% @copyright (C) 2014, Jean Parpaillon
-%%% @doc
+%%% @doc Implements COOKIE_SHA1 authentication mechanism
+%%%
+%%% See <a href="https://dbus.freedesktop.org/doc/dbus-specification.html#auth-mechanisms-sha" >D-Bus Specification</a>
+%%% for complete specification.
 %%%
 %%% @end
 %%% Created : 5 Jul 2014 by Jean Parpaillon <jean.parpaillon@free.fr>
@@ -15,6 +18,8 @@
 -export([init/0,
          challenge/2]).
 
+%% @doc Initialize DBUS_AUTH_COOKIE_SHA1 authentication
+%% @end
 init() ->
     ?debug("Init DBUS_AUTH_COOKIE_SHA1 authentication~n", []),
     case os:getenv("USER") of
@@ -26,6 +31,9 @@ init() ->
             {continue, <<"AUTH DBUS_COOKIE_SHA1", HexUser/binary, "\r\n">>, waiting_challenge}
     end.
 
+
+%% @doc Answer challenge
+%% @end
 challenge(Chall, waiting_challenge) ->
     case binary:split(Chall, <<$\ >>, [global]) of
         [Context, CookieId, ServerChallenge] ->

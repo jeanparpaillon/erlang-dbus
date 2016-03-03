@@ -1,8 +1,9 @@
 %%%
-%%% @doc       D-BUS application module
 %%% @author    Jean Parpaillon <jean.parpaillon@free.fr>
 %%% @copyright 2014 Jean Parpaillon
+%%% @doc Transform well-known D-Bus names from binary to atoms.
 %%%
+%%% @end
 -module(dbus_names).
 
 -include("dbus.hrl").
@@ -17,21 +18,35 @@
 	 bin_to_member/1,
 	 bin_to_error/1]).
 
+%% @equiv bin_to_iface(list_to_binary(Str)) 
+%% @end
 -spec list_to_iface(string()) -> dbus_name().
 list_to_iface(Str) when is_list(Str) ->
     bin_to_iface(list_to_binary(Str)).
 
 
+%% @equiv bin_to_method(list_to_binary(Str)) 
+%% @end
 -spec list_to_method(string()) -> dbus_name().
 list_to_method(Str) when is_list(Str) ->
     bin_to_method(list_to_binary(Str)).
 
 
+%% @equiv bin_to_signal(list_to_binary(Str)) 
+%% @end
 -spec list_to_signal(string()) -> dbus_name().
 list_to_signal(Str) when is_list(Str) ->
     bin_to_signal(list_to_binary(Str)).
 
 
+%% @doc Well-known interface names:
+%%
+%% * `org.freedesktop.DBus'
+%% * `org.freedesktop.DBus.Peer'
+%% * `org.freedesktop.DBus.Introspectable'
+%% * `org.freedesktop.DBus.Properties'
+%% * `org.freedesktop.DBus.ObjectManager'
+%% @end
 -spec bin_to_iface(binary()) -> dbus_name().
 bin_to_iface(<<"org.freedesktop.DBus">>) -> 'org.freedesktop.DBus';
 bin_to_iface(<<"org.freedesktop.DBus.Peer">>) -> 'org.freedesktop.DBus.Peer';
@@ -41,6 +56,33 @@ bin_to_iface(<<"org.freedesktop.DBus.ObjectManager">>) -> 'org.freedesktop.DBus.
 bin_to_iface(Bin) when is_binary(Bin) -> Bin.
 
 
+%% @doc Well-known method names
+%%
+%% * `AddMatch'
+%% * `GetAdtAuditSessionData'
+%% * `GetConnectionCredentials'
+%% * `GetConnectionProcessID'
+%% * `GetConnectionSELinuxSecurityContext'
+%% * `GetConnectionUnixUser'
+%% * `GetId'
+%% * `GetNameOwner'
+%% * `Hello'
+%% * `ListActivatableNames'
+%% * `ListNames'
+%% * `NameHasOwner'
+%% * `ReleaseName'
+%% * `RemoveMatch'
+%% * `RequestName'
+%% * `StartServiceByName'
+%% * `UpdateActivationEnvironment'
+%% * `Ping'
+%% * `GetmachineId'
+%% * `Introspect'
+%% * `Get'
+%% * `Set'
+%% * `GetAll'
+%% * `GetManagedObjects'
+%% @end
 -spec bin_to_method(binary()) -> dbus_name().
 bin_to_method(<<"AddMatch">>) -> 'AddMatch';
 bin_to_method(<<"GetAdtAuditSessionData">>) -> 'GetAdtAuditSessionData';
@@ -69,6 +111,15 @@ bin_to_method(<<"GetManagedObjects">>) -> 'GetManagedObjects';
 bin_to_method(Bin) when is_binary(Bin) -> Bin.
 
 
+%% @doc Well-known signal names
+%%
+%% * `NameAcquired'
+%% * `NameLost'
+%% * `NameAcquired'
+%% * `PropertiesChanged'
+%% * `InterfacesAdded'
+%% * `InterfacesRemoved'
+%% @end
 -spec bin_to_signal(binary()) -> dbus_name().
 bin_to_signal(<<"NameAcquired">>) -> 'NameAcquired';
 bin_to_signal(<<"NameLost">>) -> 'NameLost';
@@ -79,6 +130,9 @@ bin_to_signal(<<"InterfacesRemoved">>) -> 'InterfacesRemoved';
 bin_to_signal(Bin) when is_binary(Bin) -> Bin.
 
 
+%% @doc Well-known method OR signal name
+%%
+%% @end
 -spec bin_to_member(binary()) -> dbus_name().
 bin_to_member(Bin) ->
     case bin_to_method(Bin) of
@@ -88,6 +142,13 @@ bin_to_member(Bin) ->
 	    Atom
     end.
 
+
+%% @doc Well-known error names
+%%
+%% * `org.freedesktop.DBus.Error.NameHasNoOwner'
+%% * `org.freedesktop.DBus.Error.OOM'
+%% * `org.freedesktop.DBus.Error.MatchRuleNotFound'
+%% @end
 -spec bin_to_error(binary()) -> dbus_name().
 bin_to_error(<<"org.freedesktop.DBus.Error.NameHasNoOwner">>) -> 'org.freedesktop.DBus.Error.NameHasNoOwner';
 bin_to_error(<<"org.freedesktop.DBus.Error.OOM">>) -> 'org.freedesktop.DBus.Error.OOM';

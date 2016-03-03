@@ -1,10 +1,10 @@
 %%%
-%%% @doc       D-BUS application module
+%%% @copyright 2006 Mikael Magnusson, 2014-2016 Jean Parpaillon
 %%% @author    Mikael Magnusson <mikma@users.sourceforge.net>
 %%% @author    Jean Parpaillon <jean.parpaillon@free.fr>
-%%% @copyright 2006 Mikael Magnusson
-%%% @copyright 2014 Jean Parpaillon
+%%% @doc       D-BUS application module
 %%%
+%%% @end
 -module(dbus).
 
 -include("dbus_client.hrl").
@@ -14,21 +14,19 @@
 %% application callbacks
 -export([start/2, stop/1]).
 
-%% api:s
+%% API
 -export([start/0]).
 
-%% application callbacks
+%% @doc
+%% @end
 start(normal, []) ->
     dbus_sup:start_link().
 
 stop(_State) ->
     ok.
 
-%%--------------------------------------------------------------------
-%% @spec start() -> Result
-%%           Result = {ok, Pid} | {error, Reason}
-%% @doc Start top supervisor of the Yate application
+%% @doc
 %% @end
-%%--------------------------------------------------------------------
+-spec start() -> {ok, [atom()]} | {error, term()}.
 start() ->
     application:ensure_all_started(dbus).

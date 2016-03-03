@@ -1,8 +1,8 @@
 %%
 %% @copyright 2006 Mikael Magnusson
 %% @author    Mikael Magnusson <mikma@users.sourceforge.net>
-%% @doc       Top supervisor
-%%
+%% @doc       Top supervisor for dbus application
+%% @end
 -module(dbus_sup).
 
 -behaviour(supervisor).
@@ -18,12 +18,9 @@
 -define(SERVER, ?MODULE).
 
 
-%%--------------------------------------------------------------------
-%% @spec start_link() -> Result
-%%           Result = {ok, Pid} | {error, Reason}
 %% @doc Start supervisor
 %% @end
-%%--------------------------------------------------------------------
+-spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 

@@ -1,10 +1,10 @@
 %%
-%% @copyright 2014 Jean Parpaillon <jean.parpaillon@free.fr>
+%% @copyright 2014 Jean Parpaillon
 %%
-%% @author Jean Parpaillon <jean.parpaillon@free.fr.
+%% @author Jean Parpaillon <jean.parpaillon@free.fr>
 %%
 %% @doc DBUS constants to atom
-%%
+%% @end
 -module(dbus_constants).
 
 -export([

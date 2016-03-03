@@ -1,12 +1,12 @@
 %%
-%% @copyright 2006-2007 Mikael Magnusson
-%% @copyright 2014 Jean Parpaillon <jean.parpaillon@free.fr>
+%% @copyright 2006-2007 Mikael Magnusson, 2014-2016 Jean Parpaillon
 %%
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
-%% @author Jean Parpaillon <jean.parpaillon@free.fr.
+%% @author Jean Parpaillon <jean.parpaillon@free.fr>
 %%
 %% @doc Exported D-BUS service gen_server
-%%
+%% @todo Check if the code still working, cleanup, test...
+%% @end
 -module(dbus_service).
 
 -behaviour(gen_server).

@@ -1,11 +1,13 @@
 %%
-%% @copyright 2006-2007 Mikael Magnusson
-%% @copyright 2014 Jean Parpaillon
+%% @copyright 2006-2007 Mikael Magnusson, 2014-2106 Jean Parpaillon
 %%
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
 %% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%% @doc (un)marshalling
+%% @doc D-Bus binary format (un)marshaling.
 %%
+%% See <a href="https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-marshaling" >D-Bus Specification</a>.
+%%
+%% @end
 -module(dbus_marshaller).
 
 -include("dbus.hrl").
@@ -28,6 +30,9 @@
 %%%
 %%% API
 %%%
+
+%% @doc Encode a message
+%% @end
 -spec marshal_message(dbus_message()) -> iolist().
 marshal_message(#dbus_message{header=#dbus_header{serial=0}}=_Msg) ->
     throw({error, invalid_serial});
@@ -40,6 +45,9 @@ marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial
                               body=Body}=_Msg) ->
     [ marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, Size, S, Fields]), Body ].
 
+
+%% @doc Encode a signature
+%% @end
 -spec marshal_signature(dbus_signature()) -> iolist().
 marshal_signature(byte)        ->   "y";
 marshal_signature(boolean)     ->   "b";
@@ -55,30 +63,47 @@ marshal_signature(object_path) ->   "o";
 marshal_signature(signature)   ->   "g";
 marshal_signature({array, Type}) ->
     [$a, marshal_signature(Type)];
+
 marshal_signature({struct, SubTypes}) ->
     ["(", marshal_struct_signature(SubTypes, []), ")"];
+
 marshal_signature(variant) ->
     "v";
+
 marshal_signature({dict, KeyType, ValueType}) ->
     KeySig = marshal_signature(KeyType),
     ValueSig = marshal_signature(ValueType),
     ["a{", KeySig, ValueSig, "}"];
+
 marshal_signature([]) ->
     "";
+
 marshal_signature([Type|R]) ->
     [marshal_signature(Type), marshal_signature(R)].
 
 
+%% @doc Encode objects, given a signature
+%% @end
 -spec marshal_list(dbus_signature(), term()) -> iolist().
 marshal_list(Types, Value) ->
     marshal_list(Types, Value, 0, []).
 
 
+%% @doc Decode messages
+%% 
+%% Returns:
+%% * `{ok, [dbus_message()], binary()}': if binary describe a complete list of messages, eventually with remaining binary.
+%% * `more': if no complete message could be decoded.
+%% @end
 -spec unmarshal_data(binary()) -> {ok, Msgs :: [dbus_message()], Rest :: binary()} | more.
 unmarshal_data(Data) ->
     unmarshal_data(Data, []).
 
 
+%% @doc Decode a signature
+%%
+%% Returns `more' if no complete signature could be decoded.
+%% @end
 -spec unmarshal_signature(binary()) -> {ok, dbus_signature()} | more.
 unmarshal_signature(<<>>) -> 
     {ok, []};

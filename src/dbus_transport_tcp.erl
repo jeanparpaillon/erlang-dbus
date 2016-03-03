@@ -1,13 +1,11 @@
 %%
-%% @copyright 2006-2007 Mikael Magnusson
-%% @copyright 2014 Jean Parpaillon
+%% @copyright 2006-2007 Mikael Magnusson, 2014-2016 Jean Parpaillon
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
 %% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%% @doc tcp connection gen_server
+%% @doc Implements D-Bus connection over TCP
 %%
-%% Messages
-%% {received, Pid, Data}
-%% {closed, Pid}
+%% Do not support UNIX FD passing
+%% @end
 
 -module(dbus_transport_tcp).
 
