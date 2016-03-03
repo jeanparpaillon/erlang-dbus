@@ -12,7 +12,7 @@ dep_annotations_commit = 9f8a800
 
 EDOC_OPTS = {app_default, "http://www.erlang.org/doc/"} \
            ,{doclet, edown_doclet} \
-           ,{top_level_readme, {"$(CURDIR)/README.md", "http://github.com/lizenn/erlang-dbus"}}
+           ,{top_level_readme, {"$(CURDIR)/doc/README.md", "http://github.com/lizenn/erlang-dbus"}}
 
 #ANNOTATIONS = logging
 
