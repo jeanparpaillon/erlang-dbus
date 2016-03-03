@@ -14,3 +14,20 @@ The erlang platform needs an erlang native implementation.
 
 * [API documentation](./blob/master/doc/README.md)
 * [Manuel](./wiki)
+
+## Current status
+
+The status: 
+* consume D-Bus services: ok
+* connect through TCP and UNIX socket: ok
+* connect through kernel: not ok (but can use unix socket emulation)
+* tested: ok. 
+  * erocci_backend_dbus includes a Python service with which eorcci_backend_dbus can interact
+  * Another implementation of the same D-Bus interface is used in another project (Java): https://github.com/gibello/erocci-dbus-java
+
+TODO:
+* expose D-Bus services
+* some authentication mechanisms are not implemented, but architectures allows for easy extension (see https://github.com/lizenn/erlang-dbus/blob/master/src/dbus_auth_cookie_sha1.erl, https://github.com/lizenn/erlang-dbus/blob/master/src/dbus_auth_external.erl and https://github.com/lizenn/erlang-dbus/blob/master/src/dbus_auth_anonymous.erl)
+* more doc, more examples
+* more tests: unit tests regarding (un)marshaling would be really great, even if the above mentioned xample has rather complex interfaces which works both with Python and Java implementations
+* provide facilities for standard interfaces: Properties, ObjectManager, etc.
