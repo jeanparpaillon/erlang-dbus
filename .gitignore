@@ -9,6 +9,7 @@
 *.beam
 *.d
 *.app
+/ebin
 /logs
 /log
 /.erlang.mk
