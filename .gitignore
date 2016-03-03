@@ -1,21 +1,21 @@
+# Generic
 *~
-/dbus.d
-/Mnesia.*
-/ebin
-/demo/ebin
-.DS_Store
-/rel
-/deps
-/libs
+.project
+.settings
+
+# erlang
 *.swp
 *.dump
 *.beam
-.project
-.settings
-.rebar
-/.eunit
+*.d
+*.app
 /logs
 /log
-/_build
 /.erlang.mk
-/erlang-dbus.d
+
+/demo/ebin
+/rel
+/deps
+
+# Documentation
+/doc/edoc-info
