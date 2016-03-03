@@ -12,8 +12,8 @@ The erlang platform needs an erlang native implementation.
 
 ## Documentation
 
-* [API documentation](./blob/master/doc/README.md)
-* [Manuel](./wiki)
+* [API documentation](doc/README.md)
+* [Manuel](https://github.com/lizenn/wiki)
 
 ## Current status
 
