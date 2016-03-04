@@ -1,6 +1,6 @@
 {application, dbus,
  [{description, "A native erlang implementation of D-Bus"},
-  {vsn,"0.2"},
+  {vsn,"0.2.0"},
   {modules, [
 	     dbus,
 	     dbus_sup,
