@@ -28,9 +28,19 @@
 	 get_field_value/2,
 	 set_body/3,
 	 set_body/4,
-	 match/2]).
+	 match/2,
+	 type/1,
+	 is_error/2]).
 
 -export([introspect/2]).
+
+-type type() :: ?TYPE_INVALID
+	      | ?TYPE_METHOD_CALL
+	      | ?TYPE_METHOD_RETURN
+	      | ?TYPE_ERROR
+	      | ?TYPE_SIGNAL.
+
+-export_type([type/0]).
 
 %%%
 %%% API
@@ -263,6 +273,26 @@ set_body(Signature, Types, Body, #dbus_message{header=#dbus_header{fields=Fields
 match(HeaderMatches, #dbus_message{header=#dbus_header{fields=Fields}}) when is_list(HeaderMatches) ->
     match(true, HeaderMatches, Fields).
 
+
+%% @doc Get message type
+%% @end
+-spec type(dbus_message()) -> type().
+type(#dbus_message{header=#dbus_header{type=T}}) ->
+    T.
+
+%% @doc Check message is an error and of the given type
+%% @end
+-spec is_error(dbus_message(), dbus_name()) -> boolean().
+is_error(Msg, ErrName) ->
+    case type(Msg) of
+	?TYPE_ERROR ->
+	    case get_field_value(?FIELD_ERROR_NAME, Msg) of
+		ErrName -> true;
+		_ -> false
+	    end;
+	_ ->
+	    false
+    end.
 
 %% @doc Build `Introspect' method call message
 %%

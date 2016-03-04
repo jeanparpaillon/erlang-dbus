@@ -382,8 +382,9 @@ authenticated({call, #dbus_message{}=Msg}, {Pid, Tag},
               #state{sock=Sock, serial=S, pending=Pending}=State) ->
     Data = dbus_marshaller:marshal_message(dbus_message:set_serial(S, Msg)),
     true = ets:insert(Pending, {S, Pid, Tag}),
+    %%?debug("<~p> ~s:~s", [S, dbus_message:get_field_value(?FIELD_INTERFACE, Msg), dbus_message:get_field_value(?FIELD_MEMBER, Msg)]),
     ok = dbus_transport:send(Sock, Data),
-    {reply, {ok, {self(), Tag}}, authenticated, State#state{serial=S}};
+    {reply, {ok, {self(), Tag}}, authenticated, State#state{serial=S+1}};
 
 authenticated(_Evt, _From, State) ->
     ?debug("Unexpected event: ~p~n", [_Evt]),
@@ -399,19 +400,20 @@ handle_messages([#dbus_message{header=#dbus_header{type=Type}}=Msg | R], State) 
     case handle_message(Type, Msg, State) of
         {ok, State2} ->
             handle_messages(R, State2);
-        {error, Err} ->
-            {error, Err}
+        {error, _, _}=Err ->
+	    Err
     end.
 
-handle_message(?TYPE_METHOD_RETURN, #dbus_message{}=Msg, #state{pending=Pending}=State) ->
+handle_message(?TYPE_METHOD_RETURN, Msg, #state{pending=Pending}=State) ->
     Serial = dbus_message:get_field_value(?FIELD_REPLY_SERIAL, Msg),
     case ets:lookup(Pending, Serial) of
         [{Serial, Pid, Tag}] ->
             Pid ! {reply, {self(), Tag}, Msg},
             ets:delete(Pending, Serial),
+	    %%?debug("<~p> returns: ~p", [Serial, Msg#dbus_message.body]),
             {ok, State};
-        [_] ->
-            ?debug("Unexpected message: ~p~n", [Serial]),
+        _ ->
+            ?debug("Unexpected message: ~p~n", [Msg]),
             {error, unexpected_message, State}
     end;
 
@@ -421,10 +423,17 @@ handle_message(?TYPE_ERROR, Msg, #state{pending=Pending}=State) ->
         [{Serial, Pid, Tag}] ->
             Pid ! {error, {self(), Tag}, Msg},
             ets:delete(Pending, Serial),
+	    ?debug("<~p> error: ~p~n", [Serial, Msg#dbus_message.body]),
             {ok, State};
-        [_] ->
-            ?debug("Unexpected message: ~p~n", [Serial]),
-            {error, unexpected_message, State}
+        _Err ->
+	    case dbus_message:is_error(Msg, <<"org.freedesktop.DBus.Error.NoReply">>) of
+		true ->
+		    ?debug("Ignoring NoReply on unknown serial~n", []),
+		    {ok, State};
+		false ->
+		    ?debug("Unexpected message: ~p~n", [Msg]),
+		    {error, unexpected_message, State}
+	    end
     end;
 
 handle_message(?TYPE_METHOD_CALL, Msg, #state{owner=Owner}=State) ->
