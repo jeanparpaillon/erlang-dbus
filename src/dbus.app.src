@@ -1,6 +1,6 @@
 {application, dbus,
- [{description, "D-BUS application"},
-  {vsn,"0.2"},
+ [{description, "A native erlang implementation of D-Bus"},
+  {vsn,"0.2.0"},
   {modules, [
 	     dbus,
 	     dbus_sup,
@@ -41,6 +41,10 @@
 		  crypto,
 		  xmerl
 		 ]
-  }
+  },
+   {maintainers, ["Jean Parpaillon", "Maxim Krentovskiy",
+     "Laura M. Castro"]},
+   {licenses, ["Apache"]},
+   {links, [{"Github", "https://github.com/lizenn/erlang-dbus"}]}
  ]
 }.
