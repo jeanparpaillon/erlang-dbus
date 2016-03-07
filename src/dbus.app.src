@@ -42,8 +42,7 @@
 		  xmerl
 		 ]
   },
-   {maintainers, ["Jean Parpaillon", "Maxim Krentovskiy",
-     "Laura M. Castro"]},
+   {maintainers, ["Jean Parpaillon"]},
    {licenses, ["Apache"]},
    {links, [{"Github", "https://github.com/lizenn/erlang-dbus"}]}
  ]
