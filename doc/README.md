@@ -10,8 +10,6 @@ __Authors:__ Jean Parpaillon ([`jean.parpaillon@inria.fr`](mailto:jean.parpaillo
 
 `dbus` is a native erlang implementation of the D-Bus IPC system
 
-[![Build Status](https://travis-ci.org/lizenn/erlang-dbus.svg?branch=master)](https://travis-ci.org/lizenn/erlang-dbus) [![Project Stats](https://www.openhub.net/p/erlang-dbus2/widgets/project_thin_badge.gif)](https://www.openhub.net/p/erlang-dbus2)
-
 ## CI
 
 Visit CI results on http://travis-ci.org/erocci/erocci

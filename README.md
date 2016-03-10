@@ -7,11 +7,10 @@ language-independant, object-oriented RPC system.
 The erlang platform needs an erlang native implementation.
 
 [![Flattr this git repo](http://api.flattr.com/button/flattr-badge-large.png)](https://flattr.com/submit/auto?user_id=jeanparpaillon&url=https://github.com/lizenn/erlang-dbus.git&title=erlang-dbus&language=erlang&tags=github&category=software)
-
 [![Build Status](https://travis-ci.org/lizenn/erlang-dbus.svg?branch=master)](https://travis-ci.org/lizenn/erlang-dbus)
-
-[![erlang-dbus on hex.pm](https://hex.pm/images/hex-3c004dee0e3ee6ba651b29b1e1f52206.png)](https://hex.pm/packages/erlang_dbus)
-
+[![Hex.pm](https://img.shields.io/hexpm/v/dbus.svg)](https://hex.pm/packages/dbus)
+[![Hex.pm](https://img.shields.io/hexpm/dt/dbus.svg)](https://hex.pm/packages/dbus)
+[![Project Stats](https://www.openhub.net/p/erlang-dbus2/widgets/project_thin_badge.gif)](https://www.openhub.net/p/erlang-dbus2)
 
 ## Documentation
 

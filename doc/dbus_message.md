@@ -2,6 +2,7 @@
 
 # Module dbus_message #
 * [Description](#description)
+* [Data Types](#types)
 * [Function Index](#index)
 * [Function Details](#functions)
 
@@ -15,12 +16,27 @@ __Authors:__ Mikael Magnusson ([`mikma@users.sourceforge.net`](mailto:mikma@user
 
 ## Description ##
 See [D-Bus Specification](https://dbus.freedesktop.org/doc/dbus-specification.md#message-protocol-messages)
+
+<a name="types"></a>
+
+## Data Types ##
+
+
+
+
+### <a name="type-type">type()</a> ###
+
+
+<pre><code>
+type() = '?TYPE_INVALID' | '?TYPE_METHOD_CALL' | '?TYPE_METHOD_RETURN' | '?TYPE_ERROR' | '?TYPE_SIGNAL'
+</code></pre>
+
 <a name="index"></a>
 
 ## Function Index ##
 
 
-<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#call-4">call/4</a></td><td>Equivalent to <a href="#call-5"><tt>call(Destination, Path, Interface, Member, [])</tt></a>.</td></tr><tr><td valign="top"><a href="#call-5">call/5</a></td><td>Build a method call message.</td></tr><tr><td valign="top"><a href="#error-3">error/3</a></td><td>Build an error message.</td></tr><tr><td valign="top"><a href="#find_field-2">find_field/2</a></td><td>Find a specific field of a message.</td></tr><tr><td valign="top"><a href="#get_field-2">get_field/2</a></td><td>Get a specific field of a message.</td></tr><tr><td valign="top"><a href="#get_field_value-2">get_field_value/2</a></td><td>Get a field value.</td></tr><tr><td valign="top"><a href="#get_serial-1">get_serial/1</a></td><td>Get serial number from message.</td></tr><tr><td valign="top"><a href="#introspect-2">introspect/2</a></td><td>Build <code>Introspect</code> method call message.</td></tr><tr><td valign="top"><a href="#match-2">match/2</a></td><td>Check message headers matches some values.</td></tr><tr><td valign="top"><a href="#return-3">return/3</a></td><td>Build a return message.</td></tr><tr><td valign="top"><a href="#set_body-3">set_body/3</a></td><td>Set body of a message.</td></tr><tr><td valign="top"><a href="#set_body-4">set_body/4</a></td><td>Set body of a message.</td></tr><tr><td valign="top"><a href="#set_serial-2">set_serial/2</a></td><td>Set serial number of a message.</td></tr><tr><td valign="top"><a href="#signal-5">signal/5</a></td><td>Equivalent to <a href="#signal-6"><tt>signal(Destination, Path, Interface, Signal, Args, [])</tt></a>.</td></tr><tr><td valign="top"><a href="#signal-6">signal/6</a></td><td>Build a signal message.</td></tr></table>
+<table width="100%" border="1" cellspacing="0" cellpadding="2" summary="function index"><tr><td valign="top"><a href="#call-4">call/4</a></td><td>Equivalent to <a href="#call-5"><tt>call(Destination, Path, Interface, Member, [])</tt></a>.</td></tr><tr><td valign="top"><a href="#call-5">call/5</a></td><td>Build a method call message.</td></tr><tr><td valign="top"><a href="#error-3">error/3</a></td><td>Build an error message.</td></tr><tr><td valign="top"><a href="#find_field-2">find_field/2</a></td><td>Find a specific field of a message.</td></tr><tr><td valign="top"><a href="#get_field-2">get_field/2</a></td><td>Get a specific field of a message.</td></tr><tr><td valign="top"><a href="#get_field_value-2">get_field_value/2</a></td><td>Get a field value.</td></tr><tr><td valign="top"><a href="#get_serial-1">get_serial/1</a></td><td>Get serial number from message.</td></tr><tr><td valign="top"><a href="#introspect-2">introspect/2</a></td><td>Build <code>Introspect</code> method call message.</td></tr><tr><td valign="top"><a href="#is_error-2">is_error/2</a></td><td>Check message is an error and of the given type.</td></tr><tr><td valign="top"><a href="#match-2">match/2</a></td><td>Check message headers matches some values.</td></tr><tr><td valign="top"><a href="#return-3">return/3</a></td><td>Build a return message.</td></tr><tr><td valign="top"><a href="#set_body-3">set_body/3</a></td><td>Set body of a message.</td></tr><tr><td valign="top"><a href="#set_body-4">set_body/4</a></td><td>Set body of a message.</td></tr><tr><td valign="top"><a href="#set_serial-2">set_serial/2</a></td><td>Set serial number of a message.</td></tr><tr><td valign="top"><a href="#signal-5">signal/5</a></td><td>Equivalent to <a href="#signal-6"><tt>signal(Destination, Path, Interface, Signal, Args, [])</tt></a>.</td></tr><tr><td valign="top"><a href="#signal-6">signal/6</a></td><td>Build a signal message.</td></tr><tr><td valign="top"><a href="#type-1">type/1</a></td><td>Get message type.</td></tr></table>
 
 
 <a name="functions"></a>
@@ -125,6 +141,17 @@ introspect(Service::<a href="#type-dbus_name">dbus_name()</a>, Path::<a href="#t
 
 Build `Introspect` method call message
 
+<a name="is_error-2"></a>
+
+### is_error/2 ###
+
+<pre><code>
+is_error(Msg::<a href="#type-dbus_message">dbus_message()</a>, ErrName::<a href="#type-dbus_name">dbus_name()</a>) -&gt; boolean()
+</code></pre>
+<br />
+
+Check message is an error and of the given type
+
 <a name="match-2"></a>
 
 ### match/2 ###
@@ -203,4 +230,15 @@ signal(Destination::<a href="#type-dbus_name">dbus_name()</a>, Path::<a href="#t
 <br />
 
 Build a signal message
+
+<a name="type-1"></a>
+
+### type/1 ###
+
+<pre><code>
+type(Dbus_message::<a href="#type-dbus_message">dbus_message()</a>) -&gt; <a href="#type-type">type()</a>
+</code></pre>
+<br />
+
+Get message type
 
