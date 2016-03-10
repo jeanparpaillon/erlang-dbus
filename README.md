@@ -10,6 +10,7 @@ The erlang platform needs an erlang native implementation.
 [![Build Status](https://travis-ci.org/lizenn/erlang-dbus.svg?branch=master)](https://travis-ci.org/lizenn/erlang-dbus)
 [![Hex.pm](https://img.shields.io/hexpm/v/dbus.svg)](https://hex.pm/packages/dbus)
 [![Hex.pm](https://img.shields.io/hexpm/dt/dbus.svg)](https://hex.pm/packages/dbus)
+[![Project Stats](https://www.openhub.net/p/erlang-dbus2/widgets/project_thin_badge.gif)](https://www.openhub.net/p/erlang-dbus2)
 
 ## Documentation
 
