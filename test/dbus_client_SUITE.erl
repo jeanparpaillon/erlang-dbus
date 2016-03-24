@@ -68,6 +68,7 @@ groups() ->
 		   ,walk_node
 		   ,interface
 		   ,call_method
+		   ,large_string
 		   ,signal_all
 		   ,signal
 		   ]}
@@ -157,6 +158,13 @@ call_method(Config) ->
     ?assertMatch({error, {'org.freedesktop.DBus.UnknownInterface', _}},
                  dbus_proxy:call(O, <<"net.lizenn.dbus.BadInterface">>, <<"HelloWorld">>, [])),
     ok.
+
+large_string(Config) ->
+    {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
+    N = 100000,
+    Bin = binary:copy(<<$x>>, N),
+    ?assertMatch({ok, Bin},
+		 dbus_proxy:call(O, ?IFACE, <<"GetString">>, [N])).
 
 signal_all(Config) ->
     Fun = fun (_Sender, IfaceName, <<"SampleSignal">>, Path, _Args, Pid) ->

@@ -26,6 +26,15 @@ class SampleObject(dbus.service.Object):
     def GetDict(self):
         return {"first": "Hello Dict", "second": " from example-service.py"}
 
+    @dbus.service.method("net.lizenn.dbus.SampleInterface", in_signature='u')
+    def GetString(self, size):
+        s = ""
+        i = size
+        while (i > 0):
+            s += "x"
+            i -= 1
+        return s
+
     @dbus.service.signal("net.lizenn.dbus.SampleInterface")
     def SampleSignal(self, x, y):
         print "SampleSignal"
