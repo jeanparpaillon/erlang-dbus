@@ -15,7 +15,7 @@ The erlang platform needs an erlang native implementation.
 ## Documentation
 
 * [API documentation](doc/README.md)
-* [Manuel](https://github.com/lizenn/wiki)
+* [Manuel](https://github.com/lizenn/wiki/erlang-D-Bus-implementation)
 
 ## Current status
 
