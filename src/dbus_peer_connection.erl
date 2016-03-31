@@ -462,7 +462,7 @@ process_ok(Data, #state{sock=Sock, waiting=Waiting}=State) ->
     case dbus_transport:support_unix_fd(Sock) of
         true ->
             ok = dbus_transport:send(Sock, <<"NEGOTIATE_UNIX_FD\r\n">>),
-            {next_state, waiting_for_agree, State#state{guid=Guid}};
+            {next_state, waiting_for_agree, State#state{guid=Guid, mech_state=undefined}};
         false ->
 	    ?debug("not negotiating unix fd passing, since not possible~n", []),
             ok = dbus_transport:send(Sock, <<"BEGIN\r\n">>),
@@ -470,7 +470,7 @@ process_ok(Data, #state{sock=Sock, waiting=Waiting}=State) ->
                                   Pid ! {authenticated, {self(), Tag}}
                           end, Waiting),
             ok = dbus_transport:set_raw(Sock, true),
-            {next_state, authenticated, State#state{waiting=[], guid=Guid, unix_fd=false}}
+            {next_state, authenticated, State#state{waiting=[], guid=Guid, unix_fd=false, mech_state=undefined}}
     end.
 
 
