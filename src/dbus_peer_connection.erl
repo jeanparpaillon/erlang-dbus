@@ -314,12 +314,12 @@ connected(auth, {_Pid, Tag}=From, #state{sock=Sock, mechs=[Mech|Rest]}=State) ->
     case Mech:init() of
         {ok, Resp} ->
             ?debug("DBUS auth: sending initial data~n", []),
-            dbus_transport:send(Sock, Resp),
+            dbus_transport:send(Sock, << "AUTH ", Resp/binary, "\r\n" >>),
             {reply, {ok, {self(), Tag}}, waiting_for_ok, 
              State#state{waiting=[From], mechs=Rest}};
         {continue, Resp, MechState} ->
             ?debug("DBUS auth: sending initial data (continue)~n", []),
-            dbus_transport:send(Sock, Resp),
+            dbus_transport:send(Sock, << "AUTH ", Resp/binary, "\r\n" >>),
             {reply, {ok, {self(), Tag}}, waiting_for_data,
              State#state{waiting=[From], mechs=Rest, mech_state={Mech, MechState}}}
     end;
@@ -475,21 +475,14 @@ process_ok(Data, #state{sock=Sock, waiting=Waiting}=State) ->
 
 
 process_data(Data, #state{sock=Sock, mech_state={Mech, MechState}}=State) ->
-    Hex = try dbus_hex:from(Data) of
-	      Bin -> Bin
-	  catch throw:invalid_encoding ->
-		  ?debug("Invalid hex encoding: ~p", [Data]),
-		  dbus_transport:send(<<"ERROR \"Invalid hex encoding\"\r\n">>),
-		  <<>>
-	  end, 
-    case Mech:challenge(Hex, MechState) of
+    case Mech:challenge(Data, MechState) of
         {ok, Resp} ->
             ?debug("DBUS auth: answering challenge~n", []),
-            dbus_transport:send(Sock, Resp),
+            dbus_transport:send(Sock, << "DATA ", Resp/binary, "\r\n" >>),
             {next_state, waiting_for_ok, State};
         {continue, Resp, MechState} ->
             ?debug("DBUS auth: answering challenge (continue)~n", []),
-            dbus_transport:send(Sock, Resp),
+            dbus_transport:send(Sock, << "DATA ", Resp/binary, "\r\n" >>),
             {next_state, waiting_for_data, State#state{mech_state={Mech, MechState}}};
         {error, Err} ->
             ?debug("Error with authentication challenge: ~p~n", [Err]),
@@ -520,11 +513,11 @@ try_next_auth(#state{sock=Sock, mechs=[ Mech | Rest ]}=State) ->
     try Mech:init() of
         {ok, Resp} ->
             ?debug("DBUS auth: waiting for OK~n", []),
-            dbus_transport:send(Sock, Resp),
+            dbus_transport:send(Sock, << "AUTH ", Resp/binary, "\r\n" >>),
             {next_state, waiting_for_ok, State#state{mechs=Rest}};
         {continue, Resp, MechState} ->
             ?debug("DBUS auth: waiting for Data~n", []),
-            dbus_transport:send(Sock, Resp),
+            dbus_transport:send(Sock, << "AUTH ", Resp/binary, "\r\n" >>),
             {next_state, waiting_for_data, State#state{mechs=Rest, mech_state={Mech, MechState}}};
         {error, Err} ->
             ?error("Error initializing authentication mechanism (~s): ~p", [Mech, Err]),
@@ -613,6 +606,8 @@ valid_mech(Name, Rest) -> {unsupported, Name, Rest}.
 
 parse_error(Bin) -> pe_begin(Bin).
 
+
+pe_begin(<< $\s, Rest/binary >>) -> pe_begin(Rest);
 
 pe_begin(<< $", Rest/binary >>) -> pe_text(Rest, <<>>).
 

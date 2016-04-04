@@ -24,7 +24,7 @@
 -spec init() -> {ok, binary()}.
 init() ->
     Cookie = get_cookie(),
-    {ok, <<"AUTH EXTERNAL ", Cookie/binary, "\r\n">>}.
+    {ok, <<"EXTERNAL ", Cookie/binary>>}.
 
 
 %% @doc Not implemented: ANONYMOUS does not require challenge

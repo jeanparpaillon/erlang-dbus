@@ -20,7 +20,7 @@
 %% @end
 -spec init() -> {ok, binary()}.
 init() ->
-    {ok, <<"AUTH ANONYMOUS\r\n">>}.
+    {ok, <<"ANONYMOUS">>}.
 
 
 %% @doc Not implemented: ANONYMOUS does not require challenge
