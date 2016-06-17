@@ -6,7 +6,7 @@ DEPS = inert procket edown
 #DEPS += annotations
 #DEP_PLUGINS = annotations
 
-dep_procket = git https://github.com/msantos/procket.git master
+dep_procket = git https://github.com/msantos/procket.git 0.7.0
 dep_inert = git https://github.com/msantos/inert.git 0.6.2
 dep_annotations_commit = 9f8a800
 
