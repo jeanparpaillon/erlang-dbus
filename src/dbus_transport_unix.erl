@@ -26,7 +26,7 @@
 	 terminate/2]).
 
 %% Internal
--export([do_read/3]).
+-export([do_read/2]).
 
 -record(state, {sock, 
 		owner,
@@ -53,14 +53,14 @@ connect(BusOptions, _Options) ->
 init([{Mode, Path}, Owner]) when is_pid(Owner), is_binary(Path) ->
     true = link(Owner),
     ?debug("Connecting to UNIX socket: ~p~n", [Path]),
+    ok = inert:start(),
     case procket:socket(?PF_LOCAL, ?SOCK_STREAM, 0) of
 	{ok, Sock} ->
 	    SockUn = get_sock_un(Mode, Path),
 	    case procket:connect(Sock, SockUn) of
 		ok ->
 		    process_flag(trap_exit, true),
-		    PollID = inert:start(),
-		    Loop = spawn_link(?MODULE, do_read, [PollID, Sock, self()]),
+		    Loop = spawn_link(?MODULE, do_read, [Sock, self()]),
 		    {ok, #state{sock=Sock, owner=Owner, loop=Loop}};
 		{error, Err} ->
 		    ?error("Error connecting socket: ~p~n", [Err]),
@@ -136,11 +136,11 @@ terminate(_Reason, #state{sock=Sock, loop=Loop}) ->
 %%%
 %%% Priv
 %%%
-do_read(PollID, Sock, Pid) ->
+do_read(Sock, Pid) ->
     case procket:recvfrom(Sock, 16#FFFF) of
 	{error, eagain} ->
-	    ok = inert:poll(PollID, Sock),
-	    do_read(PollID, Sock, Pid);
+	    {ok, read} = inert:poll(Sock, [{mode, read}]),
+	    do_read(Sock, Pid);
 	{error, _Err} ->
 	    ok;
 	%% EOF
@@ -148,7 +148,7 @@ do_read(PollID, Sock, Pid) ->
 	    ok;
 	{ok, Buf} ->
 	    Pid ! {unix, Buf},
-	    do_read(PollID, Sock, Pid)
+	    do_read(Sock, Pid)
     end.
 
 get_sock_un(abstract, Path) when byte_size(Path) < ?UNIX_PATH_MAX-1 ->

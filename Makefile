@@ -7,7 +7,7 @@ DEPS = inert procket edown
 #DEP_PLUGINS = annotations
 
 dep_procket = git https://github.com/msantos/procket.git master
-dep_inert = git https://github.com/msantos/inert.git 0.2.1
+dep_inert = git https://github.com/msantos/inert.git 0.6.2
 dep_annotations_commit = 9f8a800
 
 EDOC_OPTS = {app_default, "http://www.erlang.org/doc/"} \
