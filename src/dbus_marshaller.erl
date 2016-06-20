@@ -253,7 +253,6 @@ marshal(Type, Value, _) ->
     throw({marshaling, Type, Value}).
 
 
-
 infer_type(Value) when is_binary(Value)->
     {array, byte};
 infer_type(true) ->
@@ -345,7 +344,7 @@ marshal_array(SubType, Array, Pos) ->
 
 marshal_array(_SubType, [], Pos, Res) ->
     {Res, Pos};
-marshal_array(SubType, [Value|R], Pos, Res) ->
+marshal_array(SubType, [ Value | R ], Pos, Res) ->
     {Value1, Pos1} = marshal(SubType, Value, Pos),
     marshal_array(SubType, R, Pos1, [Res, Value1]).
 
@@ -941,4 +940,45 @@ marshall_string_test_() ->
      ?_assertMatch({[<< 0:8/unit:2, 9:8/integer-little-unsigned-unit:4 >>, <<"my string">>, 0 ], 18},
 		   marshal(string, "my string", 2))
     ].
+
+marshall_object_path_test_() ->
+    [
+     ?_assertMatch({[<< 10:8/integer-little-unsigned-unit:4 >>, <<"/my/string">>, 0 ], 15},
+		   marshal(object_path, <<"/my/string">>, 0))
+    ].
+
+marshall_signature_test_() ->
+    [
+     ?_assertMatch({[<< 6:8/integer-little-unsigned-unit:1 >>, <<"yasgoy">>, 0 ], 8},
+		   marshal(signature, <<"yasgoy">>, 0))
+    ].
+
+marshall_array_test() ->
+    {Io, Pad} = marshal({array, string}, ["un", "deux", "trois"], 0),
+    ?assertMatch({<< 
+		     30:8/integer-little-unsigned-unit:4,
+		     2:8/integer-little-unsigned-unit:4, "un", 0, 0:8/unit:1, 
+		     4:8/integer-little-unsigned-unit:4, "deux", 0, 0:8/unit:3,
+		     5:8/integer-little-unsigned-unit:4, "trois", 0
+		  >>, 34},
+		 {iolist_to_binary(Io), Pad}),
+    
+    {Io2, Pad2} = marshal({array, string}, ["un", "deux", "trois"], 1),
+    ?assertMatch({<< 
+		     0:8/unit:3, 30:8/integer-little-unsigned-unit:4,
+		     2:8/integer-little-unsigned-unit:4, "un", 0, 0:8/unit:1, 
+		     4:8/integer-little-unsigned-unit:4, "deux", 0, 0:8/unit:3,
+		     5:8/integer-little-unsigned-unit:4, "trois", 0
+		  >>, 38},
+		 {iolist_to_binary(Io2), Pad2}),
+
+    {Io3, Pad3} = marshal({array, uint64}, [500, 245], 0),
+    ?assertMatch({<< 
+		     16:8/integer-little-unsigned-unit:4, 0:8/unit:4,
+		     500:64/integer-little-unsigned-unit:1, 
+		     245:64/integer-little-unsigned-unit:1
+		  >>, 24},
+		 {iolist_to_binary(Io3), Pad3}).
+
+
 -endif.
