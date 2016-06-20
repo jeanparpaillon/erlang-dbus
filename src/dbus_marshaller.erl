@@ -249,16 +249,18 @@ infer_type(Value) when is_tuple(Value) ->
 infer_type(Value) when is_atom(Value)->
     string;
 infer_type(Value) when is_list(Value) ->
-    string.
+    string;
+infer_type(Value) when is_map(Value) ->
+    infer_dict(Value).
 
 
 infer_struct(Values) ->
     {struct, infer_struct(Values, [])}.
 
 infer_struct([], Res) ->
-    Res;
-infer_struct([Value|R], Res) ->
-    infer_struct(R, [Res, infer_type(Value)]).
+    lists:reverse(Res);
+infer_struct([ Value | R ], Res) ->
+    infer_struct(R, [ infer_type(Value) | Res ]).
 
 infer_int(Value) when Value >= -32768 ->
     int16;
@@ -273,6 +275,11 @@ infer_uint(Value) when Value < 4294967296 ->
     uint32;
 infer_uint(_Value) ->
     uint64.
+
+
+infer_dict(_Value) ->
+    %% Can do better without going through all keys ?...
+    {dict, variant, variant}.
 
 
 marshal_int_variant(Value, Pos) when Value >= -32768 ->
