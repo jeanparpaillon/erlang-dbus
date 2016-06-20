@@ -160,6 +160,11 @@ marshal(int64, Value, Pos) ->
 marshal(uint64, Value, Pos) when Value >= 0 ->
     marshal_uint(8, Value, Pos);
 
+
+marshal(double, Value, Pos) when is_integer(Value) ->
+    Pad = pad(8, Pos),
+    {<< 0:Pad, (float(Value)):64/little-float >>, Pos + Pad div 8+ 8};
+
 marshal(double, Value, Pos) when is_float(Value) ->
     Pad = pad(8, Pos),
     {<< 0:Pad, Value:64/little-float >>, Pos + Pad div 8+ 8};
@@ -915,5 +920,25 @@ marshall_int_test_() ->
 
      ?_assertMatch({<< 4000000000:8/integer-little-unsigned-unit:8 >>, 8}, marshal(uint64, 4000000000, 0)),
      ?_assertThrow({marshaling, uint64, -400000}, marshal(uint64, -400000, 0))
+    ].
+
+marshall_float_test_() ->
+    [
+     ?_assertMatch({<< 67:64/float-little-signed-unit:1 >>, 8}, marshal(double, 67, 0)),
+     %% Tests alignement
+     ?_assertMatch({<< 0:8/unit:6, 67:64/float-little-signed-unit:1 >>, 16}, marshal(double, 67, 2))
+    ].
+
+marshall_string_test_() ->
+    [
+     ?_assertMatch({[<< 9:8/integer-little-unsigned-unit:4 >>, <<"my string">>, 0 ], 14},
+		   marshal(string, "my string", 0)),
+     ?_assertMatch({[<< 9:8/integer-little-unsigned-unit:4 >>, <<"my string">>, 0 ], 14},
+		   marshal(string, <<"my string">>, 0)),
+     ?_assertMatch({[<< 7:8/integer-little-unsigned-unit:4 >>, <<"an_atom">>, 0 ], 12},
+		   marshal(string, 'an_atom', 0)),
+
+     ?_assertMatch({[<< 0:8/unit:2, 9:8/integer-little-unsigned-unit:4 >>, <<"my string">>, 0 ], 18},
+		   marshal(string, "my string", 2))
     ].
 -endif.
