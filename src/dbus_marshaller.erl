@@ -131,10 +131,10 @@ marshal_list([Type | T], [Value | V], Pos, Res) ->
     {Res1, Pos1} = marshal(Type, Value, Pos),
     marshal_list(T, V, Pos1, [Res, Res1]).
 
-marshal(byte, Value, Pos) ->
+marshal(byte, Value, Pos) when is_integer(Value) andalso 255 >= Value ->
     marshal_uint(1, Value, Pos);
 
-marshal(boolean, Value, Pos) ->
+marshal(boolean, Value, Pos) when true =:= Value orelse false =:= Value ->
     Int =
         case Value of
             true -> 1;
@@ -142,22 +142,22 @@ marshal(boolean, Value, Pos) ->
         end,
     marshal(uint32, Int, Pos);
 
-marshal(int16, Value, Pos) ->
+marshal(int16, Value, Pos) when Value > -32767 andalso Value =< 32767 ->
     marshal_int(2, Value, Pos);
 
-marshal(uint16, Value, Pos) ->
+marshal(uint16, Value, Pos) when Value >= 0 andalso Value =< 65535 ->
     marshal_uint(2, Value, Pos);
 
-marshal(int32, Value, Pos) ->
+marshal(int32, Value, Pos) when Value >= -2147483647 andalso Value =< 2147483647->
     marshal_int(4, Value, Pos);
 
-marshal(uint32, Value, Pos) ->
+marshal(uint32, Value, Pos) when Value >= 0 andalso Value =< 4294967295 ->
     marshal_uint(4, Value, Pos);
 
 marshal(int64, Value, Pos) ->
     marshal_int(8, Value, Pos);
 
-marshal(uint64, Value, Pos) ->
+marshal(uint64, Value, Pos) when Value >= 0 ->
     marshal_uint(8, Value, Pos);
 
 marshal(double, Value, Pos) when is_float(Value) ->
@@ -178,6 +178,17 @@ marshal(object_path, Value, Pos) ->
 
 marshal(signature, Value, Pos) ->
     marshal_string(byte, Value, Pos);
+
+marshal({array, {struct, [_KeyType, _ValueType]}=SubType}, Value, Pos) when is_map(Value) ->
+    Pad = pad(uint32, Pos),
+    Pos0 = Pos + Pad div 8,
+    Pos1 = Pos0 + 4,
+    Pad1 = pad(SubType, Pos1),
+    Pos1b = Pos1 + Pad1 div 8,
+    {Value2, Pos2} = marshal_array(SubType, maps:to_list(Value), Pos1b),
+    Length = Pos2 - Pos1b,
+    {Value1, Pos1} = marshal(uint32, Length, Pos0),
+    {[<<0:Pad>>, Value1, <<0:Pad1>>, Value2], Pos2};    
 
 marshal({array, byte}=Type, Value, Pos) when is_binary(Value) ->
     marshal(Type, binary_to_list(Value), Pos);
@@ -231,7 +242,11 @@ marshal(variant, Value, Pos) when is_atom(Value) ->
 
 marshal(variant, Value, Pos) ->
     Type = infer_type(Value),
-    marshal_variant(Type, Value, Pos).
+    marshal_variant(Type, Value, Pos);
+
+marshal(Type, Value, _) ->
+    throw({marshaling, Type, Value}).
+
 
 
 infer_type(Value) when is_binary(Value)->
@@ -262,9 +277,9 @@ infer_struct([], Res) ->
 infer_struct([ Value | R ], Res) ->
     infer_struct(R, [ infer_type(Value) | Res ]).
 
-infer_int(Value) when Value >= -32768 ->
+infer_int(Value) when Value >= -32767 ->
     int16;
-infer_int(Value) when Value >= -4294967296 ->
+infer_int(Value) when Value >= -2147483647 ->
     int32;
 infer_int(_Value) ->
     int64.
@@ -330,9 +345,11 @@ marshal_array(SubType, [Value|R], Pos, Res) ->
     marshal_array(SubType, R, Pos1, [Res, Value1]).
 
 
+marshal_dict(KeyType, ValueType, Value, Pos) when is_map(Value) ->
+    marshal({array, {struct, [KeyType, ValueType]}}, maps:to_list(Value), Pos);
+
 marshal_dict(KeyType, ValueType, Value, Pos) when is_tuple(Value) ->
-    Array = dict:to_list(Value),
-    marshal_dict(KeyType, ValueType, Array, Pos);
+    marshal({array, {struct, [KeyType, ValueType]}}, dict:to_list(Value), Pos);
 
 marshal_dict(KeyType, ValueType, Value, Pos) when is_list(Value) ->
     marshal({array, {struct, [KeyType, ValueType]}}, Value, Pos).
@@ -556,6 +573,15 @@ unmarshal(string, Data, Pos, Endian) ->
 unmarshal(object_path, Data, Pos, Endian) ->
     unmarshal_string(uint32, Data, Pos, Endian);
 
+
+unmarshal({array, {struct, [KeyType, ValueType]}}, Data, Pos, Endian) ->
+    case unmarshal(uint32, Data, Pos, Endian) of
+	more ->
+	    more;
+	{ok, Length, Rest, NewPos} ->
+	    unmarshal_dict(KeyType, ValueType, Length, Rest, NewPos, Endian)
+    end;
+
 unmarshal({array, SubType}, Data, Pos, Endian) ->
     case unmarshal(uint32, Data, Pos, Endian) of
         more -> 
@@ -583,7 +609,7 @@ unmarshal({dict, KeyType, ValueType}, Data, Pos, Endian) ->
         more ->
             more;
         {ok, Length, Data1, Pos1} ->
-            case unmarshal_array({struct, [KeyType, ValueType]}, Length, Data1, Pos1, Endian) of
+            case unmarshal_dict(KeyType, ValueType, Length, Data1, Pos1, Endian) of
                 more -> 
                     more;
                 {ok, Res, Data2, Pos2} ->
@@ -722,6 +748,33 @@ unmarshal_struct([SubType | S], Data, Acc, Pos, Endian) ->
     end.
 
 
+unmarshal_dict(KeyType, ValueType, Length, Data, Pos, Endian) ->
+    SubType = {struct, [KeyType, ValueType]},
+    Pad = pad(padding(SubType), Pos),
+    if 
+        byte_size(Data) < Pad / 8 -> 
+            more;
+        true ->
+            << 0:Pad, Rest/binary >> = Data,
+            NewPos = Pos + Pad div 8,
+            unmarshal_dict(KeyType, ValueType, Length, Rest, #{}, NewPos, Endian)
+    end.
+
+
+unmarshal_dict(_KeyType, _ValueType, 0, Data, Acc, Pos, _) ->
+    {ok, Acc, Data, Pos};
+
+unmarshal_dict(KeyType, ValueType, Length, Data, Acc, Pos, Endian) when is_integer(Length), Length > 0 ->
+    SubType = {struct, [KeyType, ValueType]},
+    case unmarshal(SubType, Data, Pos, Endian) of
+        more -> 
+            more;
+        {ok, {Key, Value}, Data1, Pos1} ->
+            Size = Pos1 - Pos,
+            unmarshal_dict(KeyType, ValueType, Length - Size, Data1, Acc#{ Key => Value }, Pos1, Endian)
+    end.
+
+
 unmarshal_array(SubType, Length, Data, Pos, Endian) ->
     Pad = pad(padding(SubType), Pos),
     if 
@@ -827,5 +880,40 @@ unmarshal_endian_test_() ->
     ,?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<0,0,0,1>>, 0, $B))
     ,?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<1,0,0,0, "xyz">>, 0, $l))
     ,?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<0,0,0,1, "xyz">>, 0, $B))
+    ].
+
+marshall_byte_test_() ->
+    [
+     ?_assertMatch({<< 16#ff >>, 1}, marshal(byte, 16#ff, 0)),
+     ?_assertThrow({marshaling, byte, 256}, marshal(byte, 256, 3))
+    ].
+
+marshall_boolean_test_() ->
+    [
+     ?_assertMatch({<< 1:8/integer-little-unit:4 >>, 4}, marshal(boolean, true, 0)),
+     ?_assertMatch({<< 0:8/integer-little-unit:4 >>, 4}, marshal(boolean, false, 0)),
+     ?_assertThrow({marshaling, boolean, else}, marshal(boolean, else, 0))
+    ].
+
+marshall_int_test_() ->
+    [
+     ?_assertMatch({<< 67:8/integer-little-signed-unit:2 >>, 2}, marshal(int16, 67, 0)),
+     ?_assertMatch({<< -67:8/integer-little-signed-unit:2 >>, 2}, marshal(int16, -67, 0)),
+     ?_assertThrow({marshaling, int16, 300000}, marshal(int16, 300000, 0)),
+
+     ?_assertMatch({<< 67:8/integer-little-unsigned-unit:2 >>, 2}, marshal(uint16, 67, 0)),
+     ?_assertThrow({marshaling, uint16, -67}, marshal(uint16, -67, 0)),
+
+     ?_assertMatch({<< 2000000000:8/integer-little-signed-unit:4 >>, 4}, marshal(int32, 2000000000, 0)),
+     ?_assertMatch({<< -2000000000:8/integer-little-signed-unit:4 >>, 4}, marshal(int32, -2000000000, 0)),
+     ?_assertThrow({marshaling, int32, 3000000000}, marshal(int32, 3000000000, 0)),
+
+     ?_assertMatch({<< 4000000:8/integer-little-unsigned-unit:4 >>, 4}, marshal(uint32, 4000000, 0)),
+     ?_assertThrow({marshaling, uint32, -67}, marshal(uint32, -67, 0)),
+
+     ?_assertMatch({<< 4000000000:8/integer-little-signed-unit:8 >>, 8}, marshal(int64, 4000000000, 0)),
+
+     ?_assertMatch({<< 4000000000:8/integer-little-unsigned-unit:8 >>, 8}, marshal(uint64, 4000000000, 0)),
+     ?_assertThrow({marshaling, uint64, -400000}, marshal(uint64, -400000, 0))
     ].
 -endif.
