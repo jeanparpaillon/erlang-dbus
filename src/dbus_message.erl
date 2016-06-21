@@ -189,7 +189,7 @@ find_field(Code, #dbus_message{header=Header}) ->
     find_field(Code, Header);
 
 find_field(Code, #dbus_header{fields=Fields}) ->
-    maps:get(Code, Fields, undefined).
+    proplists:get_value(Code, Fields, undefined).
 
 
 %% @doc Get a specific field of a message.
@@ -203,7 +203,7 @@ get_field(Code, #dbus_message{ header=Header }) ->
     get_field(Code, Header);
 
 get_field(Code, #dbus_header{ fields=Fields }) ->
-    case maps:get(Code, Fields, undefined) of
+    case proplists:get_value(Code, Fields, undefined) of
 	undefined ->
 	    throw({no_such_field, Code});
 	Val -> 

@@ -473,26 +473,9 @@ unmarshal_header_fields(Bin, #dbus_header{endian=Endian, size=Size}=Header) ->
                     more;
                 true ->
                     <<0:Pad, Body:Size/binary, Rest2/binary>> = Rest,
-		    KnownFields = maps:fold(fun unmarshal_known_fields/3, #{}, Fields),
-                    {ok, Header#dbus_header{fields=KnownFields}, Body, Rest2}
+                    {ok, Header#dbus_header{fields=Fields}, Body, Rest2}
             end
     end.
-
-
-unmarshal_known_fields(?FIELD_INTERFACE, Val, Acc) ->
-    Val2 = dbus_names:bin_to_iface(Val),
-    Acc#{ ?FIELD_INTERFACE => Val2 };
-
-unmarshal_known_fields(?FIELD_MEMBER, Val, Acc) ->
-    Val2 = dbus_names:bin_to_member(Val),
-    Acc#{ ?FIELD_MEMBER => Val2 };
-
-unmarshal_known_fields(?FIELD_ERROR_NAME, Val, Acc) ->
-    Val2 = dbus_names:bin_to_error(Val),
-    Acc#{ ?FIELD_ERROR_NAME => Val2 };
-
-unmarshal_known_fields(Name, Value, Acc) ->
-    Acc#{ Name => Value }.
 
 
 unmarshal_single_type(<<>>) ->
