@@ -827,29 +827,6 @@ pad(Type, Pos) when is_atom(Type);
 %%% eunit
 %%%
 -ifdef(TEST).
-unmarshal_byte_test_() ->
-    [
-     ?_assertEqual({ok, 4, <<>>, 1}, unmarshal(byte, <<4>>, 0, $l))
-    ,?_assertEqual({ok, 4, <<"xyz">>, 1}, unmarshal(byte, <<4, "xyz">>, 0, $l))
-    ].
-
-unmarshal_boolean_test_() ->
-    [
-     ?_assertEqual({ok, true, <<>>, 4}, unmarshal(boolean, <<1,0,0,0>>, 0, $l))
-    ,?_assertEqual({ok, true, <<"xyz">>, 4}, unmarshal(boolean, <<1,0,0,0,"xyz">>, 0, $l))
-    ,?_assertEqual({ok, false, <<>>, 4}, unmarshal(boolean, <<0,0,0,0>>, 0, $l))
-    ,?_assertEqual(more, unmarshal(boolean, <<"x">>, 0, $l))
-    ,?_assertThrow({error, {parse_error, boolean, 2}}, unmarshal(boolean, <<2,0,0,0>>, 0, $l))
-    ].
-
-unmarshal_endian_test_() ->
-    [
-     ?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<1,0,0,0>>, 0, $l))
-    ,?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<0,0,0,1>>, 0, $B))
-    ,?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<1,0,0,0, "xyz">>, 0, $l))
-    ,?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<0,0,0,1, "xyz">>, 0, $B))
-    ].
-
 marshall_byte_test_() ->
     [
      ?_assertMatch({<< 16#ff >>, 1}, marshal(byte, 16#ff, 0)),
@@ -944,6 +921,29 @@ marshall_array_test() ->
 		  >>, 24},
 		 {iolist_to_binary(Io3), Pad3}).
 
+unmarshal_byte_test_() ->
+    [
+     ?_assertEqual({ok, 4, <<>>, 1}, unmarshal(byte, <<4>>, 0, $l))
+    ,?_assertEqual({ok, 4, <<"xyz">>, 1}, unmarshal(byte, <<4, "xyz">>, 0, $l))
+    ].
+
+unmarshal_boolean_test_() ->
+    [
+     ?_assertEqual({ok, true, <<>>, 4}, unmarshal(boolean, <<1,0,0,0>>, 0, $l))
+    ,?_assertEqual({ok, true, <<"xyz">>, 4}, unmarshal(boolean, <<1,0,0,0,"xyz">>, 0, $l))
+    ,?_assertEqual({ok, false, <<>>, 4}, unmarshal(boolean, <<0,0,0,0>>, 0, $l))
+    ,?_assertEqual(more, unmarshal(boolean, <<"x">>, 0, $l))
+    ,?_assertThrow({error, {parse_error, boolean, 2}}, unmarshal(boolean, <<2,0,0,0>>, 0, $l))
+    ].
+
+unmarshal_endian_test_() ->
+    [
+     ?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<1,0,0,0>>, 0, $l))
+    ,?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<0,0,0,1>>, 0, $B))
+    ,?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<1,0,0,0, "xyz">>, 0, $l))
+    ,?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<0,0,0,1, "xyz">>, 0, $B))
+    ].
+
 unmarshal_dict_test() ->
     Bin = << 
 	     29:8/integer-little-unsigned-unit:4, 0:8/unit:4,
@@ -956,16 +956,37 @@ unmarshal_dict_test() ->
 		 unmarshal({dict, byte, string}, Bin, 0, $l)),
     
     ?assertMatch({ok, [ {$a, <<"plop">>}, {$b, <<"truc">>} ], <<>>, 37}, 
-		 unmarshal({array, {struct, [byte, string]}}, Bin, 0, $l)).
+		 unmarshal({array, {struct, [byte, string]}}, Bin, 0, $l)),
+    
+    DictVariant = <<
+		    5:8/integer-little-unsigned-unit:1, "a{ys}", 0, 0:8/unit:1,
+		    Bin/binary
+		  >>,
+    ?assertMatch({ok, #{ $a := <<"plop">>, $b := <<"truc">> }, <<>>, 45}, 
+		 unmarshal(variant, DictVariant, 0, $l)),
+    
+    ArrayVariant = <<
+		     5:8/integer-little-unsigned-unit:1, "a(ys)", 0, 0:8/unit:1,
+		     Bin/binary
+		   >>,
+    ?assertMatch({ok, [ {$a, <<"plop">>}, {$b, <<"truc">>} ], <<>>, 45}, 
+		 unmarshal(variant, ArrayVariant, 0, $l)).
+    
 
 unmarshal_string_test_() ->
     Bin = <<
 	    8:8/integer-little-unsigned-unit:4,
 	    "a string", 0
 	  >>,
+    Variant = <<
+		1, $s, 0, 0:8/unit:1, 
+		Bin/binary
+	      >>,
     [
      ?_assertMatch({ok, <<"a string">>, <<>>, 13},
-		   unmarshal(string, Bin, 0, $l))
+		   unmarshal(string, Bin, 0, $l)),
+     ?_assertMatch({ok, <<"a string">>, <<>>, 17},
+		   unmarshal(variant, Variant, 0, $l))
     ].
 
 -endif.
