@@ -27,6 +27,18 @@
 
 -define(HEADER_SIGNATURE, [byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}]).
 
+-type errors() :: invalid_serial
+		| {marshaling, dbus_type(), binary()}
+		| {unmarshaling, dbus_type(), binary()}
+		| {dbus_parse_error, term()}
+		| {bad_type_code, integer()}
+		| dbus_parse_error
+		| body_parse_error
+		| bad_header
+		| term().
+
+-export_type([errors/0]).
+
 %%%
 %%% API
 %%%
@@ -35,7 +47,7 @@
 %% @end
 -spec marshal_message(dbus_message()) -> iolist().
 marshal_message(#dbus_message{header=#dbus_header{serial=0}}=_Msg) ->
-    throw({error, invalid_serial});
+    throw(invalid_serial);
 
 marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial=S, fields=Fields}, 
                               body= <<>>}=_Msg) ->
@@ -95,9 +107,14 @@ marshal_list(Types, Value) ->
 %% * `{ok, [dbus_message()], binary()}': if binary describe a complete list of messages, eventually with remaining binary.
 %% * `more': if no complete message could be decoded.
 %% @end
--spec unmarshal_data(binary()) -> {ok, Msgs :: [dbus_message()], Rest :: binary()} | more.
+-spec unmarshal_data(binary()) -> {ok, Msgs :: [dbus_message()], Rest :: binary()} 
+				      | {error, errors()}
+				      | more.
 unmarshal_data(Data) ->
-    unmarshal_data(Data, []).
+    try unmarshal_data(Data, []) 
+    catch throw:Err ->
+	    {error, Err}
+    end.
 
 
 %% @doc Decode a signature
@@ -394,10 +411,10 @@ unmarshal_data(Data, Acc) ->
             {ok, lists:reverse(Acc), Data};
         _ ->
             ?error("Error parsing data~n", []),
-            throw({error, dbus_parse_error})
+            throw(dbus_parse_error)
     catch
         {'EXIT', Err} -> 
-            throw({error, {dbus_parse_error, Err}})
+            throw({dbus_parse_error, Err})
     end.
 
 
@@ -413,13 +430,13 @@ unmarshal_message(Data) when is_binary(Data) ->
                 undefined ->
                     case BodyBin of
                         <<>> -> {ok, #dbus_message{header=Header, body=undefined}, Rest};
-                        _ -> throw({error, body_parse_error})
+                        _ -> throw(body_parse_error)
                     end;
                 Signature ->
                     case unmarshal_body(MsgType, Signature, BodyBin, Endian) of
                         {ok, Body} -> {ok, #dbus_message{header=Header, body=Body}, Rest};
                         more -> more;
-                        {error, Err} -> throw({error, Err})
+                        {error, Err} -> throw(Err)
                     end
             end
     end.
@@ -451,7 +468,7 @@ unmarshal_header(<<Endian/integer, Type/integer, Flags/integer, ?DBUS_VERSION_MA
     unmarshal_header2(Rest, #dbus_header{endian=Endian, type=Type, flags=Flags});
 unmarshal_header(_Data) ->
     ?debug("Bad message header: ~p~n", [_Data]),
-    throw({error, bad_header}).
+    throw(bad_header).
 
 unmarshal_header2(<<Length:4/unsigned-little-integer-unit:8, Serial:4/unsigned-little-integer-unit:8, Bin/bits>>,
                   #dbus_header{endian=$l}=Header) ->
@@ -484,6 +501,7 @@ unmarshal_single_type(<<>>) ->
 unmarshal_single_type(Bin) when is_binary(Bin) ->
     case unmarshal_signature(Bin, []) of
         {ok, [Type], <<>>} -> {ok, Type};
+	{ok, _, _} -> throw({unmarshaling, signature, Bin});
         more -> more
     end.
 
@@ -502,8 +520,8 @@ unmarshal(boolean, Data, Pos, Endian) ->
             {ok, true, Data1, Pos1};
         {ok, 0, Data1, Pos1} ->
             {ok, false, Data1, Pos1};
-        {ok, Else, _, _} ->
-            throw({error, {parse_error, boolean, Else}})
+        {ok, _, _, _} ->
+            throw({unmarshaling, boolean, Data})
     end;
 
 unmarshal(uint16, Data, Pos, Endian) ->
@@ -642,7 +660,7 @@ unmarshal_int(Len, Data, Pos, Endian) ->
 
 
 unmarshal_signature(<<>>, Acc) ->
-    {ok, lists:flatten(Acc), <<>>};
+    {ok, lists:reverse(Acc), <<>>};
 
 unmarshal_signature(<<$a, ${, KeySig, Rest/bits>>, Acc) ->
     KeyType = unmarshal_type_code(KeySig),
@@ -650,16 +668,17 @@ unmarshal_signature(<<$a, ${, KeySig, Rest/bits>>, Acc) ->
         {ok, [], _} -> 
             more;
         {ok, [ValueType], Rest2} ->
-            unmarshal_signature(Rest2, [Acc, {dict, KeyType, ValueType}]);
+            unmarshal_signature(Rest2, [ {dict, KeyType, ValueType} | Acc ]);
+        {ok, _, _} ->
+	    throw({unmarshaling, dict, KeySig, Rest});
         more -> 
             more
     end;
 
 unmarshal_signature(<<$a, Rest/bits>>, Acc) ->
-    case unmarshal_signature(Rest, []) of
-        {ok, [], _} -> more;
-        {ok, [Type | Types], <<>>} ->
-            {ok, lists:flatten([Acc, {array, Type}, Types]), <<>>};
+    case unmarshal_array_signature(Rest) of
+        {ok, Type, Rest2} ->
+	    unmarshal_signature(Rest2, [ {array, Type} | Acc ]);
         more -> more
     end;
 
@@ -667,19 +686,40 @@ unmarshal_signature(<<$(, Rest/bits>>, Acc) ->
     case unmarshal_signature(Rest, []) of
         {ok, [], _} -> more;
         {ok, Types, Rest2} ->
-            unmarshal_signature(Rest2, [Acc, {struct, Types}]);
+	    unmarshal_signature(Rest2, [ {struct, Types} | Acc ]);
         more -> more
     end;
 
 unmarshal_signature(<<$), Rest/bits>>, Acc) ->
-    {ok, lists:flatten(Acc), Rest};
+    {ok, lists:reverse(Acc), Rest};
 
 unmarshal_signature(<<$}, Rest/bits>>, Acc) ->
-    {ok, lists:flatten(Acc), Rest};
+    {ok, Acc, Rest};
 
 unmarshal_signature(<<C, Rest/bits>>, Acc) ->
     Code = unmarshal_type_code(C),
-    unmarshal_signature(Rest, [Acc, Code]).
+    unmarshal_signature(Rest, [Code | Acc]).
+
+
+unmarshal_array_signature(<<>>) ->
+    more;
+
+unmarshal_array_signature(<< $a, Rest/bits >>) ->
+    unmarshal_signature(<< $a, Rest/bits >>, []);
+
+unmarshal_array_signature(<< $(, Rest/bits >>) ->
+    case unmarshal_signature(Rest, []) of
+	{ok, [], _} -> 
+	    more;
+	{ok, Types, Rest2} ->
+	    {ok, {struct, Types}, Rest2};
+	more ->
+	    more
+    end;
+
+unmarshal_array_signature(<< C, Rest/bits >>) ->
+    Code = unmarshal_type_code(C),
+    {ok, Code, Rest}.
 
 
 unmarshal_type_code($y) -> byte;
@@ -698,7 +738,7 @@ unmarshal_type_code($r) -> struct;
 unmarshal_type_code($v) -> variant;
 unmarshal_type_code($e) -> dict_entry;
 unmarshal_type_code($a) -> array;
-unmarshal_type_code(_C) -> throw({error, {bad_type_code, _C}}).
+unmarshal_type_code(_C) -> throw({bad_type_code, _C}).
 
 
 unmarshal_struct(SubTypes, Data, Pos, Endian) ->
@@ -933,7 +973,7 @@ unmarshal_boolean_test_() ->
     ,?_assertEqual({ok, true, <<"xyz">>, 4}, unmarshal(boolean, <<1,0,0,0,"xyz">>, 0, $l))
     ,?_assertEqual({ok, false, <<>>, 4}, unmarshal(boolean, <<0,0,0,0>>, 0, $l))
     ,?_assertEqual(more, unmarshal(boolean, <<"x">>, 0, $l))
-    ,?_assertThrow({error, {parse_error, boolean, 2}}, unmarshal(boolean, <<2,0,0,0>>, 0, $l))
+    ,?_assertThrow({unmarshaling, boolean, <<2, 0, 0, 0>>}, unmarshal(boolean, <<2,0,0,0>>, 0, $l))
     ].
 
 unmarshal_endian_test_() ->
@@ -989,4 +1029,20 @@ unmarshal_string_test_() ->
 		   unmarshal(variant, Variant, 0, $l))
     ].
 
+unmarshal_signature_test() ->
+    [
+     ?_assertMatch([
+		    {array, {array, {array, string}}}, byte
+		   ], unmarshal_signature(<<"aaasy">>)),
+     ?_assertMatch([
+		    byte,
+		    {dict, boolean, variant},
+		    string,
+		    string
+		   ], unmarshal_signature(<<"ya{bv}ss">>)),
+     ?_assertMatch([
+		    {array, {struct, [string, string, {array, string}, {dict, string, variant}, string]}}, 
+		    string
+		   ], unmarshal_signature(<<"a(ssasa{sv}s)s">>))
+    ].
 -endif.
