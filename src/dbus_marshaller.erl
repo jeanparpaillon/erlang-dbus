@@ -958,4 +958,14 @@ unmarshal_dict_test() ->
     ?assertMatch({ok, [ {$a, <<"plop">>}, {$b, <<"truc">>} ], <<>>, 37}, 
 		 unmarshal({array, {struct, [byte, string]}}, Bin, 0, $l)).
 
+unmarshal_string_test_() ->
+    Bin = <<
+	    8:8/integer-little-unsigned-unit:4,
+	    "a string", 0
+	  >>,
+    [
+     ?_assertMatch({ok, <<"a string">>, <<>>, 13},
+		   unmarshal(string, Bin, 0, $l))
+    ].
+
 -endif.
