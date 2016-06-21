@@ -25,7 +25,6 @@
 	 set_serial/2,
 	 find_field/2,
 	 get_field/2,
-	 get_field_value/2,
 	 set_body/3,
 	 set_body/4,
 	 match/2,
@@ -190,10 +189,7 @@ find_field(Code, #dbus_message{header=Header}) ->
     find_field(Code, Header);
 
 find_field(Code, #dbus_header{fields=Fields}) ->
-    case proplists:get_value(Code, Fields) of
-	undefined -> undefined;
-	#dbus_variant{value=Val} -> Val
-    end.
+    maps:get(Code, Fields, undefined).
 
 
 %% @doc Get a specific field of a message.
@@ -203,11 +199,11 @@ find_field(Code, #dbus_header{fields=Fields}) ->
 %% @throws {no_such_field, integer()}
 %% @end
 -spec get_field(Code :: integer(), Header :: #dbus_header{}) -> dbus_variant().
-get_field(Code, #dbus_message{header=Header}) ->
+get_field(Code, #dbus_message{ header=Header }) ->
     get_field(Code, Header);
 
-get_field(Code, #dbus_header{fields=Fields}) ->
-    case proplists:get_value(Code, Fields) of
+get_field(Code, #dbus_header{ fields=Fields }) ->
+    case maps:get(Code, Fields, undefined) of
 	undefined ->
 	    throw({no_such_field, Code});
 	Val -> 
@@ -216,19 +212,6 @@ get_field(Code, #dbus_header{fields=Fields}) ->
 
 get_field(Code, _) ->
     throw({no_such_field, Code}).
-
-
-%% @doc Get a field value.
-%%
-%% Throws error if not found.
-%% @throws {no_such_field, integer()}
-%% @end
--spec get_field_value(Code :: integer(), Header :: dbus_header()) -> term().
-get_field_value(Code, #dbus_message{header=Header}) ->
-    get_field_value(Code, Header);
-get_field_value(Code, #dbus_header{}=Header) ->
-    #dbus_variant{value=Val} = get_field(Code, Header),
-    Val.
 
 
 %% @doc Set body of a message.
@@ -286,7 +269,7 @@ type(#dbus_message{header=#dbus_header{type=T}}) ->
 is_error(Msg, ErrName) ->
     case type(Msg) of
 	?TYPE_ERROR ->
-	    case get_field_value(?FIELD_ERROR_NAME, Msg) of
+	    case get_field(?FIELD_ERROR_NAME, Msg) of
 		ErrName -> true;
 		_ -> false
 	    end;

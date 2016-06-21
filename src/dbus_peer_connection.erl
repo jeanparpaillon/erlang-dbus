@@ -382,7 +382,6 @@ authenticated({call, #dbus_message{}=Msg}, {Pid, Tag},
               #state{sock=Sock, serial=S, pending=Pending}=State) ->
     Data = dbus_marshaller:marshal_message(dbus_message:set_serial(S, Msg)),
     true = ets:insert(Pending, {S, Pid, Tag}),
-    %%?debug("<~p> ~s:~s", [S, dbus_message:get_field_value(?FIELD_INTERFACE, Msg), dbus_message:get_field_value(?FIELD_MEMBER, Msg)]),
     ok = dbus_transport:send(Sock, Data),
     {reply, {ok, {self(), Tag}}, authenticated, State#state{serial=S+1}};
 
@@ -405,7 +404,7 @@ handle_messages([#dbus_message{header=#dbus_header{type=Type}}=Msg | R], State) 
     end.
 
 handle_message(?TYPE_METHOD_RETURN, Msg, #state{pending=Pending}=State) ->
-    Serial = dbus_message:get_field_value(?FIELD_REPLY_SERIAL, Msg),
+    Serial = dbus_message:get_field(?FIELD_REPLY_SERIAL, Msg),
     case ets:lookup(Pending, Serial) of
         [{Serial, Pid, Tag}] ->
             Pid ! {reply, {self(), Tag}, Msg},
@@ -418,7 +417,7 @@ handle_message(?TYPE_METHOD_RETURN, Msg, #state{pending=Pending}=State) ->
     end;
 
 handle_message(?TYPE_ERROR, Msg, #state{pending=Pending}=State) ->
-    Serial = dbus_message:get_field_value(?FIELD_REPLY_SERIAL, Msg),
+    Serial = dbus_message:get_field(?FIELD_REPLY_SERIAL, Msg),
     case ets:lookup(Pending, Serial) of
         [{Serial, Pid, Tag}] ->
             Pid ! {error, {self(), Tag}, Msg},

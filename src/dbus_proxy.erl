@@ -298,7 +298,7 @@ handle_info({reply, #dbus_message{body=Body}, {tag, From, Options}}, State) ->
     {noreply, State};
 
 handle_info({error, #dbus_message{body=Body}=Msg, {tag, From, Options}}, State) ->
-    ErrName = dbus_message:get_field_value(?FIELD_ERROR_NAME, Msg),
+    ErrName = dbus_message:get_field(?FIELD_ERROR_NAME, Msg),
     reply(From, {error, {ErrName, Body}}, Options),
     {noreply, State};
 
@@ -330,7 +330,7 @@ do_method(IfaceName, Method, Args, #state{service=Service, conn=Conn, path=Path}
                 {ok, #dbus_message{body=Res}} ->
                     {reply, {ok, Res}, State};
                 {error, #dbus_message{body=Body}=Ret} ->
-                    #dbus_variant{value=Code} = dbus_message:get_field(?FIELD_ERROR_NAME, Ret),
+                    Code = dbus_message:get_field(?FIELD_ERROR_NAME, Ret),
                     {reply, {error, {Code, Body}}, State}
             end;
         {error, Err} ->
@@ -351,7 +351,7 @@ do_introspect(Conn, Service, Path) ->
             ?error("Error introspecting object: ~p", [Msg]),
             {error, invalid_introspect};
         {error, #dbus_message{body=Body}=Msg} ->
-            Err = dbus_message:get_field_value(?FIELD_ERROR_NAME, Msg),
+            Err = dbus_message:get_field(?FIELD_ERROR_NAME, Msg),
             {error, {Err, Body}}
     end.
 
@@ -366,7 +366,7 @@ do_unique_name(Conn, Service) ->
             {error, invalid_nameowner};
         {error, #dbus_message{}=Err} ->
             case dbus_message:get_field(?FIELD_ERROR_NAME, Err) of
-                #dbus_variant{value= <<"org.freedesktop.DBus.Error.NameHasNoOwner">>} -> undefined;
+                <<"org.freedesktop.DBus.Error.NameHasNoOwner">> -> undefined;
                 _ -> throw({error, Err})
             end
     end.

@@ -96,7 +96,7 @@ handle_info(setup, State) ->
     {noreply, State};
 
 handle_info({dbus_method_call, Msg, Conn}, State) ->
-    Path = dbus_message:get_field_value(?FIELD_PATH, Msg),
+    Path = dbus_message:get_field(?FIELD_PATH, Msg),
     handle_method_call(Path, Msg, Conn, State);
 
 handle_info({'EXIT', Pid, Reason}, State) ->
@@ -146,7 +146,7 @@ handle_unregister_object(Object, State) ->
 
 handle_method_call(<<"/">>, #dbus_message{}=Msg, Conn,
 		   #state{objects=Objects}=State) ->
-    Member = dbus_message:get_field_value(?FIELD_MEMBER, Msg),
+    Member = dbus_message:get_field(?FIELD_MEMBER, Msg),
     case dbus_constants:to_atom(Member) of
 	'Introspect' ->
 	    Elements = lists:foldl(fun({Path, _}, Res) ->

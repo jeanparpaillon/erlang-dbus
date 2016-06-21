@@ -83,9 +83,9 @@
 -type dbus_signature() :: [dbus_type()].
 
 -record(bus_id, {
-          scheme,               % tcp or unix
-          options               % tcp: address, port
-                                                % unix: path|abstract
+          scheme,               %% tcp or unix
+          options               %% * tcp: address, port
+	                        %% * unix: path|abstract
          }).
 -type bus_id() :: #bus_id{}.
 
@@ -103,7 +103,7 @@
           version  = ?DBUS_VERSION_MAJOR :: integer(),
           size     = 0                   :: integer(),
           serial                         :: integer(),
-          fields                         :: [dbus_variant()]
+          fields                         :: maps:map()
          }).
 -type dbus_header() :: #dbus_header{}.
 

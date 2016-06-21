@@ -185,29 +185,13 @@ marshal(signature, Value, Pos) ->
     marshal_string(byte, Value, Pos);
 
 marshal({array, {struct, [_KeyType, _ValueType]}=SubType}, Value, Pos) when is_map(Value) ->
-    Pad = pad(uint32, Pos),
-    Pos0 = Pos + Pad div 8,
-    Pos1 = Pos0 + 4,
-    Pad1 = pad(SubType, Pos1),
-    Pos1b = Pos1 + Pad1 div 8,
-    {Value2, Pos2} = marshal_array(SubType, maps:to_list(Value), Pos1b),
-    Length = Pos2 - Pos1b,
-    {Value1, Pos1} = marshal(uint32, Length, Pos0),
-    {[<<0:Pad>>, Value1, <<0:Pad1>>, Value2], Pos2};    
+    marshal_array(SubType, maps:to_list(Value), Pos);
 
 marshal({array, byte}=Type, Value, Pos) when is_binary(Value) ->
     marshal(Type, binary_to_list(Value), Pos);
 
 marshal({array, SubType}, Value, Pos) when is_list(Value) ->
-    Pad = pad(uint32, Pos),
-    Pos0 = Pos + Pad div 8,
-    Pos1 = Pos0 + 4,
-    Pad1 = pad(SubType, Pos1),
-    Pos1b = Pos1 + Pad1 div 8,
-    {Value2, Pos2} = marshal_array(SubType, Value, Pos1b),
-    Length = Pos2 - Pos1b,
-    {Value1, Pos1} = marshal(uint32, Length, Pos0),
-    {[<<0:Pad>>, Value1, <<0:Pad1>>, Value2], Pos2};
+    marshal_array(SubType, Value, Pos);
 
 marshal({struct, _SubTypes}=Type, Value, Pos) when is_tuple(Value) ->
     marshal(Type, tuple_to_list(Value), Pos);
@@ -339,24 +323,33 @@ marshal_string(LenType, Value, Pos) when is_binary(Value) ->
     {[Value1, Value, 0], Pos1 + Length + 1}.
 
 
-marshal_array(SubType, Array, Pos) ->
-    marshal_array(SubType, Array, Pos, []).
+marshal_array(SubType, Value, Pos) ->
+    Pad = pad(uint32, Pos),
+    Pos0 = Pos + Pad div 8,
+    Pos1 = Pos0 + 4,
+    Pad1 = pad(SubType, Pos1),
+    Pos1b = Pos1 + Pad1 div 8,
+    {Value2, Pos2} = marshal_array_item(SubType, Value, Pos1b),
+    Length = Pos2 - Pos1b,
+    {Value1, Pos1} = marshal(uint32, Length, Pos0),
+    {[<<0:Pad>>, Value1, <<0:Pad1>>, Value2], Pos2}.
 
-marshal_array(_SubType, [], Pos, Res) ->
+
+marshal_array_item(SubType, Array, Pos) ->
+    marshal_array_item(SubType, Array, Pos, []).
+
+marshal_array_item(_SubType, [], Pos, Res) ->
     {Res, Pos};
-marshal_array(SubType, [ Value | R ], Pos, Res) ->
+marshal_array_item(SubType, [ Value | R ], Pos, Res) ->
     {Value1, Pos1} = marshal(SubType, Value, Pos),
-    marshal_array(SubType, R, Pos1, [Res, Value1]).
+    marshal_array_item(SubType, R, Pos1, [Res, Value1]).
 
 
 marshal_dict(KeyType, ValueType, Value, Pos) when is_map(Value) ->
-    marshal({array, {struct, [KeyType, ValueType]}}, maps:to_list(Value), Pos);
-
-marshal_dict(KeyType, ValueType, Value, Pos) when is_tuple(Value) ->
-    marshal({array, {struct, [KeyType, ValueType]}}, dict:to_list(Value), Pos);
+    marshal_array({struct, [KeyType, ValueType]}, maps:to_list(Value), Pos);
 
 marshal_dict(KeyType, ValueType, Value, Pos) when is_list(Value) ->
-    marshal({array, {struct, [KeyType, ValueType]}}, Value, Pos).
+    marshal_array({struct, [KeyType, ValueType]}, Value, Pos).
 
 
 marshal_struct(SubTypes, Values, Pos) ->
@@ -480,31 +473,26 @@ unmarshal_header_fields(Bin, #dbus_header{endian=Endian, size=Size}=Header) ->
                     more;
                 true ->
                     <<0:Pad, Body:Size/binary, Rest2/binary>> = Rest,
-                    {ok, Header#dbus_header{fields=unmarshal_known_fields(Fields)}, Body, Rest2}
+		    KnownFields = maps:fold(fun unmarshal_known_fields/3, #{}, Fields),
+                    {ok, Header#dbus_header{fields=KnownFields}, Body, Rest2}
             end
     end.
 
-unmarshal_known_fields(Fields) ->
-    unmarshal_known_fields(Fields, []).
 
-
-unmarshal_known_fields([], Acc) ->
-    Acc;
-
-unmarshal_known_fields([{?FIELD_INTERFACE, #dbus_variant{value=Val}=F} | Fields], Acc) ->
+unmarshal_known_fields(?FIELD_INTERFACE, Val, Acc) ->
     Val2 = dbus_names:bin_to_iface(Val),
-    unmarshal_known_fields(Fields, [{?FIELD_INTERFACE, F#dbus_variant{value=Val2}} | Acc]);
+    Acc#{ ?FIELD_INTERFACE => Val2 };
 
-unmarshal_known_fields([{?FIELD_MEMBER, #dbus_variant{value=Val}=F} | Fields], Acc) ->
+unmarshal_known_fields(?FIELD_MEMBER, Val, Acc) ->
     Val2 = dbus_names:bin_to_member(Val),
-    unmarshal_known_fields(Fields, [{?FIELD_MEMBER, F#dbus_variant{value=Val2}} | Acc]);
+    Acc#{ ?FIELD_MEMBER => Val2 };
 
-unmarshal_known_fields([{?FIELD_ERROR_NAME, #dbus_variant{value=Val}=F} | Fields], Acc) ->
+unmarshal_known_fields(?FIELD_ERROR_NAME, Val, Acc) ->
     Val2 = dbus_names:bin_to_error(Val),
-    unmarshal_known_fields(Fields, [{?FIELD_ERROR_NAME, F#dbus_variant{value=Val2}} | Acc]);
+    Acc#{ ?FIELD_ERROR_NAME => Val2 };
 
-unmarshal_known_fields([ Field | Fields ], Acc) ->
-    unmarshal_known_fields(Fields, [Field | Acc]).
+unmarshal_known_fields(Name, Value, Acc) ->
+    Acc#{ Name => Value }.
 
 
 unmarshal_single_type(<<>>) ->
@@ -515,6 +503,7 @@ unmarshal_single_type(Bin) when is_binary(Bin) ->
         {ok, [Type], <<>>} -> {ok, Type};
         more -> more
     end.
+
 
 unmarshal(_, <<>>, _, _) ->
     more;
@@ -635,7 +624,7 @@ unmarshal(variant, Data, Pos, Endian) ->
                         more -> 
                             more;
                         {ok, Value, Data2, Pos2} -> 
-                            {ok, #dbus_variant{type=Type, value=Value}, Data2, Pos2}
+                            {ok, Value, Data2, Pos2}
                     end
             end
     end.
@@ -979,6 +968,4 @@ marshall_array_test() ->
 		     245:64/integer-little-unsigned-unit:1
 		  >>, 24},
 		 {iolist_to_binary(Io3), Pad3}).
-
-
 -endif.
