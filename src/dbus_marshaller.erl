@@ -567,14 +567,6 @@ unmarshal(object_path, Data, Pos, Endian) ->
     unmarshal_string(uint32, Data, Pos, Endian);
 
 
-unmarshal({array, {struct, [KeyType, ValueType]}}, Data, Pos, Endian) ->
-    case unmarshal(uint32, Data, Pos, Endian) of
-	more ->
-	    more;
-	{ok, Length, Rest, NewPos} ->
-	    unmarshal_dict(KeyType, ValueType, Length, Rest, NewPos, Endian)
-    end;
-
 unmarshal({array, SubType}, Data, Pos, Endian) ->
     case unmarshal(uint32, Data, Pos, Endian) of
         more -> 
@@ -968,4 +960,19 @@ marshall_array_test() ->
 		     245:64/integer-little-unsigned-unit:1
 		  >>, 24},
 		 {iolist_to_binary(Io3), Pad3}).
+
+unmarshal_dict_test() ->
+    Bin = << 
+	     29:8/integer-little-unsigned-unit:4, 0:8/unit:4,
+	     $a, 0:8/unit:3,
+	     4:8/integer-little-unsigned-unit:4, "plop", 0, 0:8/unit:3,
+	     $b, 0:8/unit:3,
+	     4:8/integer-little-unsigned-unit:4, "truc", 0
+	  >>,
+    ?assertMatch({ok, #{ $a := <<"plop">>, $b := <<"truc">> }, <<>>, 37}, 
+		 unmarshal({dict, byte, string}, Bin, 0, $l)),
+    
+    ?assertMatch({ok, [ {$a, <<"plop">>}, {$b, <<"truc">>} ], <<>>, 37}, 
+		 unmarshal({array, {struct, [byte, string]}}, Bin, 0, $l)).
+
 -endif.
