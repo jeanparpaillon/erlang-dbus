@@ -11,6 +11,7 @@ addons:
       - build-essential
       - dbus
       - python3
+      - python3-gi
       - python3-dbus
       - python3-pycurl
       - libglib2.0-0
