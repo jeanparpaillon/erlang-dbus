@@ -586,6 +586,10 @@ parse_mech(<<>>, Acc) ->
 parse_mech(<<$\s, Rest/bits>>, Acc) ->
     valid_mech(Acc, Rest);
 
+parse_mech(<<C, _/bits>>, Acc) when $\r =:= C
+				    orelse $\n =:= C ->
+    valid_mech(Acc, <<>>);
+
 parse_mech(<<C:8, Rest/bits>>, SoFar) ->
     parse_mech(Rest, << SoFar/binary, C>>).
 
