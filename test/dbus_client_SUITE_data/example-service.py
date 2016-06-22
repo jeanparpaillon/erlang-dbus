@@ -1,9 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
+from gi.repository import GObject
 import dbus
 import dbus.service
 import dbus.glib
-import gobject
 
 class SampleObject(dbus.service.Object):
     def __init__(self, bus_name, object_path="/"):
@@ -37,11 +37,11 @@ class SampleObject(dbus.service.Object):
 
     @dbus.service.signal("net.lizenn.dbus.SampleInterface")
     def SampleSignal(self, x, y):
-        print "SampleSignal"
+        print("SampleSignal")
 
     @dbus.service.signal("net.lizenn.dbus.SampleInterface")
     def SampleSignal2(self):
-        print "SampleSignal2"
+        print("SampleSignal2")
 
 
 session_bus = dbus.SessionBus()
@@ -51,5 +51,5 @@ SampleObject(service, object_path="/root/child1")
 SampleObject(service, object_path="/root/child2/little1")
 SampleObject(service, object_path="/root/child2/little2")
 
-mainloop = gobject.MainLoop()
+mainloop = GObject.MainLoop()
 mainloop.run()

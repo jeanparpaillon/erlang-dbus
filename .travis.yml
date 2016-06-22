@@ -1,27 +1,27 @@
+sudo: false
+
 language: erlang
 otp_release:
-   - 18.0
    - 18.1
-
-sudo: false
+   - 18.2.1
 
 addons:
   apt:
     packages:
       - build-essential
       - dbus
-      - python-dbus
-      - python-gobject
+      - python3
+      - python3-dbus
+      - python3-pycurl
+      - libglib2.0-0
 
 install:
   - "make"
 
 script:
-  - "make eunit"
+  - "make tests"
 
 notifications:
   email:
-    recipients:
-      - erocci-dev@ow2.org
     on_success: change
     on_failure: always
