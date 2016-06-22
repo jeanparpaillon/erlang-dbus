@@ -69,7 +69,7 @@ groups() ->
 		   ,interface
 		   ,call_method
 		   ,large_string
-		   ,signal_all
+		   %%,signal_all
 		   ,signal
 		   ]}
     ].

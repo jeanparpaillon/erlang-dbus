@@ -208,8 +208,8 @@ handle_call({method, IfaceName, MethodName, Args}, _From, #state{node=Node}=Stat
 handle_call({connect_signal, Name, '_', '_', Path, MFA}, _From, 
         #state{handlers=Handlers}=State) ->
     Match = [{type, signal},
-         {sender, Name},
-         {path_namespace, Path}], 
+	     {sender, Name},
+	     {path_namespace, Path}], 
     case do_method(?DBUS_IFACE, ?DBUS_DBUS_ADD_MATCH, [build_match(Match, <<>>)], State) of
 	{reply, ok, S2} -> 
 	    Handler = #signal_handler{sender=Name, interface='_', member='_', 
