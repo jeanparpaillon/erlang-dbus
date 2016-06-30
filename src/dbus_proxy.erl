@@ -19,7 +19,9 @@
          start_link/4,
          stop/1,
          call/2,
+         call/3,
          call/4,
+         call/5,
          cast/2,
          cast/4,
          connect_signal/2,
@@ -62,6 +64,8 @@
           uniquename      :: dbus_name()
          }).
 
+-define(TIMEOUT, 5000).
+
 -type t() :: dbus_proxy().
 -type handler() :: mfa() | {fun(), any()} | pid().
 -export_type([t/0, handler/0]).
@@ -98,19 +102,36 @@ stop(Proxy) ->
     gen_server:cast(Proxy, stop).
 
 
-%% @doc Sync send an arbitrary message
+%% @equiv call(Proxy. Msg, 5000).
 %% @end
 -spec call(Proxy :: dbus_proxy(), Msg :: dbus_message()) -> {ok, term()} | {error, term()}.
 call(Proxy, #dbus_message{}=Msg) ->
-    gen_server:call(Proxy, {call, Msg}).
+    call(Proxy, Msg, ?TIMEOUT).
+
+
+%% @doc Sync send an arbitrary message
+%% @end
+-spec call(Proxy :: dbus_proxy(), Msg :: dbus_message(),
+	   Timeout :: integer() | infinity) -> {ok, term()} | {error, term()}.
+call(Proxy, #dbus_message{}=Msg, Timeout) ->
+    gen_server:call(Proxy, {call, Msg}, Timeout).
+
+
+%% @equiv call(Proxy, Ifacename, MethodName, Args, 5000)
+%% @end
+-spec call(Proxy :: dbus_proxy(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term()) -> 
+          ok | {ok, term()} | {error, term()}.
+call(Proxy, IfaceName, MethodName, Args) ->
+    call(Proxy, IfaceName, MethodName, Args, ?TIMEOUT).
 
 
 %% @doc Sync call a method
 %% @end
--spec call(Proxy :: dbus_proxy(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term()) -> 
+-spec call(Proxy :: dbus_proxy(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term(), 
+	   Timeout :: integer() | infinity) -> 
           ok | {ok, term()} | {error, term()}.
-call(Proxy, IfaceName, MethodName, Args) when is_pid(Proxy) ->
-    gen_server:call(Proxy, {method, IfaceName, MethodName, Args}).
+call(Proxy, IfaceName, MethodName, Args, Timeout) when is_pid(Proxy) ->
+    gen_server:call(Proxy, {method, IfaceName, MethodName, Args}, Timeout).
 
 
 %% @doc Async send a message

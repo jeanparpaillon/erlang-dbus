@@ -91,7 +91,7 @@ close(Conn) when is_pid(Conn) ->
 %% @end
 -spec call(pid(), dbus_message()) -> {ok, term()} | {error, term()}.
 call(Conn, #dbus_message{}=Msg) when is_pid(Conn) ->
-    case gen_fsm:sync_send_event(Conn, {call, Msg}) of
+    case gen_fsm:sync_send_event(Conn, {call, Msg}, infinity) of
         {ok, Tag} ->
             receive
                 {reply, Tag, Res} ->

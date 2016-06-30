@@ -96,7 +96,7 @@ marshal_signature([Type|R]) ->
 
 %% @doc Encode objects, given a signature
 %% @end
--spec marshal_list(dbus_signature(), term()) -> iolist().
+-spec marshal_list(dbus_signature(), term()) -> {iolist(), integer()}.
 marshal_list(Types, Value) ->
     marshal_list(Types, Value, 0, []).
 
@@ -867,6 +867,21 @@ pad(Type, Pos) when is_atom(Type);
 %%% eunit
 %%%
 -ifdef(TEST).
+marshal_list_test() ->
+    %%{Bin, Pos} = marshal_list([string,{array,{struct,[byte,string,variant]}},uint32,int32],
+    %%			      [<<"http://schemas.ogf.org/occi/infrastructure#compute">>, [], 0, -1]),
+    {Bin, Pos} = marshal_list([string, {array, {struct, [byte, string, variant]}}, uint32, int32],
+			      [<<"http://schemas.ogf.org/occi/infrastructure#compute">>, [], 0, -1]),
+    ?assertMatch({<<
+		    50:8/little-unsigned-unit:4, "http://schemas.ogf.org/occi/infrastructure#compute", 0, 
+		    0,                                                          %% string + padding
+		    0:8/little-unsigned-unit:4, 0:8/little-unsigned-unit:4,     %% array length + padding (struct)
+		    0:8/little-unsigned-unit:4,                                 %% 0 (unit32)
+		    -1:8/little-signed-unit:4                                   %% -1 (int32
+		  >>,
+		  72},
+		 {iolist_to_binary(Bin), Pos}).
+
 marshall_byte_test_() ->
     [
      ?_assertMatch({<< 16#ff >>, 1}, marshal(byte, 16#ff, 0)),
