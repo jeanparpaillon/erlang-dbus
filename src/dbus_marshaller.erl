@@ -868,19 +868,34 @@ pad(Type, Pos) when is_atom(Type);
 %%%
 -ifdef(TEST).
 marshal_list_test() ->
-    %%{Bin, Pos} = marshal_list([string,{array,{struct,[byte,string,variant]}},uint32,int32],
-    %%			      [<<"http://schemas.ogf.org/occi/infrastructure#compute">>, [], 0, -1]),
     {Bin, Pos} = marshal_list([string, {array, {struct, [byte, string, variant]}}, uint32, int32],
-			      [<<"http://schemas.ogf.org/occi/infrastructure#compute">>, [], 0, -1]),
+			      [<<"http://schemas.ogf.org/occi/infrastructure#compute">>, [], 1, -1]),
     ?assertMatch({<<
 		    50:8/little-unsigned-unit:4, "http://schemas.ogf.org/occi/infrastructure#compute", 0, 
 		    0,                                                          %% string + padding
 		    0:8/little-unsigned-unit:4, 0:8/little-unsigned-unit:4,     %% array length + padding (struct)
-		    0:8/little-unsigned-unit:4,                                 %% 0 (unit32)
+		    1:8/little-unsigned-unit:4,                                 %% 1 (uint32)
 		    -1:8/little-signed-unit:4                                   %% -1 (int32
 		  >>,
 		  72},
-		 {iolist_to_binary(Bin), Pos}).
+		 {iolist_to_binary(Bin), Pos}),
+    {Bin2, Pos2} = marshal_list([string, {array, {struct, [byte, string, variant]}}, uint32, int32],
+				[<<"http://schemas.ogf.org/occi/infrastructure#compute">>, 
+				 [{1, <<"str">>, 24}], 1, -1]),
+
+    ?assertMatch({<<
+		    50:8/little-unsigned-unit:4, "http://schemas.ogf.org/occi/infrastructure#compute", 0, 
+		    0,                                                          %% string + padding
+		    18:8/little-unsigned-unit:4, 0:8/little-unsigned-unit:4,    %% array length + padding (struct)
+		    1:8, 0:8/unit:3,                                            %% struct<byte + padding, ...
+		    3:8/little-unsigned-unit:4, "str", 0,                       %% ...string...
+		    1:8/little-unsigned-unit:1, $q, 0, 0,                       %% ...variant...
+		    24:8/little-unsigned-unit:2, 0:8/little-unsigned-unit:2,    %% uint16> + padding
+		    1:8/little-unsigned-unit:4,                                 %% 1 (uint32)
+		    -1:8/little-signed-unit:4                                   %% -1 (int32
+		  >>,
+		  92},
+		 {iolist_to_binary(Bin2), Pos2}).
 
 marshall_byte_test_() ->
     [

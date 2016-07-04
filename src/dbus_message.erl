@@ -232,7 +232,6 @@ set_body(#dbus_method{in_sig=Signature, in_types=Types}, Body, Message) ->
 	       Body      :: term(),
 	       Message   :: dbus_message()) -> dbus_message() | {error, dbus_err()}.
 set_body(Signature, Types, Body, #dbus_message{header=#dbus_header{fields=Fields}=Header}=Message) ->
-    ?debug("set_body(~p, ~p, ~p)", [Signature, Types, Body]),
     try	dbus_marshaller:marshal_list(Types, Body) of
 	{Bin, Pos} ->
 	    Fields2 = case Signature of
