@@ -32,29 +32,26 @@
 		loop     :: pid(),
 		raw      :: boolean()}).
 
+-define(DEFAULT_PATH, "/tmp/erlang-dbus").
+
 connect(BusOptions, _Options) ->
     Path = case proplists:get_value(path, BusOptions) of
 	       undefined ->
-		   case proplists:get_value(abstract, BusOptions) of
-		       undefined ->
-			   throw(no_path);
-		       V ->
-			   {abstract, list_to_binary(V)}
-		   end;
+                   throw(no_path);
 	       V ->
-		   {path, list_to_binary(V)}
+		   list_to_binary(V)
 	   end,
     gen_server:start_link(?MODULE, [Path, self()],[]).
 
 %%
 %% gen_server callbacks
 %%
-init([{Mode, Path}, Owner]) when is_pid(Owner), is_binary(Path) ->
+init([Path, Owner]) when is_pid(Owner), is_binary(Path) ->
     true = link(Owner),
     ?debug("Connecting to UNIX socket: ~p~n", [Path]),
     {ok, S} = prim_inet:open(tcp, local, stream),
     {ok, Fd} = prim_inet:getfd(S),
-    case gen_tcp:connect({local, "/tmp/dbus-test"}, 0, [{fd, Fd}]) of
+    case gen_tcp:connect({local, ?DEFAULT_PATH}, 0, [{fd, Fd}]) of
 	{ok, Sock} ->
             Loop = spawn_link(?MODULE, do_read, [Sock, self()]),
             gen_tcp:controlling_process(Sock, Loop),
