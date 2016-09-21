@@ -2,8 +2,6 @@ sudo: false
 
 language: erlang
 otp_release:
-   - 18.1
-   - 18.2.1
    - 19.0
 
 addons:
