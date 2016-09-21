@@ -52,9 +52,7 @@ connect(BusOptions, _Options) ->
 init([Path, Owner]) when is_pid(Owner), is_binary(Path) ->
     true = link(Owner),
     ?debug("Connecting to UNIX socket: ~p~n", [Path]),
-    {ok, S} = prim_inet:open(tcp, local, stream),
-    {ok, Fd} = prim_inet:getfd(S),
-    case gen_tcp:connect({local, Path}, 0, [{fd, Fd}, {recbuf, 65535}]) of
+    case gen_tcp:connect({local, Path}, 0, [local, {recbuf, 65535}]) of
 	{ok, Sock} ->
             Loop = spawn_link(?MODULE, do_read, [Sock, self()]),
             gen_tcp:controlling_process(Sock, Loop),
