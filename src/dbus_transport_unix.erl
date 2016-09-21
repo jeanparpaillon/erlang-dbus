@@ -27,7 +27,7 @@
 %% Internal
 -export([do_read/2]).
 
--record(state, {sock, 
+-record(state, {sock,
 		owner,
 		loop     :: pid(),
 		raw      :: boolean()}).
@@ -113,7 +113,7 @@ handle_info(Info, State) ->
 terminate(_Reason, #state{sock=Sock, loop=Loop}) ->
     case Sock of
 	undefined -> ignore;
-	_ -> 
+	_ ->
 	    exit(Loop, kill),
 	    %% Avoid do_read loop polling on closed fd
 	    timer:sleep(100),
