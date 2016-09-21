@@ -35,7 +35,12 @@
 connect(BusOptions, _Options) ->
     Path = case proplists:get_value(path, BusOptions) of
 	       undefined ->
-                   throw(no_path);
+                   case proplists:get_value(abstract, BusOptions) of
+                       undefined ->
+                           throw(no_path);
+                       V ->
+                           <<0, (list_to_binary(V))/binary>>
+                   end;
 	       V ->
 		   list_to_binary(V)
 	   end,
