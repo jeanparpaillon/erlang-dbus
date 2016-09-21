@@ -32,8 +32,6 @@
 		loop     :: pid(),
 		raw      :: boolean()}).
 
--define(DEFAULT_PATH, "/tmp/erlang-dbus").
-
 connect(BusOptions, _Options) ->
     Path = case proplists:get_value(path, BusOptions) of
 	       undefined ->
