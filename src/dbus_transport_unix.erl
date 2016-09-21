@@ -82,7 +82,7 @@ handle_cast({send, Data}, State) when is_list(Data) ->
     handle_cast({send, iolist_to_binary(Data)}, State);
 
 handle_cast({send, Data}, #state{sock=Sock}=State) when is_binary(Data) ->
-    ?debug("unix send(~p)~n", [Data]),
+    %%?debug("unix send(~p)~n", [Data]),
     gen_tcp:send(Sock, Data),
     {noreply, State};
 
@@ -97,7 +97,7 @@ handle_cast(Request, State) ->
     {noreply, State}.
 
 handle_info({unix, Data}, #state{owner=Owner}=State) ->
-    ?debug("unix received(~p)~n", [Data]),
+    %%?debug("unix received(~p)~n", [Data]),
     Owner ! {received, Data},
     {noreply, State};
 
