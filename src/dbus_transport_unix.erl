@@ -12,7 +12,6 @@
 -behaviour(gen_server).
 
 -include("dbus.hrl").
--include_lib("procket/include/procket.hrl").
 
 %% api
 -export([connect/2]).
@@ -28,7 +27,7 @@
 %% Internal
 -export([do_read/2]).
 
--record(state, {sock, 
+-record(state, {sock,
 		owner,
 		loop     :: pid(),
 		raw      :: boolean()}).
@@ -36,36 +35,28 @@
 connect(BusOptions, _Options) ->
     Path = case proplists:get_value(path, BusOptions) of
 	       undefined ->
-		   case proplists:get_value(abstract, BusOptions) of
-		       undefined ->
-			   throw(no_path);
-		       V ->
-			   {abstract, list_to_binary(V)}
-		   end;
+                   case proplists:get_value(abstract, BusOptions) of
+                       undefined ->
+                           throw(no_path);
+                       V ->
+                           <<0, (list_to_binary(V))/binary>>
+                   end;
 	       V ->
-		   {path, list_to_binary(V)}
+		   list_to_binary(V)
 	   end,
     gen_server:start_link(?MODULE, [Path, self()],[]).
 
 %%
 %% gen_server callbacks
 %%
-init([{Mode, Path}, Owner]) when is_pid(Owner), is_binary(Path) ->
+init([Path, Owner]) when is_pid(Owner), is_binary(Path) ->
     true = link(Owner),
     ?debug("Connecting to UNIX socket: ~p~n", [Path]),
-    ok = inert:start(),
-    case procket:socket(?PF_LOCAL, ?SOCK_STREAM, 0) of
+    case gen_tcp:connect({local, Path}, 0, [local, {recbuf, 65535}]) of
 	{ok, Sock} ->
-	    SockUn = get_sock_un(Mode, Path),
-	    case procket:connect(Sock, SockUn) of
-		ok ->
-		    process_flag(trap_exit, true),
-		    Loop = spawn_link(?MODULE, do_read, [Sock, self()]),
-		    {ok, #state{sock=Sock, owner=Owner, loop=Loop}};
-		{error, Err} ->
-		    ?error("Error connecting socket: ~p~n", [Err]),
-		    {error, Err}
-	    end;
+            Loop = spawn_link(?MODULE, do_read, [Sock, self()]),
+            gen_tcp:controlling_process(Sock, Loop),
+            {ok, #state{sock=Sock, owner=Owner, loop=Loop}};
 	{error, Err} ->
 	    ?error("Error creating socket: ~p~n", [Err]),
 	    {error, Err}
@@ -93,7 +84,7 @@ handle_cast({send, Data}, State) when is_list(Data) ->
 
 handle_cast({send, Data}, #state{sock=Sock}=State) when is_binary(Data) ->
     %%?debug("unix send(~p)~n", [Data]),
-    procket:sendto(Sock, Data, 0, <<>>),
+    gen_tcp:send(Sock, Data),
     {noreply, State};
 
 handle_cast(close, State) ->
@@ -105,7 +96,6 @@ handle_cast(stop, State) ->
 handle_cast(Request, State) ->
     ?error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
-
 
 handle_info({unix, Data}, #state{owner=Owner}=State) ->
     %%?debug("unix received(~p)~n", [Data]),
@@ -121,15 +111,14 @@ handle_info(Info, State) ->
     ?error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
-
 terminate(_Reason, #state{sock=Sock, loop=Loop}) ->
     case Sock of
 	undefined -> ignore;
-	_ -> 
+	_ ->
 	    exit(Loop, kill),
 	    %% Avoid do_read loop polling on closed fd
 	    timer:sleep(100),
-	    procket:close(Sock)
+            gen_tcp:close(Sock)
     end,
     ok.
 
@@ -137,26 +126,11 @@ terminate(_Reason, #state{sock=Sock, loop=Loop}) ->
 %%% Priv
 %%%
 do_read(Sock, Pid) ->
-    case procket:recvfrom(Sock, 16#FFFF) of
-	{error, eagain} ->
-	    {ok, read} = inert:poll(Sock, [{mode, read}]),
-	    do_read(Sock, Pid);
-	{error, _Err} ->
-	    ok;
-	%% EOF
-	{ok, <<>>} ->
-	    ok;
-	{ok, Buf} ->
-	    Pid ! {unix, Buf},
-	    do_read(Sock, Pid)
+    receive
+        {tcp, Sock, Buf} ->
+            Pid ! {unix, list_to_binary(Buf)},
+            do_read(Sock, Pid);
+        Unhandled ->
+            ?debug("Unhandled receive: ~p", [Unhandled]),
+            do_read(Sock, Pid)
     end.
-
-get_sock_un(abstract, Path) when byte_size(Path) < ?UNIX_PATH_MAX-1 ->
-    Len = byte_size(Path),
-    <<(procket:sockaddr_common(?PF_LOCAL, Len))/binary,
-      0, Path/binary>>;
-get_sock_un(path, Path) when byte_size(Path) < ?UNIX_PATH_MAX ->
-    Len = byte_size(Path),
-    <<(procket:sockaddr_common(?PF_LOCAL, Len))/binary,
-      Path/binary, 
-      0:((procket:unix_path_max()-Len)*8)>>.
