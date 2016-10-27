@@ -1,6 +1,6 @@
 {application, dbus,
  [{description, "A native erlang implementation of D-Bus"},
-  {vsn,"0.5.0"},
+  {vsn,"0.7.0"},
   {modules, [
 	     dbus,
 	     dbus_sup,
@@ -32,18 +32,18 @@
 	       ]},
   {mod, {dbus, []}},
   {env, [
-	 {external_cookie, "31303030"}
-	]},
+         {external_cookie, "31303030"}
+        ]},
   {applications, [
-		  kernel,
-		  stdlib,
-		  sasl,
-		  crypto,
-		  xmerl
-		 ]
+                  kernel,
+                  stdlib,
+                  sasl,
+                  crypto,
+                  xmerl
+                 ]
   },
-   {maintainers, ["Jean Parpaillon"]},
-   {licenses, ["Apache"]},
-   {links, [{"Github", "https://github.com/lizenn/erlang-dbus"}]}
+  {maintainers, ["Jean Parpaillon"]},
+  {licenses, ["Apache"]},
+  {links, [{"Github", "https://github.com/lizenn/erlang-dbus"}]}
  ]
 }.

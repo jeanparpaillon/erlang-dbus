@@ -4,6 +4,8 @@
 .settings
 .idea
 /_build
+/hexer
+/hexer.config
 
 # erlang
 *.swp

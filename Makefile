@@ -1,24 +1,10 @@
-version = 0.1
 PROJECT = dbus
-PROJECT_VERSION = $(shell git describe --always --tags 2> /dev/null || echo $(version))
+PROJECT_VERSION = 0.7
 
-DEPS = edown
-#DEPS += annotations
-#DEP_PLUGINS = annotations
+BUILD_DEPS = hexer_mk
 
-dep_annotations_commit = 9f8a800
+dep_hexer_mk = git https://github.com/inaka/hexer.mk.git 1.1.0
 
-EDOC_OPTS = {app_default, "http://www.erlang.org/doc/"} \
-           ,{doclet, edown_doclet} \
-           ,{top_level_readme, {"$(CURDIR)/doc/README.md", "http://github.com/lizenn/erlang-dbus"}}
-
-#ANNOTATIONS = logging
+DEP_PLUGINS = hexer_mk
 
 include erlang.mk
-
-fetch:: $(ALL_DEPS_DIRS)
-	for d in $(ALL_DEPS_DIRS); do \
-	  $(MAKE) -C $$d $@ || true; \
-	done
-
-.PHONY: fetch
