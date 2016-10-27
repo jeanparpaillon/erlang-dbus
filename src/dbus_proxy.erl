@@ -40,9 +40,9 @@
          terminate/2]).
 
 -callback signal_handler(Sender    :: dbus_name(),
-                         IfaceName :: dbus_name(), 
-                         Signal    :: dbus_name(), 
-                         Path      :: binary(), 
+                         IfaceName :: dbus_name(),
+                         Signal    :: dbus_name(),
+                         Path      :: binary(),
                          Args      :: [dbus_arg()],
                          Ctx       :: any()) -> ok.
 
@@ -73,7 +73,7 @@
 
 %% @equiv start_link(Conn, Service, <<"/">>)
 %% @end
--spec start_link(Conn :: dbus_connection(), Service :: dbus_name()) -> 
+-spec start_link(Conn :: dbus_connection(), Service :: dbus_name()) ->
             {ok, dbus_proxy()} | {error, term()}.
 start_link(Conn, Service) ->
     gen_server:start_link(?MODULE, [Conn, Service, <<"/">>], []).
@@ -81,7 +81,7 @@ start_link(Conn, Service) ->
 
 %% @doc Connect to an object, and introspect it.
 %% @end
--spec start_link(Conn :: dbus_connection(), Service :: dbus_name(), Path :: binary()) -> 
+-spec start_link(Conn :: dbus_connection(), Service :: dbus_name(), Path :: binary()) ->
             {ok, dbus_proxy()} | {error, term()}.
 start_link(Conn, Service, Path) when is_binary(Path) ->
     gen_server:start_link(?MODULE, [Conn, Service, Path], []).
@@ -89,7 +89,7 @@ start_link(Conn, Service, Path) when is_binary(Path) ->
 
 %% @doc Connect to an object, with known interfaces.
 %% @end
--spec start_link(Conn :: dbus_connection(), Service :: dbus_name(), Path :: binary(), Node :: dbus_node()) -> 
+-spec start_link(Conn :: dbus_connection(), Service :: dbus_name(), Path :: binary(), Node :: dbus_node()) ->
             {ok, dbus_proxy()} | {error, term()}.
 start_link(Conn, Service, Path, #dbus_node{}=Node) when is_binary(Path) ->
     gen_server:start_link(?MODULE, [Conn, Service, Path, Node], []).
@@ -102,7 +102,7 @@ stop(Proxy) ->
     gen_server:cast(Proxy, stop).
 
 
-%% @equiv call(Proxy. Msg, 5000).
+%% @equiv call(Proxy, Msg, 5000)
 %% @end
 -spec call(Proxy :: dbus_proxy(), Msg :: dbus_message()) -> {ok, term()} | {error, term()}.
 call(Proxy, #dbus_message{}=Msg) ->
@@ -119,7 +119,7 @@ call(Proxy, #dbus_message{}=Msg, Timeout) ->
 
 %% @equiv call(Proxy, Ifacename, MethodName, Args, 5000)
 %% @end
--spec call(Proxy :: dbus_proxy(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term()) -> 
+-spec call(Proxy :: dbus_proxy(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term()) ->
           ok | {ok, term()} | {error, term()}.
 call(Proxy, IfaceName, MethodName, Args) ->
     call(Proxy, IfaceName, MethodName, Args, ?TIMEOUT).
@@ -127,8 +127,8 @@ call(Proxy, IfaceName, MethodName, Args) ->
 
 %% @doc Sync call a method
 %% @end
--spec call(Proxy :: dbus_proxy(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term(), 
-	   Timeout :: integer() | infinity) -> 
+-spec call(Proxy :: dbus_proxy(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term(),
+	   Timeout :: integer() | infinity) ->
           ok | {ok, term()} | {error, term()}.
 call(Proxy, IfaceName, MethodName, Args, Timeout) when is_pid(Proxy) ->
     gen_server:call(Proxy, {method, IfaceName, MethodName, Args}, Timeout).
@@ -158,20 +158,20 @@ children(Proxy) ->
 %%
 %% @todo Describe handlers
 %% @end
--spec connect_signal(Proxy :: dbus_proxy(), Handler :: handler()) -> 
+-spec connect_signal(Proxy :: dbus_proxy(), Handler :: handler()) ->
                 ok | {error, term()}.
 connect_signal(Proxy, MFA) ->
     gen_server:call(Proxy, {connect_signal, MFA}).
 
 
 %% @doc Connect to a particular signal
-%% 
+%%
 %% @todo Describe handlers
 %% @end
--spec connect_signal(Proxy :: dbus_proxy(), 
-             IfaceName :: dbus_name(), 
-             SignalName :: dbus_name(), 
-             Handler :: handler()) -> 
+-spec connect_signal(Proxy :: dbus_proxy(),
+             IfaceName :: dbus_name(),
+             SignalName :: dbus_name(),
+             Handler :: handler()) ->
                 ok | {error, term()}.
 connect_signal(Proxy, IfaceName, SignalName, MFA) ->
     gen_server:call(Proxy, {connect_signal, IfaceName, SignalName, MFA}).
@@ -179,12 +179,12 @@ connect_signal(Proxy, IfaceName, SignalName, MFA) ->
 
 %% @doc Connect to a particular signal on a particular children object
 %% @end
--spec connect_signal(Proxy :: dbus_proxy(), 
-             Service :: dbus_name(), 
-             IfaceName :: dbus_name(), 
-             SignalName :: dbus_name(), 
+-spec connect_signal(Proxy :: dbus_proxy(),
+             Service :: dbus_name(),
+             IfaceName :: dbus_name(),
+             SignalName :: dbus_name(),
              Path :: binary(),
-             MFA :: handler()) -> 
+             MFA :: handler()) ->
                 ok | {error, term()}.
 connect_signal(Proxy, Service, IfaceName, SignalName, Path, MFA) ->
     gen_server:call(Proxy, {connect_signal, Service, IfaceName, SignalName, Path, MFA}).
@@ -226,20 +226,20 @@ handle_call({method, IfaceName, MethodName, Args}, _From, #state{node=Node}=Stat
             {reply, Err, State}
     end;
 
-handle_call({connect_signal, Name, '_', '_', Path, MFA}, _From, 
+handle_call({connect_signal, Name, '_', '_', Path, MFA}, _From,
         #state{handlers=Handlers}=State) ->
     Match = [{type, signal},
 	     {sender, Name},
-	     {path_namespace, Path}], 
+	     {path_namespace, Path}],
     case do_method(?DBUS_IFACE, ?DBUS_DBUS_ADD_MATCH, [build_match(Match, <<>>)], State) of
-	{reply, ok, S2} -> 
-	    Handler = #signal_handler{sender=Name, interface='_', member='_', 
+	{reply, ok, S2} ->
+	    Handler = #signal_handler{sender=Name, interface='_', member='_',
 				      path={Path, true}, mfa=MFA},
 	    {reply, ok, S2#state{handlers=[ Handler | Handlers ]}};
 	{reply, {error, Err}, S2} -> {stop, {error, Err}, S2}
     end;
 
-handle_call({connect_signal, Name, IfaceName, SignalName, Path, MFA}, _From, 
+handle_call({connect_signal, Name, IfaceName, SignalName, Path, MFA}, _From,
 	    #state{handlers=Handlers}=State) ->
     Match = [{type, signal},
 	     {sender, Name},
@@ -247,19 +247,19 @@ handle_call({connect_signal, Name, IfaceName, SignalName, Path, MFA}, _From,
 	     {member, SignalName},
 	     {path, Path}],
     case do_method(?DBUS_IFACE, ?DBUS_DBUS_ADD_MATCH, [build_match(Match, <<>>)], State) of
-        {reply, ok, S2} -> 
-            Handler = #signal_handler{sender=Name, interface=IfaceName, member=SignalName, 
-                                      path={Path, false}, mfa=MFA},     
+        {reply, ok, S2} ->
+            Handler = #signal_handler{sender=Name, interface=IfaceName, member=SignalName,
+                                      path={Path, false}, mfa=MFA},
             {reply, ok, S2#state{handlers=[ Handler | Handlers ]}};
         {reply, {error, Err}, S2} -> {stop, {error, Err}, S2}
     end;
 
-handle_call({connect_signal, MFA}, _From, 
+handle_call({connect_signal, MFA}, _From,
         #state{conn={dbus_bus_connection, Conn}, path=Path, uniquename=Name}=State) ->
     Ret = dbus_proxy:connect_signal(Conn, Name, '_', '_', Path, MFA),
     {reply, Ret, State};
 
-handle_call({connect_signal, IfaceName, SignalName, MFA}, _From, 
+handle_call({connect_signal, IfaceName, SignalName, MFA}, _From,
         #state{conn={dbus_bus_connection, Conn}, path=Path, uniquename=Name}=State) ->
     Ret = dbus_proxy:connect_signal(Conn, Name, IfaceName, SignalName, Path, MFA),
     {reply, Ret, State};
@@ -271,7 +271,7 @@ handle_call({has_interface, IfaceName}, _From, #state{node=Node}=State) ->
     end;
 
 handle_call(children, _From, #state{node=#dbus_node{name=Name, elements=Children}}=State) ->
-    Prefix = case Name of 
+    Prefix = case Name of
                  undefined -> <<"/">>;
                  N -> N
              end,
@@ -434,7 +434,7 @@ do_handle_signal(#signal_handler{mfa={Mod, Fun, Ctx}}=Handler, Acc, Sender, Ifac
     case erlang:function_exported(Mod, Fun, 6) of
         true ->
             try Mod:Fun(Sender, Iface, Signal, Path, Args, Ctx)
-            catch Cls:Err -> 
+            catch Cls:Err ->
                     ?error("Error dispatching signal to ~p:~p/6: ~p:~p", [Mod, Fun, Cls, Err])
             end,
             [ Handler | Acc ];
@@ -443,7 +443,7 @@ do_handle_signal(#signal_handler{mfa={Mod, Fun, Ctx}}=Handler, Acc, Sender, Ifac
 
 do_handle_signal(#signal_handler{mfa={Fun, Ctx}}=Handler, Acc, Sender, Iface, Signal, Path, Args) ->
     try Fun(Sender, Iface, Signal, Path, Args, Ctx)
-    catch Cls:Err -> 
+    catch Cls:Err ->
             ?error("Error dispatching signal to ~p/6: ~p:~p", [Fun, Cls, Err])
     end,
     [ Handler | Acc ];
