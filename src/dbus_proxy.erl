@@ -102,7 +102,7 @@ stop(Proxy) ->
     gen_server:cast(Proxy, stop).
 
 
-%% @equiv call(Proxy. Msg, 5000).
+%% @equiv call(Proxy, Msg, 5000)
 %% @end
 -spec call(Proxy :: dbus_proxy(), Msg :: dbus_message()) -> {ok, term()} | {error, term()}.
 call(Proxy, #dbus_message{}=Msg) ->
