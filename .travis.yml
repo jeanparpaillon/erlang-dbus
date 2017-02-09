@@ -16,8 +16,8 @@ addons:
       - libglib2.0-0
 
 install:
-  - "wget https://bootstrap.pypa.io/get-pip.py && python3 get-pip.py"
-  - pip3 install --user -r test/dbus_client_SUITE_data/requirements.txt
+  - "wget https://bootstrap.pypa.io/get-pip.py && python get-pip.py"
+  - pip install --user -r test/dbus_client_SUITE_data/requirements.txt
   - "make"
 
 script:
