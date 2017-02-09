@@ -5,7 +5,7 @@ otp_release:
    - 19.0
 
 python:
-  - 3.4
+  - 2.7
 
 addons:
   apt:
