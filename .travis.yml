@@ -4,18 +4,19 @@ language: erlang
 otp_release:
    - 19.0
 
+python:
+  - 3.4
+
 addons:
   apt:
     packages:
       - build-essential
       - dbus
-      - python3
-      - python3-gi
-      - python3-dbus
-      - python3-pycurl
+      - libgnutls-dev
       - libglib2.0-0
 
 install:
+  - pip install -r test/dbus_client_SUITE_data/requirements.txt
   - "make"
 
 script:
