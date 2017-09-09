@@ -1,8 +1,25 @@
-%%
+%% @private
 %% @copyright 2006-2007 Mikael Magnusson, 2014-2016 Jean Parpaillon
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
 %% @author Jean Parpaillon <jean.parpaillon@free.fr>
+%% @author Tony Wallace <tony@tony.gen.nz> - added comments to code
 %% @doc Implements D-Bus connection over TCP
+%% This is done by starting a gen_server in response to a connect/3
+%% 
+%% Once started this server accepts the following calls:
+%%   gen_server:call(ServerRef,support_unix_fd) -> false
+%%   gen_server:call(ServerRef,{set_raw,true}) -> ok
+%%
+%% The following casts are supported
+%%   gen_server:cast(ServerRef,{send,Data}) -> ok
+%%   gen_server:cast(ServerRef,close) -> ok
+%%   gen_server:cast(ServerRef,stop) -> ok
+%%
+%% In order to handle messages comming in from the tcp connection
+%% messages are sent directly to the process that called connect.
+%% The following messages are sent:
+%%     {received,Data} - Data has been received
+%%     closed - The tcp socket has been closed
 %%
 %% Do not support UNIX FD passing
 %% @end
@@ -27,6 +44,16 @@
 
 -record(state, {sock, owner}).
 
+%% @doc
+%% connect/3 starts a gen_server to look after a tcp connection.
+%% @param Host
+%% The host parameter is either a host name, or a tcpid address
+%% @param Port
+%% The port parameter is a tcp/ip port, an integer 0..65535
+%% @param Options
+%% Options are the gen_tcp:connect options for the link
+%% @end
+-spec connect(host(),integer(),connect_options()) -> {ok,Pid}  | {error,Reason}.
 connect(Host, Port, Options) ->
     gen_server:start_link(?MODULE, [Host, Port, Options, self()], []).
 
