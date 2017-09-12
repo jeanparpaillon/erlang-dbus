@@ -1,7 +1,29 @@
 %%
 %% @copyright 2014 Jean Parpaillon
 %% @author Jean Parpaillon <jean.parpaillon@free.fr>
+%% @author Tony Wallace <tony@tony.gen.nz> - added comments to code
 %% @doc DBUS transport implementation on UNIX socket
+%% This is done by starting a gen_server in response to a connect/2.
+%% Currently only the first parameter of connect/2 is used.
+%%
+%% Once started this server accepts the following calls:
+%%   gen_server:call(ServerRef,support_unix_fd) -> true
+%%   gen_server:call(ServerRef,{set_raw,true}) -> ok
+%%
+%% The following casts are supported:
+%%   gen_server:cast(ServerRef,{send,Data}) -> ok
+%%   gen_server:cast(ServerRef,close) -> ok
+%%   gen_server:cast(ServerRef,stop) -> ok
+%%
+%% In order to handle messages comming in from the tcp connection
+%% messages are sent directly to the process that called connect.
+%% The following messages are sent:
+%%     {received,Data} - Data has been received
+%%     closed - The tcp socket has been closed
+%%
+%% As an implementation note, this module spawns a separate listener process (do_read)
+%% to receive communications from the socket.  The reason for doing this is unclear,
+%% as it does not seem necessary in dbus_transport_tcp which operates similarly.
 %%
 %% Support UNIX fd passing.
 %% @todo use OTP mechanism when available, see <a href="https://github.com/erlang/otp/pull/612" >https://github.com/erlang/otp/pull/612</a>
@@ -32,6 +54,15 @@
 		loop     :: pid(),
 		raw      :: boolean()}).
 
+%% @doc
+%% connect/2 starts a gen_server to manage a unix socket
+%% @param BusOptions
+%% A property list containing either a path key value pair
+%% or an abstract key value pair.
+-spec connect(
+	[{path,string()|binary()}|{abstract,string()}],
+	Unused_Parameter::any()) ->
+		     {ok,pid()} | ignore | {error, term()}.
 connect(BusOptions, _Options) ->
     Path = case proplists:get_value(path, BusOptions) of
 	       undefined ->
