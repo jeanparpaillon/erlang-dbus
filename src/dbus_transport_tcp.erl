@@ -10,16 +10,10 @@
 %%   gen_server:call(ServerRef,support_unix_fd) -> false
 %%   gen_server:call(ServerRef,{set_raw,true}) -> ok
 %%
-%% The following casts are supported
+%% The following casts are supported:
 %%   gen_server:cast(ServerRef,{send,Data}) -> ok
 %%   gen_server:cast(ServerRef,close) -> ok
 %%   gen_server:cast(ServerRef,stop) -> ok
-%%
-%% In order to handle messages comming in from the tcp connection
-%% messages are sent directly to the process that called connect.
-%% The following messages are sent:
-%%     {received,Data} - Data has been received
-%%     closed - The tcp socket has been closed
 %%
 %% Do not support UNIX FD passing
 %% @end
@@ -53,7 +47,10 @@
 %% @param Options
 %% Options are the gen_tcp:connect options for the link
 %% @end
--spec connect(host(),integer(),connect_options()) -> {ok,Pid}  | {error,Reason}.
+-type host() :: [inet:socket_address()|inet:hostname()].
+-type connect_options() :: [get_tcp:connect_option()].
+-spec connect(host(),integer(),connect_options()) -> 
+		     {ok,pid()} | ignore | {error,{already_started,pid()} | term()}.
 connect(Host, Port, Options) ->
     gen_server:start_link(?MODULE, [Host, Port, Options, self()], []).
 
