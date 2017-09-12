@@ -44,6 +44,16 @@
 %%%
 
 %% @doc Encode a message
+%% Encodes a dbus_message into iolist, including any padding that may be required
+%% Such a marshalled message is ready to send through a socket onto dbus.
+%% As defined in dbus.hrl, a message is a header record and a body.
+%% The marshal_message/1 function marshals the header but passes through
+%% the body portion unchanged. It follows that given the result of this function is
+%% an iolist, and the result of this function is [Header,Body], then Body must
+%% be a valid iolist.
+%% Note that prior to marshalling the message serial must be set, and that
+%% the message body is unaffected by marshalling and so should be in a final form
+%% ready for transmission. 
 %% @end
 -spec marshal_message(dbus_message()) -> iolist().
 marshal_message(#dbus_message{header=#dbus_header{serial=0}}=_Msg) ->
@@ -856,6 +866,22 @@ padding({struct, _Types}) -> 8;
 padding(variant)          -> 1;
 padding(dict)             -> 4.
 
+-spec pad(Size :: atom()|integer(), MessagePos :: integer()) -> 
+		 PaddingBits :: integer().
+% @param Size
+% The size of the binary alignment in bytes
+% @param Pos
+% The length of the formatted message in bytes
+%
+% Pos rem Size gives how many bytes beyond padding boundary
+% the current data sits.
+% (Size - (Pos rem Size)) gives the number of bytes of
+% padding except in the case where Pos rem Size is 0,
+% which will yeild Size instead of 0.
+% There are several ways of dealing with this case, the
+% method chosen here is to do another rem.
+% Finally, the padding should be represented in bits (not
+% bytes) so multiply by 8.
 pad(Size, Pos) when is_integer(Size) ->
     ((Size - (Pos rem Size)) rem Size) * 8;
 pad(Type, Pos) when is_atom(Type); 
