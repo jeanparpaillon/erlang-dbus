@@ -273,7 +273,8 @@ handle_info({received, Bin}, waiting_for_agree, State) ->
 
 %% STATE: authenticated
 handle_info({received, Data}, authenticated, #state{buf=Buf}=State) ->
-    case dbus_marshaller:unmarshal_data(<<Buf/binary, Data/binary>>) of
+    BufAndData = <<Buf/binary, Data/binary>>,
+    case dbus_marshaller:unmarshal_data(BufAndData) of
         {ok, Msgs, Rest} ->
             case handle_messages(Msgs, State#state{buf=Rest}) of
                 {ok, State2} ->
@@ -282,7 +283,7 @@ handle_info({received, Data}, authenticated, #state{buf=Buf}=State) ->
                     {stop, {error, Err}, State2}
             end;
         more ->
-            {next_state, authenticated, State#state{buf=Data}}
+            {next_state, authenticated, State#state{buf=BufAndData}}
     end;
 
 %% Other
