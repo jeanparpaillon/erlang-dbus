@@ -6,7 +6,7 @@
 %% @end
 -module(dbus_peer_connection).
 
--behaviour(gen_fsm).
+-behaviour(gen_statem).
 -behaviour(dbus_connection).
 
 -include("dbus.hrl").
@@ -27,21 +27,12 @@
          call/2,
          cast/2]).
 
-%% gen_fsm callbacks
+%% gen_statem callbacks
 -export([init/1,
+         callback_mode/0,
          code_change/4,
-         handle_event/3,
-         handle_sync_event/4,
-         handle_info/3,
+         handle_event/4,
          terminate/3]).
-
-%% gen_fsm states
--export([connected/3,
-         waiting_for_ok/3,
-         waiting_for_data/3,
-         waiting_for_reject/3,
-         waiting_for_agree/3,
-         authenticated/3]).
 
 -record(state, {serial   = 1,
                 owner,
@@ -74,7 +65,7 @@ start_link(BusId) ->
 -spec start_link(bus_id(), list()) -> {ok, dbus_connection()} | {error, term()}.
 start_link(BusId, Options) when is_record(BusId, bus_id),
                                 is_list(Options) ->
-    case gen_fsm:start_link(?MODULE, [BusId, Options, self()], []) of
+    case gen_statem:start_link(?MODULE, [BusId, Options, self()], []) of
         {ok, Pid} -> {ok, {?MODULE, Pid}};
         {error, Err} -> {error, Err}
     end.
@@ -84,14 +75,14 @@ start_link(BusId, Options) when is_record(BusId, bus_id),
 %% @end
 -spec close(pid()) -> ok.
 close(Conn) when is_pid(Conn) ->
-    gen_fsm:send_all_state_event(Conn, close).
+    gen_statem:cast(Conn, close).
 
 
 %% @doc Synchronously send a message
 %% @end
 -spec call(pid(), dbus_message()) -> {ok, term()} | {error, term()}.
 call(Conn, #dbus_message{}=Msg) when is_pid(Conn) ->
-    case gen_fsm:sync_send_event(Conn, {call, Msg}, infinity) of
+    case gen_statem:call(Conn, {call, Msg}, infinity) of
         {ok, Tag} ->
             receive
                 {reply, Tag, Res} ->
@@ -111,7 +102,7 @@ call(Conn, #dbus_message{}=Msg) when is_pid(Conn) ->
 %% @end
 -spec cast(pid(), dbus_message()) -> ok | {error, term()}.
 cast(Conn, #dbus_message{}=Msg) when is_pid(Conn) ->
-    gen_fsm:send_event(Conn, Msg).
+    gen_statem:cast(Conn, Msg).
 
 
 %% @doc Launch authentication on this connection
@@ -120,7 +111,7 @@ cast(Conn, #dbus_message{}=Msg) when is_pid(Conn) ->
 %% @end
 -spec auth(pid()) -> {ok, ConnexionId :: undefined | binary()} | {error, term()}.
 auth(Conn) ->
-    case gen_fsm:sync_send_event(Conn, auth) of
+    case gen_statem:call(Conn, auth) of
         authenticated ->
             ok;
         {ok, Tag} ->
@@ -143,7 +134,7 @@ auth(Conn) ->
 %% @end
 -spec set_controlling_process(Connection :: pid(), Client :: pid()) -> ok | {error, unauthorized}.
 set_controlling_process(Conn, Client) ->
-    gen_fsm:sync_send_all_state_event(Conn, {set_controlling_process, Client}).
+    gen_statem:call(Conn, {set_controlling_process, Client}).
 
 %%
 %% gen_fsm callbacks
@@ -165,87 +156,126 @@ init([#bus_id{scheme=unix, options=BusOptions}, Options, Owner]) ->
     init_connection(Sock, Owner).
 
 
+callback_mode() ->
+    handle_event_function.
+
 code_change(_OldVsn, _StateName, State, _Extra) ->
     {ok, State}.
 
 
-handle_sync_event({set_controlling_process, Client}, {Owner, _}, StateName, #state{owner=Owner}=State) ->
-    {reply, ok, StateName, State#state{owner=Client}};
+%% All states
+handle_event({call, {Owner, _}=From}, {set_controlling_process, Client}, _StateName, #state{owner=Owner}=State) ->
+    gen_statem:reply(From, ok),
+    {keep_state, State#state{owner=Client}};
 
-handle_sync_event({set_controlling_process, _Client}, {_NotOwner, _}, StateName, State) ->
-    {reply, {error, unauthorized}, StateName, State};
+handle_event({call, From}, {set_controlling_process, _Client}, _StateName, _State) ->
+    gen_statem:reply(From, {error, unauthorized}),
+    keep_state_and_data;
 
-handle_sync_event(_Evt, _From, StateName, State) ->
-    {reply, ok, StateName, State}.
-
-
-handle_event(close, _StateName, #state{sock=Sock}=State) ->
+handle_event(_, close, _StateName, #state{sock=Sock}=State) ->
     ok = dbus_transport:close(Sock),
     {stop, normal, State#state{sock=undefined}};
 
-handle_event(Evt, StateName, State) ->
-    ?error("Unhandled event: ~p~n", [Evt]),
-    {next_state, StateName, State}.
-
-
 %% STATE: connected
-handle_info({received, Bin}, connected, State) ->
+handle_event(info, {received, Bin}, connected, State) ->
     ?debug("Unknown command: ~s", [Bin]),
     send_error(State, <<"Unknown command">>),
     {next_state, connected, State};
 
+handle_event({call, {_Pid, Tag}=From}, auth, connected, #state{sock=Sock, mechs=[Mech|Rest]}=State) ->
+    case Mech:init() of
+        {ok, Resp} ->
+            ?debug("DBUS auth: sending initial data~n", []),
+            dbus_transport:send(Sock, << "AUTH ", Resp/binary, "\r\n" >>),
+            gen_statem:reply(From, {ok, {self(), Tag}}),
+            {next_state, waiting_for_ok, State#state{waiting=[From], mechs=Rest}};
+        {continue, Resp, MechState} ->
+            ?debug("DBUS auth: sending initial data (continue)~n", []),
+            dbus_transport:send(Sock, << "AUTH ", Resp/binary, "\r\n" >>),
+            gen_statem:reply(From, {ok, {self(), Tag}}),
+            {next_state, waiting_for_data, State#state{waiting=[From], mechs=Rest, mech_state={Mech, MechState}}}
+    end;
+
+handle_event({call, From}, {call, _}, connected, _State) ->
+    gen_statem:reply(From, {error, authentication_needed}),
+    keep_state_and_data;
+
 %% STATE: waiting_for_data
-handle_info({received, <<"DATA ", Line/binary>>}, waiting_for_data, State) ->
+handle_event(info, {received, <<"DATA ", Line/binary>>}, waiting_for_data, State) ->
     process_data(Line, State);
 
-handle_info({received, <<"REJECTED", Line/binary>>}, waiting_for_data, State) ->
+handle_event(info, {received, <<"REJECTED", Line/binary>>}, waiting_for_data, State) ->
     process_rejected(Line, State);
 
-handle_info({received, <<"OK", Line/binary>>}, waiting_for_data, State) ->
+handle_event(info, {received, <<"OK", Line/binary>>}, waiting_for_data, State) ->
     process_ok(Line, State);
 
-handle_info({received, <<"ERROR", Line/binary>>}, waiting_for_data, State) ->
+handle_event(info, {received, <<"ERROR", Line/binary>>}, waiting_for_data, State) ->
     ?debug("state: waiting_for_data, error: ~s", [parse_error(Line)]),
     ok = send_cancel(State),
     {stop, waiting_for_reject, State};
 
-handle_info({received, Bin}, waiting_for_data, State) ->
+handle_event(info, {received, Bin}, waiting_for_data, State) ->
     ?debug("Unknown command waiting for data: ~s", [Bin]),
     send_error(State, <<"Unknown command">>),
     {next_state, waiting_for_data, State};
 
+handle_event({call, From}, {call, _}, waiting_for_data, _State) ->
+    gen_statem:reply(From, {error, authentication_needed}),
+    keep_state_and_data;
+
+handle_event({call, {_Pid, Tag}=From}, auth, waiting_for_data, #state{waiting=Waiting}=State) ->
+    gen_statem:reply(From, {ok, {self(), Tag}}),
+    {keep_state, State#state{waiting=[From|Waiting]}};
+
 %% STATE: waiting_for_ok
-handle_info({received, <<"REJECTED", Line/binary>>}, waiting_for_ok, State) ->
+handle_event(info, {received, <<"REJECTED", Line/binary>>}, waiting_for_ok, State) ->
     process_rejected(Line, State);
 
-handle_info({received, <<"OK", Line/binary>>}, waiting_for_ok, State) ->
+handle_event(info, {received, <<"OK", Line/binary>>}, waiting_for_ok, State) ->
     process_ok(Line, State);
 
-handle_info({received, <<"DATA ", Data/binary>>}, waiting_for_ok, State) ->
+handle_event(info, {received, <<"DATA ", Data/binary>>}, waiting_for_ok, State) ->
     ?debug("Unexpected data: ~s", Data),
     ok = send_cancel(State),
     {next_state, waiting_for_ok, State};
 
-handle_info({received, <<"ERROR", Data/binary>>}, waiting_for_ok, State) ->
+handle_event(info, {received, <<"ERROR", Data/binary>>}, waiting_for_ok, State) ->
     ?debug("state: waiting_for_ok, error: ~s", [parse_error(Data)]),
     ok = send_cancel(State),
     {stop, waiting_for_ok, State};
 
-handle_info({received, Bin}, waiting_for_ok, State) ->
+handle_event(info, {received, Bin}, waiting_for_ok, State) ->
     ?debug("Unknown command waiting for ok: ~p", [Bin]),
     ok = send_error(State, <<"Unknown command">>),
     {next_state, waiting_for_ok, State};
 
+handle_event({call, From}, {call, _}, waiting_for_ok, _State) ->
+    gen_statem:reply(From, {error, authentication_needed}),
+    keep_state_and_data;
+
+handle_event({call, {_Pid, Tag}=From}, auth, waiting_for_ok, #state{waiting=Waiting}=State) ->
+    gen_statem:reply(From, {ok, {self(), Tag}}),
+    {keep_state, State#state{waiting=[From|Waiting]}};
+
 %% STATE: waiting_for_reject
-handle_info({received, <<"REJECTED", Line/binary>>}, waiting_for_reject, State) ->
+handle_event(info, {received, <<"REJECTED", Line/binary>>}, waiting_for_reject, State) ->
     process_rejected(Line, State);
 
-handle_info({received, Bin}, waiting_for_reject, State) ->
+handle_event(info, {received, Bin}, waiting_for_reject, State) ->
     ?debug("Unknown command waiting for reject: ~s", [Bin]),
     {stop, disconnect, State};
 
+handle_event({call, From}, {call, _}, waiting_for_reject, _State) ->
+    gen_statem:reply(From, {error, authentication_needed}),
+    keep_state_and_data;
+
+handle_event({call, {_Pid, Tag}=From}, auth, waiting_for_reject, #state{waiting=Waiting}=State) ->
+    gen_statem:reply(From, {ok, {self(), Tag}}),
+    {keep_state, State#state{waiting=[From|Waiting]}};
+
 %% STATE: waiting_for_agree
-handle_info({received, <<"AGREE_UNIX_FD\r\n">>}, waiting_for_agree, #state{sock=Sock}=State) ->
+handle_event(info, {received, <<"AGREE_UNIX_FD\r\n">>}, waiting_for_agree, #state{sock=Sock}=State) ->
     case dbus_transport:support_unix_fd(Sock) of
 	true ->
 	    ?debug("Succesfully negotiated UNIX FD passing~n", []),
@@ -256,7 +286,7 @@ handle_info({received, <<"AGREE_UNIX_FD\r\n">>}, waiting_for_agree, #state{sock=
 	    {next_state, waiting_for_agree}
     end;
 
-handle_info({received, <<"ERROR", Line/binary>>}, waiting_for_agree, #state{sock=Sock}=State) ->
+handle_event(info, {received, <<"ERROR", Line/binary>>}, waiting_for_agree, #state{sock=Sock}=State) ->
     case dbus_transport:support_unix_fd(Sock) of
 	true ->
 	    ?debug("Failed to negotiate UNIX FD passing~n", []),
@@ -267,12 +297,20 @@ handle_info({received, <<"ERROR", Line/binary>>}, waiting_for_agree, #state{sock
 	    {next_state, waiting_for_agreee, State}
     end;
 
-handle_info({received, Bin}, waiting_for_agree, State) ->
+handle_event(info, {received, Bin}, waiting_for_agree, State) ->
     ?debug("Unknown command waiting for agree unix fd : ~s", [Bin]),
     {next_state, waiting_for_agree, State};
 
+handle_event({call, From}, {call, _}, waiting_for_agree, _State) ->
+    gen_statem:reply(From, {error, authentication_needed}),
+    keep_state_and_data;
+
+handle_event({call, {_Pid, Tag}=From}, auth, waiting_for_agree, #state{waiting=Waiting}=State) ->
+    gen_statem:reply(From, {ok, {self(), Tag}}),
+    {keep_state, State#state{waiting=[From|Waiting]}};
+
 %% STATE: authenticated
-handle_info({received, Data}, authenticated, #state{buf=Buf}=State) ->
+handle_event(info, {received, Data}, authenticated, #state{buf=Buf}=State) ->
     BufAndData = <<Buf/binary, Data/binary>>,
     case dbus_marshaller:unmarshal_data(BufAndData) of
         {ok, Msgs, Rest} ->
@@ -286,13 +324,26 @@ handle_info({received, Data}, authenticated, #state{buf=Buf}=State) ->
             {next_state, authenticated, State#state{buf=BufAndData}}
     end;
 
+handle_event({call, From}, auth, authenticated, _State) ->
+    gen_statem:reply(From, authenticated),
+    keep_state_and_data;
+
+handle_event({call, {Pid, Tag}=From}, {call, #dbus_message{}=Msg}, authenticated, 
+              #state{sock=Sock, serial=S, pending=Pending}=State) ->
+    Data = dbus_marshaller:marshal_message(dbus_message:set_serial(S, Msg)),
+    true = ets:insert(Pending, {S, Pid, Tag}),
+    ok = dbus_transport:send(Sock, Data),
+    gen_statem:reply(From, {ok, {self(), Tag}}),
+    {keep_state, State#state{serial=S+1}};
+
 %% Other
-handle_info(closed, _, State) ->
+handle_event(info, closed, _, State) ->
     ?error("Connection closed...~n", []),
     {stop, closed, State};
 
-handle_info(_Evt, StateName, State) ->
-    ?error("Unexpected event: ~p~n", [_Evt]),
+%% Unhandled
+handle_event(_, Evt, StateName, State) ->
+    ?error("Unhandled event: ~p~n", [Evt]),
     {next_state, StateName, State}.
 
 
@@ -302,93 +353,6 @@ terminate(_Reason, _StateName, #state{sock=Sock}) ->
         _ -> dbus_transport:close(Sock)
     end,
     ok.
-
-%%%
-%%% gen_fsm states
-%%%
-%% @doc Default is to use EXTERNAL mechanism first. If it fails, server
-%% will answer with list of possible authentications.
-%% Mimic C implementation
-%%
-%% @end
-connected(auth, {_Pid, Tag}=From, #state{sock=Sock, mechs=[Mech|Rest]}=State) ->
-    case Mech:init() of
-        {ok, Resp} ->
-            ?debug("DBUS auth: sending initial data~n", []),
-            dbus_transport:send(Sock, << "AUTH ", Resp/binary, "\r\n" >>),
-            {reply, {ok, {self(), Tag}}, waiting_for_ok, 
-             State#state{waiting=[From], mechs=Rest}};
-        {continue, Resp, MechState} ->
-            ?debug("DBUS auth: sending initial data (continue)~n", []),
-            dbus_transport:send(Sock, << "AUTH ", Resp/binary, "\r\n" >>),
-            {reply, {ok, {self(), Tag}}, waiting_for_data,
-             State#state{waiting=[From], mechs=Rest, mech_state={Mech, MechState}}}
-    end;
-
-connected({call, _}, _From, State) ->
-    {reply, {error, authentication_needed}, connected, State};
-
-connected(_Evt, _From, State) ->
-    ?debug("Unexpected event: ~p~n", [_Evt]),
-    {reply, {error, invalid_event}, connected, State}.
-
-
-waiting_for_ok({call, _}, _From, State) ->
-    {reply, {error, authentication_needed}, waiting_for_ok, State};
-
-waiting_for_ok(auth, {_Pid, Tag}=From, #state{waiting=Waiting}=State) ->
-    {reply, {ok, {self(), Tag}}, waiting_for_ok, 
-     State#state{waiting=[From|Waiting]}};
-waiting_for_ok(_Evt, _From, State) ->
-    ?debug("Unexpected event: ~p~n", [_Evt]),
-    {reply, {error, invalid_event}, waiting_for_ok, State}.
-
-
-waiting_for_data({call, _}, _From, State) ->
-    {reply, {error, authentication_needed}, waiting_for_data, State};
-
-waiting_for_data(auth, {_Pid, Tag}=From, #state{waiting=Waiting}=State) ->
-    {reply, {ok, {self(), Tag}}, waiting_for_data, 
-     State#state{waiting=[From|Waiting]}};
-waiting_for_data(_Evt, _From, State) ->
-    ?debug("Unexpected event: ~p~n", [_Evt]),
-    {reply, {error, invalid_event}, waiting_for_data, State}.
-
-
-waiting_for_reject({call, _}, _From, State) ->
-    {reply, {error, authentication_needed}, waiting_for_reject, State};
-
-waiting_for_reject(auth, {_Pid, Tag}=From, #state{waiting=Waiting}=State) ->
-    {reply, {ok, {self(), Tag}}, waiting_for_reject, State#state{waiting=[From|Waiting]}};
-waiting_for_reject(_Evt, _From, State) ->
-    ?debug("Unexpected event: ~p~n", [_Evt]),
-    {reply, {error, invalid_event}, waiting_for_reject, State}.
-
-
-waiting_for_agree({call, _}, _From, State) ->
-    {reply, {error, authentication_needed}, waiting_for_agree, State};
-
-waiting_for_agree(auth, {_Pid, Tag}=From, #state{waiting=Waiting}=State) ->
-    {reply, {ok, {self(), Tag}}, waiting_for_agree, 
-     State#state{waiting=[From|Waiting]}};
-waiting_for_agree(_Evt, _From, State) ->
-    ?debug("Unexpected event: ~p~n", [_Evt]),
-    {reply, {error, invalid_event}, waiting_for_agree, State}.
-
-
-authenticated(auth, _From, State) ->
-    {reply, authenticated, authenticated, State};
-
-authenticated({call, #dbus_message{}=Msg}, {Pid, Tag}, 
-              #state{sock=Sock, serial=S, pending=Pending}=State) ->
-    Data = dbus_marshaller:marshal_message(dbus_message:set_serial(S, Msg)),
-    true = ets:insert(Pending, {S, Pid, Tag}),
-    ok = dbus_transport:send(Sock, Data),
-    {reply, {ok, {self(), Tag}}, authenticated, State#state{serial=S+1}};
-
-authenticated(_Evt, _From, State) ->
-    ?debug("Unexpected event: ~p~n", [_Evt]),
-    {reply, {error, invalid_event}, authenticated, State}.
 
 %%%
 %%% Priv
