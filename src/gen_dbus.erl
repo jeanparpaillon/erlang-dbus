@@ -4,7 +4,6 @@
 %% @doc dbus object behaviour
 %%
 -module(gen_dbus).
--compile([{parse_transform, lager_transform}]).
 
 -behaviour(gen_server).
 
@@ -100,17 +99,17 @@ setup(DBus_config, State) ->
                           %% Ignore
 			  {Iface1, Interfaces};
 		      {methods, Members} ->
-			  lager:debug("Methods: ~p~n", [Members]),
+			  ?debug("Methods: ~p~n", [Members]),
                           {Iface,
                            build_introspect(method, Members,
                                             State1, Interfaces)};
  		      {signals, Members} ->
- 			  lager:debug("Signals: ~p~n", [Members]),
+ 			  ?debug("Signals: ~p~n", [Members]),
  			  {Iface,
                            build_introspect(signal, Members,
                                             State1, Interfaces)};
 		      _ ->
-			  lager:debug("Ignore config param ~p~n", [E]),
+			  ?debug("Ignore config param ~p~n", [E]),
 			  {Iface, Interfaces}
 		  end
 	  end,
@@ -123,7 +122,7 @@ setup(DBus_config, State) ->
                                                          methods=Methods,
                                                          signals=Signals}
                                       end, dict:to_list(Interfaces))},
-    lager:debug("Node: ~p~n", [Node]),
+    ?debug("Node: ~p~n", [Node]),
     Xml_body = dbus_introspect:to_xml(Node),
     State2 = State1#state{default_iface=Iface,node=Node,xml_body=Xml_body},
     {ok, State2}.
@@ -134,7 +133,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 handle_call(Request, _From, State) ->
-    lager:debug("Unhandled call in: ~p~n", [Request]),
+    ?debug("Unhandled call in: ~p~n", [Request]),
     {reply, ok, State}.
 
 
@@ -144,32 +143,32 @@ handle_cast(stop, State) ->
 handle_cast({reply, From, Reply}, State) ->
     Pending = State#state.pending,
     case lists:keysearch(From, 1, Pending) of
-	{value, {_, Header, Conn, Signature}} ->
+	{value, {_, Message, Conn, Signature}} ->
 	    ReplyMsg =
 		case Reply of
 		    {ok, ReplyBody} ->
 			%% Send method return
-			{ok, ReplyMsg1} = dbus_message:build_method_return(Header, Signature, [ReplyBody]),
+			ReplyMsg1 = dbus_message:return(Message, Signature, [ReplyBody]),
 			ReplyMsg1;
 		    {dbus_error, Iface, Text} ->
 			%% Send error
-			{ok, ReplyMsg1} = dbus_message:build_error(Header, Iface, Text),
+			ReplyMsg1 = dbus_message:error(Message, Iface, Text),
 			ReplyMsg1;
 		    _ ->
-			lager:debug("Illegal reply ~p~n", [Reply]),
-			{ok, ReplyMsg1} = dbus_message:build_error(Header, 'org.freedesktop.DBus.Error.Failed', "Failed"),
+			?debug("Illegal reply ~p~n", [Reply]),
+			ReplyMsg1 = dbus_message:error(Message, 'org.freedesktop.DBus.Error.Failed', "Failed"),
 			ReplyMsg1
 		end,
 	    ok = dbus_connection:cast(Conn, ReplyMsg);
 	false ->
-	    lager:debug("Pending not found: ~p ~p~n", [From, Pending]),
+	    ?debug("Pending not found: ~p ~p~n", [From, Pending]),
 	    ignore
     end,
     Pending1 = lists:keydelete(From, 1, Pending),
     {noreply, State#state{pending=Pending1}};
 
-handle_cast({signal, Signal_name, Args, Options}, State) ->
-    Iface_name =
+handle_cast({signal, SignalName, Args, Options}, State) ->
+    IfaceName =
 	case lists:keysearch(interface, 1, Options) of
 	    {value, {interface, Name}} ->
 		Name;
@@ -177,67 +176,55 @@ handle_cast({signal, Signal_name, Args, Options}, State) ->
 		State#state.default_iface
 	end,
 
-    Signal =
-	case dbus_introspect:find_interface(Iface_name, State#state.node) of
-	    {ok, Iface} ->
-		case dbus_introspect:find_signal(Signal_name, Iface) of
-		    {ok, Signal1} ->
-			Signal1;
-		    error ->
-			{error, {'org.freedesktop.DBus.UnknownSignal',  [Signal_name], Iface_name, State#state.node}}
-		end;
-	    error ->
-		{error, {'org.freedesktop.DBus.UnknownInterface',  [Iface_name]}}
-	end,
+    Signal = dbus_introspect:find_signal(State#state.node, IfaceName, SignalName),
 
     case Signal of
 	{error, _}=Error ->
-	    {reply, Error, State}; 
+	    {reply, Error, State};
 	_ ->
-	    do_signal(Iface_name, Signal, Args, Options, State)
+	    do_signal(IfaceName, Signal, Args, Options, State)
     end;
 
 handle_cast(Request, State) ->
-    error_logger:error_msg("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
+    ?error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
-handle_info({dbus_method_call, Header, Conn}, State) ->
+handle_info({dbus_method_call, Message, Conn}, State) ->
     Module = State#state.module,
-    {_, MemberVar} = dbus_message:header_fetch(?HEADER_MEMBER, Header),
-    MemberStr = MemberVar#dbus_variant.value,
-    Member = list_to_atom(MemberStr),
+    MemberStr = dbus_message:find_field(?FIELD_MEMBER, Message),
+    Member = binary_to_atom(MemberStr, utf8),
 
     case Member of
 	'Introspect' ->
-	    ReplyBody = State#state.xml_body,
-	    lager:debug("Introspect ~p~n", [ReplyBody]),
-	    {ok, Reply} = dbus_message:build_method_return(Header, [string], [ReplyBody]),
+	    ReplyBody = iolist_to_binary(State#state.xml_body),
+	    ?debug("Introspect ~p ~p~n", [Message, ReplyBody]),
+	    Reply = dbus_message:return(Message, [string], [ReplyBody]),
 	    ok = dbus_connection:cast(Conn, Reply),
 	    {noreply, State};
 
 	_ ->
 	    Sub = State#state.sub,
 
-	    case catch do_method_call(Module, Member, Header, Conn, Sub) of
+	    case catch do_method_call(Module, Member, Message, Conn, Sub) of
 		{'EXIT', {undef, _}=Reason} ->
-		    lager:debug("undef method ~p~n", [Reason]),
+		    ?debug("undef method ~p~n", [Reason]),
 		    ErrorName = "org.freedesktop.DBus.Error.UnknownMethod",
 		    ErrorText = "Erlang: Function not found: " ++ MemberStr,
-		    {ok, Reply} = dbus_message:build_error(Header, ErrorName, ErrorText),
+		    Reply = dbus_message:error(Message, ErrorName, ErrorText),
 		    ok = dbus_connection:cast(Conn, Reply),
 		    {noreply, State};
 		{'EXIT', Reason} ->
- 		    lager:debug("Error ~p~n", [Reason]),
+ 		    ?debug("Error ~p~n", [Reason]),
 		    ErrorName = "org.freedesktop.DBus.Error.InvalidParameters",
 		    ErrorText = "Erlang: Invalid parameters.",
-		    {ok, Reply} = dbus_message:build_error(Header, ErrorName, ErrorText),
- 		    lager:debug("InvalidParameters ~p~n", [Reply]),
+		    Reply = dbus_message:error(Message, ErrorName, ErrorText),
+ 		    ?debug("InvalidParameters ~p~n", [Reply]),
 		    ok = dbus_connection:cast(Conn, Reply),
 		    {noreply, State};
 		{ok, Sub1} ->
 		    {noreply, State#state{sub=Sub1}};
 		{pending, From, Sub1, Signature} ->
-		    Pending = [{From, Header, Conn, Signature} |
+		    Pending = [{From, Message, Conn, Signature} |
                                State#state.pending],
 		    {noreply, State#state{sub=Sub1, pending=Pending}}
 	    end
@@ -258,14 +245,13 @@ handle_info(Info, State) ->
 terminate(_Reason, _State) ->
     terminated.
 
-do_signal(Iface_name, Signal, Args, _Options, State) ->
+do_signal(IfaceName, Signal, Args, _Options, State) ->
     Path = State#state.path,
-    {ok, Header} = dbus_message:build_signal(Path, Iface_name, Signal, Args),
-    dbus_bus_reg:cast(Header),
-    lager:debug("signal ~p~n", [Header]),
+    Message = dbus_message:signal(undefined, Path, IfaceName, Signal, Args),
+    dbus_bus_reg:cast(Message),
     {noreply, State}.
 
-do_method_call(Module, Member, Header, Conn, Sub) ->
+do_method_call(Module, Member, Message = #dbus_message{header = Header}, Conn, Sub) ->
     From =
 	if
 	    Header#dbus_header.flags band ?NO_REPLY_EXPECTED ->
@@ -282,9 +268,16 @@ do_method_call(Module, Member, Header, Conn, Sub) ->
                 []
         end,
 
-    case {Module:Member(Header#dbus_header.fields , {self(), From}, Sub), From} of
+    Args =
+        case Message#dbus_message.body of
+            undefined -> [];
+            List when is_list(List) -> List;
+            Other -> [Other]
+        end,
+
+    case {Module:Member(Args , {self(), From}, Sub), From} of
 	{{dbus_error, Iface, Msg, Sub1}, _} ->
-	    {ok, Reply} = dbus_message:build_error(Header, Iface, Msg),
+	    Reply = dbus_message:error(Message, Iface, Msg),
 	    ok = dbus_connection:cast(Conn, Reply),
 	    {ok, Sub1};
 	{{noreply, Sub1}, none} ->
@@ -292,28 +285,28 @@ do_method_call(Module, Member, Header, Conn, Sub) ->
 	{{reply, _ReplyBody, Sub1}, none} ->
 	    {ok, Sub1};
 	{{reply, ReplyBody, Sub1}, _} ->
-	    {ok, Reply} = dbus_message:build_method_return(Header, Signature, [ReplyBody]),
+	    Reply = dbus_message:return(Message, Signature, [ReplyBody]),
 	    ok = dbus_connection:cast(Conn, Reply),
 	    {ok, Sub1};
 	{{noreply, Sub1}, _} ->
 	    {pending, From, Sub1, Signature}
     end.
 
-build_introspect(Member_type, Members,
+build_introspect(MemberType, Members,
                  State, Interfaces) when is_list(Members),
                                          is_record(State, state) ->
     lists:foldl(fun(Member, Interfaces1) ->
-                        member_build_introspect(Member_type, Member,
+                        member_build_introspect(MemberType, Member,
                                                 State, Interfaces1)
                 end, Interfaces, Members).
 
-member_build_introspect(Member_type, Member,
+member_build_introspect(MemberType, Member,
                         State, Interfaces) when is_atom(Member),
                                                 is_record(State, state) ->
-    {Interface_name, Member_node} = member_info(Member_type, Member, State),
+    {InterfaceName, MemberName} = member_info(MemberType, Member, State),
 
     {Methods, Signals} =
-        case dict:find(Interface_name, Interfaces) of
+        case dict:find(InterfaceName, Interfaces) of
             {ok, Value} ->
                 Value;
             error ->
@@ -321,20 +314,20 @@ member_build_introspect(Member_type, Member,
         end,
 
     Interface1 =
-        case Member_type of
+        case MemberType of
             method ->
-                {[Member_node | Methods], Signals};
+                {[MemberName | Methods], Signals};
             signal ->
-                {Methods, [Member_node | Signals]}
+                {Methods, [MemberName | Signals]}
         end,
 
-    dict:store(Interface_name, Interface1, Interfaces).
+    dict:store(InterfaceName, Interface1, Interfaces).
 
 
-member_info(Member_type, Member, State) ->
+member_info(MemberType, Member, State) ->
     Module = State#state.module,
     Info = Module:Member(dbus_info),
-    Interface_name =
+    InterfaceName =
 	case lists:keysearch(interface, 1, Info) of
             {value, {interface, Interface1}} ->
                 Interface1;
@@ -342,32 +335,32 @@ member_info(Member_type, Member, State) ->
                 State#state.default_iface
         end,
 
-    Member_node =
+    MemberName =
 	case lists:keysearch(signature, 1, Info) of
 	    {value, {signature, Args, Results}} ->
-                Results_arg =
+                ResultsArg =
                     case args_build_introspect(Results, out) of
                         [] ->
                             none;
                         [E] ->
                             E
                     end,
-		Args_xml = args_build_introspect(Args, in),
+		ArgsXml = args_build_introspect(Args, in),
 
-                case Member_type of
+                case MemberType of
                     method ->
                         #dbus_method{name = Member,
-                                args = Args_xml,
-                                result = Results_arg};
+                                args = ArgsXml,
+                                result = ResultsArg};
                     signal ->
                         #dbus_signal{name = Member,
-                                args = Args_xml,
-                                result = Results_arg}
+                                args = ArgsXml,
+                                result = ResultsArg}
                 end;
 	    false ->
 		undefined
 	end,
-    {Interface_name, Member_node}.
+    {InterfaceName, MemberName}.
 
 args_build_introspect(Args, Dir) when is_list(Args) ->
     args_build_introspect(Args, Dir, []).

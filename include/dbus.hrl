@@ -61,12 +61,13 @@
 
 -type dbus_known_bus() :: system | session.
 -type dbus_name() :: atom() | binary().
+-type dbus_path() :: atom() | binary().
 -type dbus_option() :: no_reply_expected | no_auto_start.
 
--type dbus_type() :: byte | 
+-type dbus_type() :: byte |
                      boolean |
                      int16 |
-                     uint16 | 
+                     uint16 |
                      int32 |
                      uint32 |
                      int64 |
@@ -102,8 +103,8 @@
           flags    = 0                   :: integer(),
           version  = ?DBUS_VERSION_MAJOR :: integer(),
           size     = 0                   :: integer(),
-          serial                         :: integer(),
-          fields                         :: maps:map()
+          serial                         :: integer() | undefined,
+          fields                         :: map() | list() | undefined
          }).
 -type dbus_header() :: #dbus_header{}.
 
@@ -125,7 +126,7 @@
                               | 'org.freedesktop.DBus.Method.NoReply'
                               | 'org.freedesktop.DBus.Property.EmitsChangedSignal'
                               | binary().
--type dbus_annotation_value() :: true 
+-type dbus_annotation_value() :: true
                                | false
                                | invalidates
                                | binary().
@@ -136,7 +137,7 @@
           methods          :: term(),              % gb_tree()
           signals          :: term(),              % gb_tree()
           properties       :: term(),              % gb_tree()
-          annotations      :: [dbus_annotation()]
+          annotations      :: [dbus_annotation()] | undefined
          }).
 -type dbus_iface() :: #dbus_iface{}.
 
@@ -144,8 +145,8 @@
           name             :: dbus_name(),
           args       = []  :: [dbus_arg()],
           result           :: none | undefined | dbus_arg(),
-          in_sig           :: binary(),
-          in_types         :: dbus_signature(),
+          in_sig           :: binary() | undefined,
+          in_types         :: dbus_signature() | undefined,
           annotations = [] :: [dbus_annotation()]
          }).
 -type dbus_method() :: #dbus_method{}.
@@ -154,8 +155,8 @@
           name             :: dbus_name(),
           args        = [] :: [dbus_arg()],
           result           :: none | dbus_arg(),
-          out_sig          :: binary(),
-          out_types        :: dbus_signature(),
+          out_sig          :: binary() | undefined,
+          out_types        :: dbus_signature() | undefined,
           annotations = [] :: [dbus_annotation()]
          }).
 -type dbus_signal() :: #dbus_signal{}.
@@ -171,7 +172,7 @@
 -record(dbus_arg, {
           name       = <<>> :: dbus_name(),
           direction         :: in | out,
-          type              :: binary()
+          type              :: iolist() | binary()
          }).
 -type dbus_arg() :: #dbus_arg{}.
 

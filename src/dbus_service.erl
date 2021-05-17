@@ -40,7 +40,7 @@ start_link(ServiceName) ->
     gen_server:start_link(?MODULE, [ServiceName], []).
 
 register_object(Service, Path, Object) ->
-    gen_server:call(Service, {register_object, Path, Object}).
+    gen_server:call(Service, {register_object, normalize_path(Path), Object}).
 
 unregister_object(Service, Object) ->
     gen_server:call(Service, {unregister_object, Object}).
@@ -156,7 +156,7 @@ handle_method_call(<<"/">>, #dbus_message{}=Msg, Conn,
 	    Node = #dbus_node{name="/", elements=Elements},
 	    ReplyBody = dbus_introspect:to_xml(Node),
 	    ?debug("Introspect ~p~n", [ReplyBody]),
-	    {ok, Reply} = dbus_message:return(Msg, [string], [ReplyBody]),
+	    Reply = dbus_message:return(Msg, [string], [ReplyBody]),
 	    ok = dbus_connection:cast(Conn, Reply),
 	    {noreply, State};
 	_ ->
@@ -167,7 +167,7 @@ handle_method_call(<<"/">>, #dbus_message{}=Msg, Conn,
 	    {noreply, State}
     end;
 
-handle_method_call(Path, #dbus_message{}=Msg, Conn, #state{objects=Objects}=State) 
+handle_method_call(Path, #dbus_message{}=Msg, Conn, #state{objects=Objects}=State)
   when is_binary(Path) ->
     case proplists:get_value(Path, Objects) of
 	undefined ->
@@ -180,3 +180,8 @@ handle_method_call(Path, #dbus_message{}=Msg, Conn, #state{objects=Objects}=Stat
 	    Object ! {dbus_method_call, Msg, Conn}
     end,
     {noreply, State}.
+
+normalize_path(Name) when is_atom(Name) ->
+  atom_to_binary(Name, utf8);
+normalize_path(Name) when is_binary(Name) ->
+  Name.

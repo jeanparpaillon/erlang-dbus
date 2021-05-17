@@ -2,7 +2,7 @@
 %% @copyright 2015 Jean Parpaillon
 %% @author Jean Parpaillon <jean.parpaillon@free.fr>
 %% @doc Peer connections
-%% 
+%%
 %% @end
 -module(dbus_peer_connection).
 
@@ -42,10 +42,11 @@
                 pending               :: ets:tid(),
                 waiting     = []      :: list(),
                 mechs       = []      :: list(),
+                round       = 1       :: number(),
 		got_mechs   = false   :: boolean(),
                 mech_state            :: term(),
-                guid                  :: binary(),
-                unix_fd               :: boolean(),
+                guid                  :: binary() | undefined,
+                unix_fd               :: boolean() | undefined,
 		side        = client  :: client | server
                }).
 
@@ -118,7 +119,7 @@ auth(Conn) ->
             receive
                 {authenticated, Tag} -> {ok, undefined};
                 {error, Res} -> {error, Res};
-                {dbus_signal, #dbus_message{body=[ConnId]}=Msg} -> 
+                {dbus_signal, #dbus_message{body=[ConnId]}=Msg} ->
                     case dbus_message:match([{?FIELD_MEMBER, 'NameAcquired'},
                                              {?FIELD_INTERFACE, 'org.freedesktop.DBus'}], Msg) of
                         true -> {ok, ConnId};
@@ -134,7 +135,19 @@ auth(Conn) ->
 %% @end
 -spec set_controlling_process(Connection :: pid(), Client :: pid()) -> ok | {error, unauthorized}.
 set_controlling_process(Conn, Client) ->
-    gen_statem:call(Conn, {set_controlling_process, Client}).
+    case gen_statem:call(Conn, {set_controlling_process, Client}) of
+      ok -> flush_messages(Client);
+      Error -> Error
+    end.
+
+flush_messages(Client) ->
+  receive
+    {dbus_signal, Any} ->
+      Client ! {dbus_signal, Any},
+      flush_messages(Client)
+  after
+    0 -> ok
+  end.
 
 %%
 %% gen_fsm callbacks
@@ -236,7 +249,7 @@ handle_event(info, {received, <<"OK", Line/binary>>}, waiting_for_ok, State) ->
     process_ok(Line, State);
 
 handle_event(info, {received, <<"DATA ", Data/binary>>}, waiting_for_ok, State) ->
-    ?debug("Unexpected data: ~s", Data),
+    ?debug("Unexpected data: ~s", [Data]),
     ok = send_cancel(State),
     {next_state, waiting_for_ok, State};
 
@@ -328,22 +341,30 @@ handle_event({call, From}, auth, authenticated, _State) ->
     gen_statem:reply(From, authenticated),
     keep_state_and_data;
 
-handle_event({call, {Pid, Tag}=From}, {call, #dbus_message{}=Msg}, authenticated, 
+handle_event({call, {Pid, Tag}=From}, {call, #dbus_message{}=Msg}, authenticated,
               #state{sock=Sock, serial=S, pending=Pending}=State) ->
     Data = dbus_marshaller:marshal_message(dbus_message:set_serial(S, Msg)),
+    ?debug("Calling ~p", [catch dbus_marshaller:unmarshal_data(list_to_binary(Data))]),
     true = ets:insert(Pending, {S, Pid, Tag}),
     ok = dbus_transport:send(Sock, Data),
     gen_statem:reply(From, {ok, {self(), Tag}}),
     {keep_state, State#state{serial=S+1}};
 
+handle_event(cast, #dbus_message{}=Msg, authenticated,
+              #state{sock=Sock, serial=S}=State) ->
+    Data = dbus_marshaller:marshal_message(dbus_message:set_serial(S, Msg)),
+    ?debug("Casting ~p", [catch dbus_marshaller:unmarshal_data(list_to_binary(Data))]),
+    ok = dbus_transport:send(Sock, Data),
+    {keep_state, State#state{serial=S+1}};
+
 %% Other
 handle_event(info, closed, _, State) ->
-    ?error("Connection closed...~n", []),
+    ?debug("Connection closed...~n", []),
     {stop, closed, State};
 
 %% Unhandled
-handle_event(_, Evt, StateName, State) ->
-    ?error("Unhandled event: ~p~n", [Evt]),
+handle_event(What, Evt, StateName, State) ->
+    ?error("Unhandled event: ~p:~p @ ~p~n", [What, Evt, StateName]),
     {next_state, StateName, State}.
 
 
@@ -361,6 +382,7 @@ handle_messages([], State) ->
     {ok, State};
 
 handle_messages([#dbus_message{header=#dbus_header{type=Type}}=Msg | R], State) ->
+    ?debug("Received ~p~n", [Msg]),
     case handle_message(Type, Msg, State) of
         {ok, State2} ->
             handle_messages(R, State2);
@@ -400,8 +422,8 @@ handle_message(?TYPE_ERROR, Msg, #state{pending=Pending}=State) ->
 	    end
     end;
 
-handle_message(?TYPE_METHOD_CALL, Msg, #state{owner=Owner}=State) ->
-    Owner ! {dbus_method_call, Msg},
+handle_message(?TYPE_METHOD_CALL, Msg, #state{}=State) ->
+    dbus_service_reg ! {dbus_method_call, Msg, {?MODULE, self()}},
     {ok, State};
 
 handle_message(?TYPE_SIGNAL, Msg, #state{owner=Owner}=State) ->
@@ -415,7 +437,7 @@ handle_message(Type, Msg, State) ->
 init_connection(Sock, Owner) ->
     ok = dbus_transport:send(Sock, <<0>>),
     {ok, connected, #state{sock=Sock,
-                           pending=ets:new(pending, [private]), 
+                           pending=ets:new(pending, [private]),
                            mechs=?ALL_MECHANISMS,
                            owner=Owner}}.
 
@@ -450,10 +472,9 @@ process_data(Data, #state{sock=Sock, mech_state={Mech, MechState}}=State) ->
             {next_state, waiting_for_data, State#state{mech_state={Mech, MechState}}};
         {error, Err} ->
             ?debug("Error with authentication challenge: ~p~n", [Err]),
-            ok = dbus_transport:send(<<"CANCEL\r\n">>),
+            ok = dbus_transport:send(Sock, <<"CANCEL\r\n">>),
             {next_state, waiting_for_reject, State}
     end.
-
 
 process_rejected(_Data, #state{mechs=[], got_mechs=true}=State) ->
     ?debug("~s: Disconnecting because we are out of mechanisms to try using~n", [State#state.side]),
@@ -461,9 +482,8 @@ process_rejected(_Data, #state{mechs=[], got_mechs=true}=State) ->
 
 process_rejected(Data, #state{mechs=[], got_mechs=false}=State) ->
     case record_mechs(Data, State) of
-	#state{mechs=[]} ->
-	    ?debug("~s: Disconnecting because we are out of mechanisms to try using~n", [State#state.side]),
-	    {stop, disconnect, State};
+	State2 = #state{mechs=[]} ->
+	    process_rejected(Data, State2);
 	State2 ->
 	    try_next_auth(State2)
     end;
@@ -586,7 +606,7 @@ pe_text(<< $", _Rest/binary >>, Acc) ->
 pe_text(<< C, Rest/binary >>, Acc) ->
     pe_text(Rest, << Acc/binary, C >>).
 
-    
+
 
 
 %%%

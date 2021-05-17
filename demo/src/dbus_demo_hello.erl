@@ -1,6 +1,6 @@
 -module(dbus_demo_hello).
 
--include("dbus.hrl").
+-include_lib("dbus/include/dbus.hrl").
 
 -behaviour(gen_dbus).
 
@@ -46,9 +46,9 @@ init([Service, Path]) ->
     [{interface, 'com.example.SampleInterface'},
      {signature, [string], [{array, string}]}].
 
-'HelloWorld'([Hello_message], From, State) ->
+'HelloWorld'([HelloMessage], From, State) ->
 %%    {reply, ["Hello callback", " from Erlang " ++ get_source_name(), "with unique name", "FIXME"], State}.
-    self() ! {hello, [Hello_message], From},
+    self() ! {hello, [HelloMessage], From},
     {noreply, State}.
 
 'RaiseException'(dbus_info) ->
@@ -76,13 +76,13 @@ init([Service, Path]) ->
     {reply, Dict, State}.
 
 
-handle_info({hello, [Hello_message], From}, State) ->
-    io:format("HelloWorld: callback ~p~n", [Hello_message]),
+handle_info({hello, [HelloMessage], From}, State) ->
+    io:format("HelloWorld: callback ~p~n", [HelloMessage]),
     gen_dbus:reply(From, {ok, ["Hello callback", " from Erlang " ++ get_source_name(), "with unique name", "FIXME"]}),
     {noreply, State};
 
 handle_info(Info, State) ->
-    error_logger:error_msg("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
+    io:format("HelloWorld: unhandled info: ~p~n", [Info]),
     {noreply, State}.
 
 

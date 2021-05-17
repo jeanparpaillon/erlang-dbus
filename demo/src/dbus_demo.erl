@@ -8,7 +8,7 @@
 
 -behaviour(gen_server).
 
--include("dbus.hrl").
+-include_lib("dbus/include/dbus.hrl").
 
 %% gen_server callbacks
 -export([
@@ -42,7 +42,7 @@ test() ->
     run_test(Pid).
 
 start_link() ->
-    [BusId|_R] = dbus_bus:env_to_bus_id(),
+    BusId = dbus_bus_connection:get_bus_id(session),
     start_link(BusId).
 
 start_link(BusId) ->
@@ -80,7 +80,6 @@ handle_cast(Request, State) ->
 handle_info({setup, BusId}, State) ->
     {ok, Bus} = dbus_bus_reg:get_bus(BusId),
     true = link(Bus),
-    ok = dbus_bus:wait_ready(Bus),
     io:format("Ready~n"),
 
     {ok, Service} = dbus_bus:get_service(Bus, 'org.freedesktop.DBus'),
