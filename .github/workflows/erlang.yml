@@ -1,23 +1,24 @@
-name: Erlang CI
-
-on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
+name: "Erlang CI"
+on: ["push", "pull_request"]
 
 jobs:
-
   build:
-
-    runs-on: lcb
-
-    container:
-      image: erlang:22.0.7
-
+    runs-on: "ubuntu-latest"
     steps:
     - uses: actions/checkout@v2
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y dbus python3-gi python3-dbus erlang
+
     - name: Compile
-      run: make
+      run: |
+        make
+        make -C demo
+
     - name: Run tests
-      run: make eunit ct
+      run: |
+        make eunit
+        dbus-run-session --config-file=demo/test/session.conf -- make -C demo eunit
+

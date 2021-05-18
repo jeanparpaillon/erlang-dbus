@@ -2,7 +2,7 @@
 %% @author Jean Parpaillon <jean.parpaillon@free.fr>
 %% @copyright Copyright 2014 Jean Parpaillon
 %% @doc Implements a remote service ...
-%% 
+%%
 %% @todo Remember what this module does ;)
 %% @end
 -module(dbus_remote_service).
@@ -39,7 +39,7 @@ start_link(Bus, Conn, ServiceName) ->
     gen_server:start_link(?MODULE, [Bus, Conn, ServiceName], []).
 
 
--spec get_object(dbus_name(), binary()) -> {ok, pid()} | {error, term()}.					    
+-spec get_object(dbus_name(), dbus_path()) -> {ok, pid()} | {error, term()}.
 get_object(Service, Path) ->
     gen_server:call(Service, {get_object, Path}).
 
@@ -56,14 +56,14 @@ init([Bus, Conn, ServiceName]) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-handle_call({get_object, Path}, {Pid, _Tag}, 
-	    #state{objects=Reg, bus=Bus, conn=Conn, name=Name}=State) ->
+handle_call({get_object, Path}, {Pid, _Tag},
+	    #state{objects=Reg, conn=Conn, name=Name}=State) ->
     case ets:lookup(Reg, Path) of
 	[{Path, Object, Pids}] ->
 	    ets:insert(Reg, {Path, Object, sets:add_element(Pid, Pids)}),
 	    {reply, {ok, Object}, State};
 	[] ->
-	    case dbus_proxy:start_link(Bus, Conn, Name, Path) of
+	    case dbus_proxy:start_link(Conn, Name, Path) of
 		{ok, Object} ->
 		    ets:insert(Reg, {Path, Object, sets:from_list([Pid])}),
 		    {reply, {ok, Object}, State};

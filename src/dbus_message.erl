@@ -47,8 +47,8 @@
 
 %% @equiv call(Destination, Path, Interface, Member, [])
 %% @end
--spec call(Destination :: dbus_name(), 
-	   Path        :: dbus_name(), 
+-spec call(Destination :: dbus_name(),
+	   Path        :: dbus_name(),
 	   Interface   :: dbus_name(),
 	   Member      :: dbus_name() | dbus_method()) -> dbus_message().
 call(Destination, Path, Interface, #dbus_method{name=Name}) ->
@@ -60,8 +60,8 @@ call(Destination, Path, Interface, Member) ->
 
 %% @doc Build a method call message
 %% @end
--spec call(Destination :: dbus_name(), 
-	   Path        :: dbus_name(), 
+-spec call(Destination :: dbus_name(),
+	   Path        :: dbus_name(),
 	   Interface   :: dbus_name(),
 	   Member      :: dbus_name() | dbus_method(),
 	   Opts        :: [dbus_option()]) -> dbus_message().
@@ -101,19 +101,18 @@ signal(Destination, Path, Interface, Signal, Args) ->
 	     Signal      :: dbus_signal(),
 	     Args        :: [dbus_arg()],
 	     Opts        :: [dbus_option()]) -> dbus_message().
-signal(Destination, Path, Interface, 
-       #dbus_signal{name=SigName, out_sig=Signature, out_types=Types}, Args, Opts)
+signal(Destination, Path, Interface,
+       #dbus_signal{name=SigName, out_sig=_Signature, out_types=Types}, Args, Opts)
   when is_list(Args) ->
-    Signature = dbus_marshaller:marshal_signature(Types),
-    {ok, Body, _Pos} = dbus_marshaller:marshal_list(Types, Args),
+    {Body, _Pos} = dbus_marshaller:marshal_list(Types, Args),
     Fields = [
 	      {?FIELD_PATH, #dbus_variant{type=object_path, value=Path}},
 	      {?FIELD_INTERFACE, #dbus_variant{type=string, value=Interface}},
 	      {?FIELD_MEMBER, #dbus_variant{type=string, value=SigName}},
-	      {?FIELD_SIGNATURE, #dbus_variant{type=signature, value=Signature}},
+	      {?FIELD_SIGNATURE, #dbus_variant{type=signature, value=dbus_marshaller:marshal_signature(Types)}},
 	      {?FIELD_DESTINATION, #dbus_variant{type=string, value=Destination}}
 	     ],
-    Header = #dbus_header{type=?TYPE_SIGNAL, 
+    Header = #dbus_header{type=?TYPE_SIGNAL,
 			  flags=process_flags(Opts),
 			  fields=Fields},
     {ok, #dbus_message{header=Header, body=Body}}.
@@ -122,23 +121,18 @@ signal(Destination, Path, Interface,
 %% @doc Build an error message
 %% @end
 -spec error(Orig      :: dbus_message(),
-	    ErrName   :: binary(),
-	    ErrText   :: binary()) -> dbus_message().
-error(#dbus_message{}=Orig, ErrName, ErrText) when is_binary(ErrName), 
-						   is_binary(ErrText) ->
+	    ErrName   :: binary() | list(),
+	    ErrText   :: binary() | list()) -> dbus_message().
+error(#dbus_message{}=Orig, ErrName, ErrText) ->
     From = get_field(?FIELD_SENDER, Orig),
-    Error = #dbus_variant{type=string, value=ErrName},
-    Serial = #dbus_variant{type=uint32, value=get_serial(Orig)},
-
-    {ok, Body, _Pos} = dbus_marshaller:marshal_list([string], [ErrText]),
+    {Body, _Pos} = dbus_marshaller:marshal_list([string], [ErrText]),
     Fields = [
-	      {?FIELD_ERROR_NAME, Error},
-	      {?FIELD_REPLY_SERIAL, Serial},
-	      {?FIELD_DESTINATION, From},
+	      {?FIELD_ERROR_NAME, #dbus_variant{type=string, value=ErrName}},
+	      {?FIELD_REPLY_SERIAL, #dbus_variant{type=uint32, value=get_serial(Orig)}},
+	      {?FIELD_DESTINATION, #dbus_variant{type=string, value=From}},
 	      {?FIELD_SIGNATURE, #dbus_variant{type=signature, value="s"}}
 	     ],
     Header = #dbus_header{type=?TYPE_ERROR,
-			  serial=Serial,
 			  fields=Fields},
     #dbus_message{header=Header, body=Body}.
 
@@ -148,21 +142,16 @@ error(#dbus_message{}=Orig, ErrName, ErrText) when is_binary(ErrName),
 -spec return(Orig       :: dbus_message(),
 	     Types      :: [dbus_type()],
 	     Body       :: term()) -> dbus_message().
-return(#dbus_message{}=Orig, Types, Body) when is_list(Types),
-					       is_binary(Body) ->
+return(#dbus_message{}=Orig, Types, Body) when is_list(Types) ->
     From = get_field(?FIELD_SENDER, Orig),
-    Serial = #dbus_variant{type=uint32, value=get_serial(Orig)},
     Signature = dbus_marshaller:marshal_signature(Types),
-
-    {ok, BinBody, _Pos} = dbus_marshaller:marshal_list(Types, Body),
+    {BinBody, _Pos} = dbus_marshaller:marshal_list(Types, Body),
     Fields = [
-	      {?FIELD_REPLY_SERIAL, Serial},
-	      {?FIELD_DESTINATION, From},
+	      {?FIELD_REPLY_SERIAL, #dbus_variant{type=uint32, value=get_serial(Orig)}},
+	      {?FIELD_DESTINATION, #dbus_variant{type=string, value=From}},
 	      {?FIELD_SIGNATURE, #dbus_variant{type=signature, value=Signature}}
 	     ],
-    Header = #dbus_header{type=?TYPE_METHOD_RETURN,
-			  serial=Serial,
-			  fields=Fields},
+    Header = #dbus_header{type=?TYPE_METHOD_RETURN, fields=Fields},
     #dbus_message{header=Header, body=BinBody}.
 
 
@@ -206,7 +195,7 @@ get_field(Code, #dbus_header{ fields=Fields }) ->
     case proplists:get_value(Code, Fields, undefined) of
 	undefined ->
 	    throw({no_such_field, Code});
-	Val -> 
+	Val ->
 	    Val
     end;
 
@@ -241,14 +230,14 @@ set_body(Signature, Types, Body, #dbus_message{header=#dbus_header{fields=Fields
 			  O ->		[{?FIELD_SIGNATURE, #dbus_variant{type=signature, value=O}} | Fields]
 		      end,
 	    Message#dbus_message{header=Header#dbus_header{fields=Fields2, size=Pos}, body=Bin}
-    catch 
+    catch
 	_:_ ->
 	    {error, {'org.freedesktop.DBus.InvalidParameters', Signature}}
     end.
 
 
 %% @doc Check message headers matches some values.
-%% 
+%%
 %% '_' means the header exists with any value
 %%
 %% @end

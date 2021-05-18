@@ -37,7 +37,7 @@
 %% @doc Find an interface definition.
 %%
 %% @end
--spec find_interface(dbus_node(), Iface :: dbus_name()) -> 
+-spec find_interface(dbus_node(), Iface :: dbus_name()) ->
                             {ok, dbus_iface()} | {error, dbus_err()}.
 find_interface(#dbus_node{interfaces=Ifaces}, IfaceName) ->
     case find_name(IfaceName, Ifaces, fun dbus_names:bin_to_iface/1) of
@@ -50,7 +50,7 @@ find_interface(#dbus_node{interfaces=Ifaces}, IfaceName) ->
 
 %% @doc Find a method definition.
 %% @end
--spec find_method(dbus_node(), Iface :: dbus_name(), Method :: dbus_name()) -> 
+-spec find_method(dbus_node(), Iface :: dbus_name(), Method :: dbus_name()) ->
                          {ok, dbus_method()} | {error, dbus_err()}.
 find_method(#dbus_node{interfaces=Ifaces}=Node, IfaceName, MethodName) ->
     case find_name(IfaceName, Ifaces, fun dbus_names:bin_to_iface/1) of
@@ -68,7 +68,7 @@ find_method(#dbus_node{interfaces=Ifaces}=Node, IfaceName, MethodName) ->
 
 %% @doc Find a signal definition
 %% @end
--spec find_signal(dbus_node(), Iface :: dbus_name(), Signal :: dbus_name()) -> 
+-spec find_signal(dbus_node(), Iface :: dbus_name(), Signal :: dbus_name()) ->
                          {ok, dbus_signal()} | {error, dbus_err()}.
 find_signal(#dbus_node{interfaces=Ifaces}=Node, IfaceName, SignalName) ->
     case find_name(IfaceName, Ifaces, fun dbus_names:bin_to_iface/1) of
@@ -93,12 +93,12 @@ to_xml(#dbus_node{}=Node) ->
 
 
 %% @doc Parse a `dbus_node() ' from an XML string.
-%% 
+%%
 %% @throws {error, parse_error}
 %% @end
 -spec from_xml_string(binary()) -> dbus_node().
 from_xml_string(Data) when is_binary(Data) ->
-    Opts = [{event_fun, fun xml_event/3}, 
+    Opts = [{event_fun, fun xml_event/3},
             {event_state, #state{}},
             skip_external_dtd],
     case xmerl_sax_parser:stream(Data, Opts) of
@@ -116,7 +116,7 @@ from_xml_string(Data) when is_binary(Data) ->
 %% @end
 -spec from_xml(file:filename()) -> dbus_node().
 from_xml(Filename) ->
-    Opts = [{event_fun, fun xml_event/3}, 
+    Opts = [{event_fun, fun xml_event/3},
             {event_state, #state{}},
             skip_external_dtd],
     case xmerl_sax_parser:file(Filename, Opts) of
@@ -138,7 +138,7 @@ find_name(Name, Tree, _) when is_atom(Name) ->
 find_name(Name, Tree, ToKnownFun) when is_binary(Name) ->
     case gb_trees:lookup(Name, Tree) of
         {value, Iface} -> {value, Iface};
-        none -> 
+        none ->
             case ToKnownFun(Name) of
                 Bin when is_binary(Bin) -> none;
                 Atom when is_atom(Atom) -> gb_trees:lookup(Atom, Tree)
@@ -149,7 +149,9 @@ find_name(Name, Tree, ToKnownFun) when is_binary(Name) ->
 to_binary(Item) when is_atom(Item) ->
     atom_to_binary(Item, utf8);
 to_binary(Item) when is_list(Item) ->
-    list_to_binary(Item).
+    list_to_binary(Item);
+to_binary(Item) when is_binary(Item) ->
+    Item.
 
 to_xmerl(undefined) ->
     [];
@@ -214,7 +216,7 @@ to_xmerl(#dbus_signal{}=Elem) ->
      to_xmerl(Elem#dbus_signal.args) ++ Result};
 
 to_xmerl(#dbus_arg{}=Elem) ->
-    {arg, 
+    {arg,
      case to_binary(Elem#dbus_arg.name) of
          undefined ->
              [];
@@ -242,9 +244,9 @@ xml_event({startElement, _, "node", _, Attrs}, _L, #state{s=node}=S) ->
     S#state{s=child_node, child=build_node(Attrs, #dbus_node{})};
 
 xml_event({startElement, _, "interface", _, Attrs}, _L, #state{s=node}=S) ->
-    S#state{s=iface, iface=build_iface(Attrs, 
-                                       #dbus_iface{methods=gb_trees:empty(), 
-                                                   signals=gb_trees:empty(), 
+    S#state{s=iface, iface=build_iface(Attrs,
+                                       #dbus_iface{methods=gb_trees:empty(),
+                                                   signals=gb_trees:empty(),
                                                    properties=gb_trees:empty()})};
 
 xml_event({startElement, _, "method", _, Attrs}, _L, #state{s=iface}=S) ->
@@ -265,19 +267,19 @@ xml_event({startElement, _, "arg", _, Attrs}, _L, #state{s=signal, signal=#dbus_
     S#state{s=signal_arg, signal=Signal#dbus_signal{args=[Arg | Args]}};
 
 xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=method, method=#dbus_method{annotations=Annotations}=M}=S) ->
-    S#state{s=method_annotation, 
+    S#state{s=method_annotation,
             method=M#dbus_method{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
 xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=iface, iface=#dbus_iface{annotations=Annotations}=I}=S) ->
-    S#state{s=iface_annotation, 
+    S#state{s=iface_annotation,
             iface=I#dbus_iface{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
 xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=property, property=#dbus_property{annotations=Annotations}=P}=S) ->
-    S#state{s=property_annotation, 
+    S#state{s=property_annotation,
             property=P#dbus_property{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
 xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=signal, signal=#dbus_signal{annotations=Annotations}=Sig}=S) ->
-    S#state{s=signal_annotation, 
+    S#state{s=signal_annotation,
             signal=Sig#dbus_signal{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
 xml_event({endElement, _, "node", _}, _L, #state{s=node}=S) ->

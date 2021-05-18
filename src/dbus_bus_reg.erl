@@ -44,9 +44,11 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
--spec get_bus(#bus_id{}) -> {ok, pid()}.
+-spec get_bus(#bus_id{} | atom()) -> {ok, pid()}.
 get_bus(#bus_id{}=BusId) ->
-    gen_server:call(?SERVER, {get_bus, BusId}).
+    gen_server:call(?SERVER, {get_bus, BusId});
+get_bus(BusName) when is_atom(BusName) ->
+    get_bus(dbus_bus_connection:get_bus_id(BusName)).
 
 -spec release_bus(pid()) -> ok | {error, not_registered}.
 release_bus(Bus) when is_pid(Bus) ->
@@ -78,8 +80,10 @@ code_change(_OldVsn, State, _Extra) ->
 handle_call({get_bus, #bus_id{}=BusId}, _From, #state{busses=Busses}=State) ->
     case proplists:get_value(BusId, Busses) of
 	undefined ->
-	    {ok, Bus} = dbus_bus:connect(BusId),
+      {ok, BusConn} = dbus_bus_connection:connect(BusId),
+	    {ok, Bus} = gen_server:start_link(dbus_bus, [BusConn, self()], []),
 	    Busses1 = [{BusId, Bus} | Busses],
+	    dbus_service_reg ! {new_bus, Bus},
 	    {reply, {ok, Bus}, State#state{busses=Busses1}};
 	Bus ->
 	    {reply, {ok, Bus}, State}
@@ -126,7 +130,7 @@ handle_cast(#dbus_message{}=Msg, #state{busses=Buses}=State) ->
     Fun = fun({_, Bus}) ->
 		  dbus_bus:cast(Bus, Msg)
 	  end,
-    lists:foreach(Fun, Buses),    
+    lists:foreach(Fun, Buses),
     {noreply, State};
 
 handle_cast(Request, State) ->

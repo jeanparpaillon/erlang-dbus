@@ -23,11 +23,13 @@
          call/4,
          call/5,
          cast/2,
+         cast/3,
          cast/4,
          connect_signal/2,
          connect_signal/4,
          connect_signal/6,
          has_interface/2,
+         interface/2,
          children/1
         ]).
 
@@ -81,17 +83,17 @@ start_link(Conn, Service) ->
 
 %% @doc Connect to an object, and introspect it.
 %% @end
--spec start_link(Conn :: dbus_connection(), Service :: dbus_name(), Path :: binary()) ->
+-spec start_link(Conn :: dbus_connection(), Service :: dbus_name(), Path :: binary() | atom()) ->
             {ok, dbus_proxy()} | {error, term()}.
-start_link(Conn, Service, Path) when is_binary(Path) ->
+start_link(Conn, Service, Path) ->
     gen_server:start_link(?MODULE, [Conn, Service, Path], []).
 
 
 %% @doc Connect to an object, with known interfaces.
 %% @end
--spec start_link(Conn :: dbus_connection(), Service :: dbus_name(), Path :: binary(), Node :: dbus_node()) ->
+-spec start_link(Conn :: dbus_connection(), Service :: dbus_name(), Path :: binary() | atom(), Node :: dbus_node()) ->
             {ok, dbus_proxy()} | {error, term()}.
-start_link(Conn, Service, Path, #dbus_node{}=Node) when is_binary(Path) ->
+start_link(Conn, Service, Path, #dbus_node{}=Node) ->
     gen_server:start_link(?MODULE, [Conn, Service, Path, Node], []).
 
 
@@ -113,17 +115,20 @@ call(Proxy, #dbus_message{}=Msg) ->
 %% @end
 -spec call(Proxy :: dbus_proxy(), Msg :: dbus_message(),
 	   Timeout :: integer() | infinity) -> {ok, term()} | {error, term()}.
-call(Proxy, #dbus_message{}=Msg, Timeout) ->
-    gen_server:call(Proxy, {call, Msg}, Timeout).
+call(Proxy, #dbus_message{}=Msg, Timeout) when is_pid(Proxy) ->
+    gen_server:call(Proxy, {call, Msg}, Timeout);
+call({interface, Proxy, IfaceName}, MethodName, Args) when is_pid(Proxy) ->
+    call(Proxy, IfaceName, MethodName, Args, ?TIMEOUT).
 
 
 %% @equiv call(Proxy, Ifacename, MethodName, Args, 5000)
 %% @end
 -spec call(Proxy :: dbus_proxy(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term()) ->
           ok | {ok, term()} | {error, term()}.
-call(Proxy, IfaceName, MethodName, Args) ->
+call({interface, Proxy, IfaceName}, MethodName, Args, Timeout) when is_pid(Proxy) ->
+    call(Proxy, IfaceName, MethodName, Args, Timeout);
+call(Proxy, IfaceName, MethodName, Args) when is_pid(Proxy) ->
     call(Proxy, IfaceName, MethodName, Args, ?TIMEOUT).
-
 
 %% @doc Sync call a method
 %% @end
@@ -131,7 +136,7 @@ call(Proxy, IfaceName, MethodName, Args) ->
 	   Timeout :: integer() | infinity) ->
           ok | {ok, term()} | {error, term()}.
 call(Proxy, IfaceName, MethodName, Args, Timeout) when is_pid(Proxy) ->
-    gen_server:call(Proxy, {method, IfaceName, MethodName, Args}, Timeout).
+    may_throw(gen_server:call(Proxy, {method, IfaceName, MethodName, Args}, Timeout)).
 
 
 %% @doc Async send a message
@@ -140,6 +145,11 @@ call(Proxy, IfaceName, MethodName, Args, Timeout) when is_pid(Proxy) ->
 cast(Proxy, #dbus_message{}=Msg) ->
     gen_server:call(Proxy, {cast, Msg}).
 
+%% @doc Async call a method
+%% @end
+-spec cast(Interface :: {interface, dbus_proxy(), dbus_name()}, MethodName :: dbus_name(), Args :: term()) -> ok.
+cast({interface, Proxy, IfaceName}, MethodName, Args) ->
+    cast(Proxy, IfaceName, MethodName, Args).
 
 %% @doc Async call a method
 %% @end
@@ -196,10 +206,24 @@ connect_signal(Proxy, Service, IfaceName, SignalName, Path, MFA) ->
 has_interface(Proxy, InterfaceName) ->
     gen_server:call(Proxy, {has_interface, InterfaceName}).
 
+
+%% @doc Check if object implements the given interface and return {ok, Iface} if true
+%% @end
+-spec interface(Proxy :: dbus_proxy(), InterfaceName :: dbus_name()) -> {ok, dbus_proxy(), dbus_name()} | {error, not_registered}.
+interface(Proxy, InterfaceName) ->
+    case has_interface(Proxy, InterfaceName) of
+    true ->
+      {ok, {interface, Proxy, InterfaceName}};
+    false ->
+      {error, not_registered}
+    end
+.
+
 %%
 %% gen_server callbacks
 %%
-init([Conn, Service, Path]) ->
+init([Conn, Service0, Path]) ->
+    Service = normalize_service_name(Service0),
     case do_introspect(Conn, Service, Path) of
     {ok, Node} ->
         Unique = do_unique_name(Conn, Service),
@@ -209,7 +233,8 @@ init([Conn, Service, Path]) ->
         {stop, Err}
     end;
 
-init([Conn, Service, Path, Node]) ->
+init([Conn, Service0, Path, Node]) ->
+    Service = normalize_service_name(Service0),
     {ok, #state{conn=Conn, service=Service, path=Path, node=Node, handlers=[]}}.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -298,7 +323,6 @@ handle_cast(Request, State) ->
     ?error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
-
 handle_info({dbus_signal, #dbus_message{header=Hdr, body=Args}}, #state{handlers=Handlers}=State) ->
     Sender = dbus_message:find_field(?FIELD_SENDER, Hdr),
     Path = dbus_message:find_field(?FIELD_PATH, Hdr),
@@ -352,11 +376,14 @@ do_method(IfaceName, Method, Args, #state{service=Service, conn=Conn, path=Path}
                     {reply, {ok, Res}, State};
                 {error, #dbus_message{body=Body}=Ret} ->
                     Code = dbus_message:get_field(?FIELD_ERROR_NAME, Ret),
-                    {reply, {error, {Code, Body}}, State}
+                    {reply, {throw, {binary_to_atom(Code, utf8), Body}}, State}
             end;
         {error, Err} ->
             {reply, {error, Err}, State}
     end.
+
+may_throw({throw, What}) -> throw(What);
+may_throw(AnyOther) -> AnyOther.
 
 do_introspect(Conn, Service, Path) ->
     ?debug("Introspecting: ~p:~p~n", [Service, Path]),
@@ -451,3 +478,8 @@ do_handle_signal(#signal_handler{mfa={Fun, Ctx}}=Handler, Acc, Sender, Iface, Si
 do_handle_signal(#signal_handler{mfa=Pid}=Handler, Acc, Sender, Iface, Signal, Path, Args) when is_pid(Pid) ->
     Pid ! {signal, Sender, Iface, Signal, Path, Args},
     [ Handler | Acc ].
+
+normalize_service_name(Name) when is_atom(Name) ->
+  atom_to_binary(Name, utf8);
+normalize_service_name(Name) when is_binary(Name) ->
+  Name.

@@ -7,4 +7,4 @@ dep_hexer_mk = git https://github.com/inaka/hexer.mk.git 1.1.0
 
 DEP_PLUGINS = hexer_mk
 
-include erlang.mk
+include $(if $(ERLANG_MK_FILENAME),$(ERLANG_MK_FILENAME),erlang.mk)

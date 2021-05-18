@@ -18,21 +18,21 @@
 	 bin_to_member/1,
 	 bin_to_error/1]).
 
-%% @equiv bin_to_iface(list_to_binary(Str)) 
+%% @equiv bin_to_iface(list_to_binary(Str))
 %% @end
 -spec list_to_iface(string()) -> dbus_name().
 list_to_iface(Str) when is_list(Str) ->
     bin_to_iface(list_to_binary(Str)).
 
 
-%% @equiv bin_to_method(list_to_binary(Str)) 
+%% @equiv bin_to_method(list_to_binary(Str))
 %% @end
 -spec list_to_method(string()) -> dbus_name().
 list_to_method(Str) when is_list(Str) ->
     bin_to_method(list_to_binary(Str)).
 
 
-%% @equiv bin_to_signal(list_to_binary(Str)) 
+%% @equiv bin_to_signal(list_to_binary(Str))
 %% @end
 -spec list_to_signal(string()) -> dbus_name().
 list_to_signal(Str) when is_list(Str) ->
@@ -123,7 +123,7 @@ bin_to_method(Bin) when is_binary(Bin) -> Bin.
 -spec bin_to_signal(binary()) -> dbus_name().
 bin_to_signal(<<"NameAcquired">>) -> 'NameAcquired';
 bin_to_signal(<<"NameLost">>) -> 'NameLost';
-bin_to_signal(<<"NameOwnerChanged">>) -> 'NameAcquired';
+bin_to_signal(<<"NameOwnerChanged">>) -> 'NameOwnerChanged';
 bin_to_signal(<<"PropertiesChanged">>) -> 'PropertiesChanged';
 bin_to_signal(<<"InterfacesAdded">>) -> 'InterfacesAdded';
 bin_to_signal(<<"InterfacesRemoved">>) -> 'InterfacesRemoved';

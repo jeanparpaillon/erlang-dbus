@@ -37,7 +37,7 @@
 
 
 %% @doc Retrieve a bus_id from well-known names
-%% 
+%%
 %% @end
 -spec get_bus_id(dbus_known_bus()) -> bus_id() | {unsupported, [bus_id()]}.
 get_bus_id(session) ->
@@ -60,7 +60,7 @@ get_bus_id(system) ->
 -spec connect(bus_id() | dbus_known_bus()) -> {ok, dbus_connection()} | {error, term()}.
 connect(#bus_id{}=BusId) ->
     case dbus_peer_connection:start_link(BusId) of
-	{ok, {dbus_peer_connection, PConn}=Conn} ->
+	{ok, {dbus_peer_connection, PConn} = Conn} ->
 	    case dbus_peer_connection:auth(PConn) of
 		{ok, undefined} ->
 		    case dbus_proxy:start_link(Conn, ?DBUS_SERVICE, <<"/">>, ?DBUS_NODE) of
@@ -71,14 +71,7 @@ connect(#bus_id{}=BusId) ->
 			    {ok, {?MODULE, DBus}};
 			{error, Err} -> {error, Err}
 		    end;
-		{ok, ConnId} ->
-		    case dbus_proxy:start_link(Conn, ?DBUS_SERVICE, <<"/">>, ?DBUS_NODE) of
-			{ok, DBus} ->
-			    ?debug("Acquired connection id: ~p~n", [ConnId]),	
-			    dbus_peer_connection:set_controlling_process(PConn, DBus),
-			    {ok, {?MODULE, DBus}};
-			{error, Err} -> {error, Err}
-		    end
+		{error, Err} -> {error, Err}
 	    end;
 	{error, Err} -> {error, Err}
     end;

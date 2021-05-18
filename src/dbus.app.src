@@ -1,49 +1,11 @@
-{application, dbus,
- [{description, "A native erlang implementation of D-Bus"},
-  {vsn,"0.7.0"},
-  {modules, [
-	     dbus,
-	     dbus_sup,
-	     dbus_auth,
-	     dbus_auth_cookie_sha1,
-	     dbus_auth_external,
-	     dbus_auth_anonymous,
-	     dbus_bus_connection,
-	     dbus_client,
-	     dbus_proxy,
-	     dbus_connection,
-	     dbus_constants,
-	     dbus_hex,
-	     dbus_introspect,
-	     dbus_marshaller,
-	     dbus_message,
-	     dbus_names,
-	     dbus_transport,
-	     dbus_transport_tcp,
-	     dbus_transport_unix,
-	     dbus_bus,
-	     dbus_bus_reg,
-	     dbus_remote_service,
-	     dbus_service,
-	     dbus_service_reg
-	    ]},
-  {registered, [
-		dbus_bus_reg
-	       ]},
-  {mod, {dbus, []}},
-  {env, [
-         {external_cookie, "31303030"}
-        ]},
-  {applications, [
-                  kernel,
-                  stdlib,
-                  sasl,
-                  crypto,
-                  xmerl
-                 ]
-  },
-  {maintainers, ["Jean Parpaillon"]},
-  {licenses, ["Apache"]},
-  {links, [{"Github", "https://github.com/lizenn/erlang-dbus"}]}
- ]
-}.
+{application,dbus,
+             [{description,"A native erlang implementation of D-Bus"},
+              {vsn,"0.7.0"},
+              {modules,[]},
+              {registered,[dbus_bus_reg]},
+              {mod,{dbus,[]}},
+              {env,[{external_cookie,"31303030"}]},
+              {applications,[kernel,stdlib,sasl,crypto,xmerl]},
+              {maintainers,["Jean Parpaillon"]},
+              {licenses,["Apache"]},
+              {links,[{"Github","https://github.com/lizenn/erlang-dbus"}]}]}.

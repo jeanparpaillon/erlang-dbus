@@ -46,9 +46,9 @@
 	 }).
 
 -define(DEFAULT_DBUS_SERVICE, 'org.freedesktop.DBus').
--define(DEFAULT_DBUS_NODE, 
-	#dbus_node{elements=[], 
-		   interfaces=gb_trees:from_orddict([{'org.freedesktop.DBus', ?DBUS_DBUS}, 
+-define(DEFAULT_DBUS_NODE,
+	#dbus_node{elements=[],
+		   interfaces=gb_trees:from_orddict([{'org.freedesktop.DBus', ?DBUS_DBUS},
 						     {'org.freedesktop.DBus.Introspectable', ?DBUS_INTROSPECTABLE}])}).
 
 connect(BusId) when is_record(BusId, bus_id) ->
@@ -75,18 +75,10 @@ cast(Bus, #dbus_message{}=Msg) ->
 %%
 %% gen_server callbacks
 %%
-init([BusId, Owner]) ->
-    case dbus_connection:start_link(BusId, [list, {packet, 0}]) of
-	{ok, Conn} ->
-	    dbus_connection:auth(Conn),
-	    Reg = ets:new(services, [set, private]),
-	    SigH = ets:new(signal_handlers, [set, private]),
-	    {ok, #state{owner=Owner, conn=Conn, services=Reg, signal_handlers=SigH}};
-	ignore ->
-	    ignore;
-	{error, Err} -> 
-	    {stop, Err}
-    end.
+init([{dbus_bus_connection, DBus} = Conn, Owner]) ->
+    Reg = ets:new(services, [set, private]),
+    SigH = ets:new(signal_handlers, [set, private]),
+    {ok, #state{owner=Owner, conn=Conn, dbus_object=DBus, services=Reg, signal_handlers=SigH}}.
 
 
 code_change(_OldVsn, State, _Extra) ->
@@ -132,14 +124,6 @@ handle_cast(#dbus_message{}=Msg, #state{conn=Conn}=State) ->
 handle_cast(Request, State) ->
     ?error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
-
-
-handle_info({setup, BusId}, State) ->
-    case dbus_connection:start_link(BusId, [list, {packet, 0}]) of
-	{ok, Conn} -> {noreply, State#state{conn=Conn}};
-	ignore -> {noreply, State};
-	{error, Err} -> {stop, Err, State}
-    end;
 
 handle_info({reply, Ref, {error, Reason}}, #state{conn_name=Ref}=State) ->
     {stop, {error, Reason}, State};

@@ -52,7 +52,7 @@
 -record(state, {sock,
 		owner,
 		loop     :: pid(),
-		raw      :: boolean()}).
+		raw      :: boolean() | undefined}).
 
 %% @doc
 %% connect/2 starts a gen_server to manage a unix socket
@@ -90,7 +90,7 @@ init([Path, Owner]) when is_pid(Owner), is_binary(Path) ->
             {ok, #state{sock=Sock, owner=Owner, loop=Loop}};
 	{error, Err} ->
 	    ?error("Error creating socket: ~p~n", [Err]),
-	    {error, Err}
+	    {stop, Err}
     end;
 init(_) ->
     ?error("Invalid argument in UNIX transport init~n", []),
@@ -161,6 +161,9 @@ do_read(Sock, Pid) ->
         {tcp, Sock, Buf} ->
             Pid ! {unix, list_to_binary(Buf)},
             do_read(Sock, Pid);
+        {tcp_closed, Sock} ->
+            timer:sleep(500),
+            exit(unix_closed);
         Unhandled ->
             ?debug("Unhandled receive: ~p", [Unhandled]),
             do_read(Sock, Pid)

@@ -82,9 +82,9 @@ handle_info({dbus_method_call, Header, Conn}, State) ->
     Service ! {dbus_method_call, Header, Conn},
     {noreply, State};
 
-handle_info({new_bus, _Bus}, State) ->
-    Fun = fun({ServiceName, Service}) ->
-		  ok = dbus_bus_reg:export_service(Service, ServiceName)
+handle_info({new_bus, Bus}, State) ->
+    Fun = fun({ServiceName, _Service}) ->
+		  ok = dbus_bus:export_service(Bus, ServiceName)
 	  end,
     lists:foreach(Fun, State#state.services),
     {noreply, State};

@@ -6,32 +6,22 @@
 
 -module(dbus_example_client).
 
--include("dbus.hrl").
+-include_lib("dbus/include/dbus.hrl").
 
 -export([test/0]).
 
 test() ->
-    [BusId|_R] = dbus_bus:env_to_bus_id(),
-    io:format("Id: ~p~n", [BusId]),
-    {ok, Bus} = get_bus(BusId),
-
+    {ok, BusConn} = dbus_bus_connection:connect(session),
+    {ok, Bus} = gen_server:start_link(dbus_bus, [BusConn, self()], []),
     run_test(Bus),
-    
-    ok = dbus_bus_reg:release_bus(Bus).
-
-get_bus(BusId) ->
-    {ok, Bus} = dbus_bus_reg:get_bus(BusId),
-    true = link(Bus),
-    ok = dbus_bus:wait_ready(Bus),
-    io:format("Ready~n"),
-    {ok, Bus}.
+    ok = dbus_bus_connection:close(Bus).
 
 
 run_test(Bus) ->
     {ok, Service} = dbus_bus:get_service(Bus, 'com.example.SampleService'),
-    {ok, Remote_object} = dbus_remote_service:get_object(Service, '/SomeObject'),
-    io:format("Remote_object: ~p~n", [Remote_object]),
-    {ok, Iface} = dbus_proxy:interface(Remote_object, 'com.example.SampleInterface'),
+    {ok, RemoteObject} = dbus_remote_service:get_object(Service, '/SomeObject'),
+    io:format("RemoteObject: ~p~n", [RemoteObject]),
+    {ok, Iface} = dbus_proxy:interface(RemoteObject, 'com.example.SampleInterface'),
     Var = <<"Hello from Erlang">>,
     {ok, Reply1} = dbus_proxy:call(Iface, 'HelloWorld', [Var]),
     io:format("HelloWorld 1: ~p~n", [Reply1]),
@@ -49,11 +39,11 @@ run_test(Bus) ->
     try dbus_proxy:call(Iface, 'RaiseException', []) of
         never ->
             throw(dead_code)
-    catch 
+    catch
         {'com.example.DemoException', Reply5} ->
             io:format("RaiseException: error '~p'~n", [Reply5])
     end,
 
-    ok = dbus_remote_service:release_object(Service, Remote_object),
+    ok = dbus_remote_service:release_object(Service, RemoteObject),
     ok = dbus_bus:release_service(Bus, Service),
     ok.
