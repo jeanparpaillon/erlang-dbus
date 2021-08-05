@@ -150,7 +150,7 @@ handle_method_call(<<"/">>, #dbus_message{}=Msg, Conn,
     case dbus_constants:to_atom(Member) of
 	'Introspect' ->
 	    Elements = lists:foldl(fun({Path, _}, Res) ->
-					   [$/ | PathStr] = atom_to_list(Path),
+					   [$/ | PathStr] = binary_to_list(Path),
 					   [#dbus_node{name=PathStr} | Res]
 				   end, [], Objects),
 	    Node = #dbus_node{name="/", elements=Elements},
