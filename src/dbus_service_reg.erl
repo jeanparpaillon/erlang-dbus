@@ -13,7 +13,8 @@
 %% api
 -export([
 	 start_link/0,
-	 export_service/1
+	 export_service/1,
+	 export_service/2
 	]).
 
 %% gen_server callbacks
@@ -38,7 +39,10 @@ start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 export_service(ServiceName) ->
-    gen_server:call(?SERVER, {export_service, ServiceName}).
+    gen_server:call(?SERVER, {export_service, undefined, ServiceName}).
+	
+export_service(Service, ServiceName) ->
+		gen_server:call(?SERVER, {export_service, Service, ServiceName}).
 
 %%
 %% gen_server callbacks
@@ -53,16 +57,17 @@ init([]) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+handle_call({export_service, undefined, ServiceName}, From, #state{service=Service}=State) ->
+	handle_call({export_service, Service, ServiceName}, From, State);
 
-handle_call({export_service, ServiceName}, _From, State) ->
+handle_call({export_service, Service, ServiceName}, _From, State) ->
     Services = State#state.services,
     case lists:keysearch(ServiceName, 1, Services) of
 	{value, {_, Service}} ->
 	    {reply, {ok, Service}, State};
 	_ ->
 	    ?debug("export_service name ~p~n", [ServiceName]),
-	    Service = State#state.service,
-	    ok = dbus_bus_reg:export_service(undefined, ServiceName),
+	    ok = dbus_bus_reg:export_service(Service, ServiceName),
 	    Services1 = [{ServiceName, Service}|Services],
 	    {reply, {ok, Service}, State#state{services=Services1}}
     end;
@@ -77,9 +82,10 @@ handle_cast(Request, State) ->
     {noreply, State}.
 
 
-handle_info({dbus_method_call, Header, Conn}, State) ->
-    Service = State#state.service,
-    Service ! {dbus_method_call, Header, Conn},
+handle_info({dbus_method_call, #dbus_message{}=Msg, Conn}, State) ->
+		Destination = dbus_message:get_field(?FIELD_DESTINATION, Msg),
+		Service = find_service(Destination, State),
+    Service ! {dbus_method_call, Msg, Conn},
     {noreply, State};
 
 handle_info({new_bus, Bus}, State) ->
@@ -114,3 +120,14 @@ handle_info(Info, State) ->
 
 terminate(_Reason, _State) ->
     terminated.
+
+find_service(undefined, #state{service=Service}) ->
+		Service;
+
+find_service(ServiceName, #state{services=Services}=State) ->
+		case lists:keysearch(ServiceName, 1, Services) of
+			{value, {_, Service}} ->
+	    	Service;
+			_ ->
+	    	State#state.service
+    end.
