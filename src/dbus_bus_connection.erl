@@ -21,7 +21,8 @@
 -include("dbus_introspectable.hrl").
 
 -export([get_bus_id/1,
-	 connect/1]).
+	 connect/1,
+     connect/2]).
 
 %% dbus_connection callbacks
 -export([close/1,
@@ -59,7 +60,14 @@ get_bus_id(system) ->
 %% @end
 -spec connect(bus_id() | dbus_known_bus()) -> {ok, dbus_connection()} | {error, term()}.
 connect(#bus_id{}=BusId) ->
-    case dbus_peer_connection:start_link(BusId) of
+    connect(BusId, undefined);
+
+connect(BusName) when BusName =:= system;
+              BusName =:= session ->
+    connect(get_bus_id(BusName)).
+
+connect(#bus_id{}=BusId, ServiceReg) ->
+    case dbus_peer_connection:start_link(BusId, ServiceReg) of
 	{ok, {dbus_peer_connection, PConn} = Conn} ->
 	    case dbus_peer_connection:auth(PConn) of
 		{ok, undefined} ->
@@ -76,9 +84,9 @@ connect(#bus_id{}=BusId) ->
 	{error, Err} -> {error, Err}
     end;
 
-connect(BusName) when BusName =:= system;
+connect(BusName, ServiceReg) when BusName =:= system;
 		      BusName =:= session ->
-    connect(get_bus_id(BusName)).
+    connect(get_bus_id(BusName), ServiceReg).
 
 
 %% @doc Stop the bus proxy
