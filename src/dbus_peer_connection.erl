@@ -21,6 +21,8 @@
          start_link/2,
          start_link/3,
          set_controlling_process/2,
+         get_unique_name/1,
+         set_unique_name/2,
          auth/1]).
 
 %% gen_dbus_connection callback
@@ -45,11 +47,12 @@
                 waiting     = []      :: list(),
                 mechs       = []      :: list(),
                 round       = 1       :: number(),
-		got_mechs   = false   :: boolean(),
+		        got_mechs   = false   :: boolean(),
                 mech_state            :: term(),
                 guid                  :: binary() | undefined,
                 unix_fd               :: boolean() | undefined,
-		side        = client  :: client | server
+		        side        = client  :: client | server,
+                unique_name = <<>>    :: binary()
                }).
 
 -define(ALL_MECHANISMS, [dbus_auth_external, dbus_auth_cookie_sha1, dbus_auth_anonymous]).
@@ -148,6 +151,14 @@ set_controlling_process(Conn, Client) ->
       Error -> Error
     end.
 
+-spec get_unique_name(Connection :: pid()) -> {ok, name} | {error, term()}.
+get_unique_name(Conn) ->
+    gen_statem:call(Conn, get_unique_name).
+
+-spec set_unique_name(Connection :: pid(), Name :: binary()) -> ok | {error, term()}.
+set_unique_name(Conn, Name) ->
+    gen_statem:cast(Conn, {set_unique_name, Name}).
+
 flush_messages(Client) ->
   receive
     {dbus_signal, Any} ->
@@ -185,6 +196,13 @@ code_change(_OldVsn, _StateName, State, _Extra) ->
 
 
 %% All states
+handle_event(cast, {set_unique_name, Name}, _StateName, #state{}=State) ->
+    {keep_state, State#state{unique_name=Name}};
+
+handle_event({call, From}, get_unique_name, _StateName, #state{unique_name=Name}=State) ->
+    gen_statem:reply(From, {ok, Name}),
+    keep_state_and_data;
+
 handle_event({call, {Owner, _}=From}, {set_controlling_process, Client}, _StateName, #state{owner=Owner}=State) ->
     gen_statem:reply(From, ok),
     {keep_state, State#state{owner=Client}};

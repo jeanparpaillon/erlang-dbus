@@ -22,7 +22,8 @@
 
 -export([get_bus_id/1,
 	 connect/1,
-     connect/2]).
+     connect/2,
+     get_unique_name/1]).
 
 %% dbus_connection callbacks
 -export([close/1,
@@ -75,6 +76,7 @@ connect(#bus_id{}=BusId, ServiceReg) ->
 			{ok, DBus} ->
 			    ConnId = hello(DBus),
 			    ?debug("Hello connection id: ~p~n", [ConnId]),
+                dbus_peer_connection:set_unique_name(PConn, ConnId),
 			    dbus_peer_connection:set_controlling_process(PConn, DBus),
 			    {ok, {?MODULE, DBus}};
 			{error, Err} -> {error, Err}
@@ -108,6 +110,12 @@ call(Bus, Msg) ->            dbus_proxy:call(Bus, Msg).
 -spec cast({?MODULE, dbus_connection()} | dbus_connection(), dbus_message()) -> ok | {error, term()}.
 cast({?MODULE, Bus}, Msg) -> dbus_proxy:cast(Bus, Msg);
 cast(Bus, Msg) ->            dbus_proxy:cast(Bus, Msg).
+
+%% @doc Get the DBUS connection unique name.
+%% @end
+-spec get_unique_name({?MODULE, dbus_connection()} | dbus_connection()) -> {ok, binary()} | {error, term()}.
+get_unique_name({?MODULE, Bus}) -> dbus_proxy:get_unique_name(Bus);
+get_unique_name(Bus) ->            dbus_proxy:get_unique_name(Bus).
 
 %%%
 %%% Priv
