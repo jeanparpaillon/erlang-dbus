@@ -199,7 +199,7 @@ code_change(_OldVsn, _StateName, State, _Extra) ->
 handle_event(cast, {set_unique_name, Name}, _StateName, #state{}=State) ->
     {keep_state, State#state{unique_name=Name}};
 
-handle_event({call, From}, get_unique_name, _StateName, #state{unique_name=Name}=State) ->
+handle_event({call, From}, get_unique_name, _StateName, #state{unique_name=Name}) ->
     gen_statem:reply(From, {ok, Name}),
     keep_state_and_data;
 
