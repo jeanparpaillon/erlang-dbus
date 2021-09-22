@@ -214,8 +214,8 @@ marshal(signature, Value, Pos) ->
 marshal({array, {struct, [_KeyType, _ValueType]}=SubType}, Value, Pos) when is_map(Value) ->
     marshal_array(SubType, maps:to_list(Value), Pos);
 
-marshal({array, byte}=Type, Value, Pos) when is_binary(Value) ->
-    marshal(Type, binary_to_list(Value), Pos);
+marshal({array, byte}=_Type, Value, Pos) when is_binary(Value) ->
+    marshal_byte_array(Value, Pos);
 
 marshal({array, SubType}, Value, Pos) when is_list(Value) ->
     marshal_array(SubType, Value, Pos);
@@ -352,6 +352,16 @@ marshal_string(LenType, Value, Pos) when is_binary(Value) ->
     {Value1, Pos1} = marshal(LenType, Length, Pos),
     {[Value1, Value, 0], Pos1 + Length + 1}.
 
+marshal_byte_array(Value, Pos) ->
+    Pad = pad(uint32, Pos),
+    Pos0 = Pos + Pad div 8,
+    Pos1 = Pos0 + 4,
+    Pad1 = pad(byte, Pos1),
+    Pos1b = Pos1 + Pad1 div 8,
+    Length = byte_size(Value),
+    Pos2 = Pos1b + Length,
+    {Value1, Pos1} = marshal(uint32, Length, Pos0),
+    {[<<0:Pad>>, Value1, <<0:Pad1>>, Value], Pos2}.
 
 marshal_array(SubType, Value, Pos) ->
     Pad = pad(uint32, Pos),
@@ -363,7 +373,6 @@ marshal_array(SubType, Value, Pos) ->
     Length = Pos2 - Pos1b,
     {Value1, Pos1} = marshal(uint32, Length, Pos0),
     {[<<0:Pad>>, Value1, <<0:Pad1>>, Value2], Pos2}.
-
 
 marshal_array_item(SubType, Array, Pos) ->
     marshal_array_item(SubType, Array, Pos, []).
