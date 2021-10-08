@@ -21,7 +21,9 @@
 -include("dbus_introspectable.hrl").
 
 -export([get_bus_id/1,
-	 connect/1]).
+	 connect/1,
+     connect/2,
+     get_unique_name/1]).
 
 %% dbus_connection callbacks
 -export([close/1,
@@ -59,7 +61,14 @@ get_bus_id(system) ->
 %% @end
 -spec connect(bus_id() | dbus_known_bus()) -> {ok, dbus_connection()} | {error, term()}.
 connect(#bus_id{}=BusId) ->
-    case dbus_peer_connection:start_link(BusId) of
+    connect(BusId, undefined);
+
+connect(BusName) when BusName =:= system;
+              BusName =:= session ->
+    connect(get_bus_id(BusName)).
+
+connect(#bus_id{}=BusId, ServiceReg) ->
+    case dbus_peer_connection:start_link(BusId, ServiceReg) of
 	{ok, {dbus_peer_connection, PConn} = Conn} ->
 	    case dbus_peer_connection:auth(PConn) of
 		{ok, undefined} ->
@@ -67,6 +76,7 @@ connect(#bus_id{}=BusId) ->
 			{ok, DBus} ->
 			    ConnId = hello(DBus),
 			    ?debug("Hello connection id: ~p~n", [ConnId]),
+                dbus_peer_connection:set_unique_name(PConn, ConnId),
 			    dbus_peer_connection:set_controlling_process(PConn, DBus),
 			    {ok, {?MODULE, DBus}};
 			{error, Err} -> {error, Err}
@@ -76,9 +86,9 @@ connect(#bus_id{}=BusId) ->
 	{error, Err} -> {error, Err}
     end;
 
-connect(BusName) when BusName =:= system;
+connect(BusName, ServiceReg) when BusName =:= system;
 		      BusName =:= session ->
-    connect(get_bus_id(BusName)).
+    connect(get_bus_id(BusName), ServiceReg).
 
 
 %% @doc Stop the bus proxy
@@ -100,6 +110,12 @@ call(Bus, Msg) ->            dbus_proxy:call(Bus, Msg).
 -spec cast({?MODULE, dbus_connection()} | dbus_connection(), dbus_message()) -> ok | {error, term()}.
 cast({?MODULE, Bus}, Msg) -> dbus_proxy:cast(Bus, Msg);
 cast(Bus, Msg) ->            dbus_proxy:cast(Bus, Msg).
+
+%% @doc Get the DBUS connection unique name.
+%% @end
+-spec get_unique_name({?MODULE, dbus_connection()} | dbus_connection()) -> {ok, binary()} | {error, term()}.
+get_unique_name({?MODULE, Bus}) -> dbus_proxy:get_unique_name(Bus);
+get_unique_name(Bus) ->            dbus_proxy:get_unique_name(Bus).
 
 %%%
 %%% Priv

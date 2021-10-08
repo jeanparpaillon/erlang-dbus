@@ -29,6 +29,7 @@
          connect_signal/4,
          connect_signal/6,
          has_interface/2,
+         get_unique_name/1,
          interface/2,
          children/1
         ]).
@@ -219,6 +220,12 @@ interface(Proxy, InterfaceName) ->
     end
 .
 
+%% @doc Get the DBUS connection unique name.
+%% @end
+-spec get_unique_name(Proxy :: dbus_proxy()) -> {ok, binary()} | {error, term()}.
+get_unique_name(Proxy) -> gen_server:call(Proxy, get_unique_name).
+
+
 %%
 %% gen_server callbacks
 %%
@@ -302,6 +309,10 @@ handle_call(children, _From, #state{node=#dbus_node{name=Name, elements=Children
              end,
     Paths = lists:map(fun (#dbus_node{name=ChildPath}) -> filename:join(Prefix, ChildPath) end, Children),
     {reply, Paths, State};
+
+handle_call(get_unique_name, _From, #state{conn={dbus_peer_connection, PConn}}=State) ->
+    Ret = dbus_peer_connection:get_unique_name(PConn),
+    {reply, Ret, State};
 
 handle_call({call, Msg}, _From, #state{conn=Conn}=State) ->
     Ret = dbus_connection:call(Conn, Msg),

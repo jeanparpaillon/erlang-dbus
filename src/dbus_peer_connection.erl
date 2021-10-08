@@ -19,7 +19,10 @@
 %% api
 -export([start_link/1,
          start_link/2,
+         start_link/3,
          set_controlling_process/2,
+         get_unique_name/1,
+         set_unique_name/2,
          auth/1]).
 
 %% gen_dbus_connection callback
@@ -36,6 +39,7 @@
 
 -record(state, {serial   = 1,
                 owner,
+                service_reg,
                 mod,
                 sock,
                 buf         = <<>>    :: binary(),
@@ -43,11 +47,12 @@
                 waiting     = []      :: list(),
                 mechs       = []      :: list(),
                 round       = 1       :: number(),
-		got_mechs   = false   :: boolean(),
+		        got_mechs   = false   :: boolean(),
                 mech_state            :: term(),
                 guid                  :: binary() | undefined,
                 unix_fd               :: boolean() | undefined,
-		side        = client  :: client | server
+		        side        = client  :: client | server,
+                unique_name = <<>>    :: binary()
                }).
 
 -define(ALL_MECHANISMS, [dbus_auth_external, dbus_auth_cookie_sha1, dbus_auth_anonymous]).
@@ -63,14 +68,20 @@ start_link(BusId) ->
 
 %% @doc Start a connection to a peer
 %% @end
--spec start_link(bus_id(), list()) -> {ok, dbus_connection()} | {error, term()}.
+-spec start_link(bus_id(), pid() | list()) -> {ok, dbus_connection()} | {error, term()}.
 start_link(BusId, Options) when is_record(BusId, bus_id),
                                 is_list(Options) ->
-    case gen_statem:start_link(?MODULE, [BusId, Options, self()], []) of
+    start_link(BusId, undefined, Options);
+
+start_link(BusId, ServiceReg) when is_record(BusId, bus_id) ->
+    start_link(BusId, ServiceReg, [list, {packet, 0}]).
+
+start_link(BusId, ServiceReg, Options) when is_record(BusId, bus_id),
+                                         is_list(Options) ->
+    case gen_statem:start_link(?MODULE, [BusId, ServiceReg, Options, self()], []) of
         {ok, Pid} -> {ok, {?MODULE, Pid}};
         {error, Err} -> {error, Err}
-    end.
-
+    end.                           
 
 %% @doc Close the connection
 %% @end
@@ -140,6 +151,14 @@ set_controlling_process(Conn, Client) ->
       Error -> Error
     end.
 
+-spec get_unique_name(Connection :: pid()) -> {ok, name} | {error, term()}.
+get_unique_name(Conn) ->
+    gen_statem:call(Conn, get_unique_name).
+
+-spec set_unique_name(Connection :: pid(), Name :: binary()) -> ok | {error, term()}.
+set_unique_name(Conn, Name) ->
+    gen_statem:cast(Conn, {set_unique_name, Name}).
+
 flush_messages(Client) ->
   receive
     {dbus_signal, Any} ->
@@ -152,7 +171,7 @@ flush_messages(Client) ->
 %%
 %% gen_fsm callbacks
 %%
-init([#bus_id{scheme=tcp,options=BusOptions}, Options, Owner]) ->
+init([#bus_id{scheme=tcp,options=BusOptions}, ServiceReg, Options, Owner]) ->
     {Host, Port} = case {lists:keysearch(host, 1, BusOptions),
                          lists:keysearch(port, 1, BusOptions)} of
                        {{value, {host, Host1}}, {value, {port,Port1}}} ->
@@ -162,11 +181,11 @@ init([#bus_id{scheme=tcp,options=BusOptions}, Options, Owner]) ->
                    end,
 
     {ok, Sock} = dbus_transport_tcp:connect(Host, Port, Options),
-    init_connection(Sock, Owner);
+    init_connection(Sock, ServiceReg, Owner);
 
-init([#bus_id{scheme=unix, options=BusOptions}, Options, Owner]) ->
+init([#bus_id{scheme=unix, options=BusOptions}, ServiceReg, Options, Owner]) ->
     {ok, Sock} = dbus_transport_unix:connect(BusOptions, Options),
-    init_connection(Sock, Owner).
+    init_connection(Sock, ServiceReg, Owner).
 
 
 callback_mode() ->
@@ -177,6 +196,13 @@ code_change(_OldVsn, _StateName, State, _Extra) ->
 
 
 %% All states
+handle_event(cast, {set_unique_name, Name}, _StateName, #state{}=State) ->
+    {keep_state, State#state{unique_name=Name}};
+
+handle_event({call, From}, get_unique_name, _StateName, #state{unique_name=Name}) ->
+    gen_statem:reply(From, {ok, Name}),
+    keep_state_and_data;
+
 handle_event({call, {Owner, _}=From}, {set_controlling_process, Client}, _StateName, #state{owner=Owner}=State) ->
     gen_statem:reply(From, ok),
     {keep_state, State#state{owner=Client}};
@@ -422,8 +448,12 @@ handle_message(?TYPE_ERROR, Msg, #state{pending=Pending}=State) ->
 	    end
     end;
 
-handle_message(?TYPE_METHOD_CALL, Msg, #state{}=State) ->
+handle_message(?TYPE_METHOD_CALL, Msg, #state{service_reg=undefined}=State) ->
     dbus_service_reg ! {dbus_method_call, Msg, {?MODULE, self()}},
+    {ok, State};
+
+handle_message(?TYPE_METHOD_CALL, Msg, #state{service_reg=ServiceReg}=State) ->
+    ServiceReg ! {dbus_method_call, Msg, {?MODULE, self()}},
     {ok, State};
 
 handle_message(?TYPE_SIGNAL, Msg, #state{owner=Owner}=State) ->
@@ -434,9 +464,10 @@ handle_message(Type, Msg, State) ->
     ?debug("Ignore ~p ~p~n", [Type, Msg]),
     {error, unexpected_message, State}.
 
-init_connection(Sock, Owner) ->
+init_connection(Sock, ServiceReg, Owner) ->
     ok = dbus_transport:send(Sock, <<0>>),
     {ok, connected, #state{sock=Sock,
+                           service_reg=ServiceReg,
                            pending=ets:new(pending, [private]),
                            mechs=?ALL_MECHANISMS,
                            owner=Owner}}.
