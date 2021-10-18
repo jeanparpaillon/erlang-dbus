@@ -1,3 +1,55 @@
+0.8.0 Jean Parpaillon <jean.parpaillon@free.fr>
+
+		* Optimize array-byte of binary marshaling (Mihai Potra)
+		* Add service routing to the dbus connection (Mihai Potrai)
+
+		-- 2021-10-18
+
+0.7.0 Jean Parpaillon <jean.parpaillon@free.fr>
+
+		* Handle large strings decoding
+		* Handle connection through abstract socket
+
+		-- 2016-10-06
+		
+0.6.1 Jean Parpaillon <jean.parpaillon@free.fr>
+
+		* Fix SASL parser
+
+		-- 2016-06-22
+		
+0.6.0 Jean Parpaillon <jean.parpaillon@free.fr>
+
+		* Add map decoding
+		* Harness (un)marshaling
+
+		-- 2016-06-22
+		
+0.5.3 Jean Parpaillon <jean.parpaillon@free.fr>
+
+		* Fix procket version
+
+		-- 2016-06-17
+		
+0.5.2 Jean Parpaillon <jean.parpaillon@free.fr>
+
+		* Fix compilation with GCC 6.x
+
+		-- 2016-06-17
+		
+0.5.1 Jean Parpaillon <jean.parpaillon@free.fr>
+
+		* Fix DBUS_COOKIE_SHA1 auth
+
+		-- 2016-04-04
+		
+0.5.0 Jean Parpaillon <jean.parpaillon@free.fr>
+
+		* Implement multiple authentication mechanisms
+		* Add CI, generated doc
+
+		-- 2016-03-10
+		
 0.2  Jean Parpaillon  <jean.parpaillon@free.fr>
 
 		* Add ANONYMOUS authentication
