@@ -1,5 +1,5 @@
 PROJECT = dbus
-PROJECT_VERSION = 0.7
+PROJECT_VERSION = 0.8.0
 
 BUILD_DEPS = hexer_mk
 

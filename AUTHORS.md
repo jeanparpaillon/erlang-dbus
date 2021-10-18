@@ -12,3 +12,4 @@ Jean Parpaillon <jean.parpaillon@free.fr>
 * [Maxim Krentovskiy](https://github.com/mkrentovskiy)
 * [Lei Zhao](https://github.com/LeiZHAO5)
 * [Blaise Fringel](https://github.com/ffringel) (hex packaging)
+* [Mihai Potra](https://github.com/mpotra)
