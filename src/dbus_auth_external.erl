@@ -64,8 +64,11 @@ get_current_user_uid() ->
 
 resolve_user_name(User) ->
 	?debug("Resolving uid for user ~s~n", [User]),
-	Cmd = io_lib:format("id -u ~s", [User]),
-	case run_command(Cmd) of
+	Command = io_lib:format("id -u ~s", [User]),
+	Opts = [stream, exit_status, use_stdio,
+			   stderr_to_stdout, in, eof],
+  P = open_port({spawn, Command}, Opts),
+	case get_data(P, []) of
 		{0, Result} -> 
 			Uid = string:trim(Result),
 			?debug("Successfully resolved user ~s to uid ~s~n", [User, Uid]),
@@ -75,12 +78,6 @@ resolve_user_name(User) ->
 			?cookie;
 		_ -> ?cookie
 	end.
-
-run_command(Command) ->
-	Opt = [stream, exit_status, use_stdio,
-			   stderr_to_stdout, in, eof],
-	P = open_port({spawn, Command}, Opt),
-	get_data(P, []).
 
 get_data(P, D) ->
     receive
