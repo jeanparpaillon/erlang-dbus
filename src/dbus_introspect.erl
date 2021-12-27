@@ -197,6 +197,7 @@ to_xmerl(#dbus_method{}=Elem) ->
      to_xmerl(Elem#dbus_method.args) ++ Result};
 
 to_xmerl(#dbus_signal{}=Elem) ->
+    ?info("singal: ~p~n", [Elem#dbus_signal.name]),
     Result =
         case Elem#dbus_signal.result of
             none ->
@@ -207,7 +208,7 @@ to_xmerl(#dbus_signal{}=Elem) ->
                 [to_xmerl(Arg)]
         end,
     {signal,
-     case list_to_binary(Elem#dbus_signal.name) of
+     case to_binary(Elem#dbus_signal.name) of
          undefined ->
              [];
          Name ->
