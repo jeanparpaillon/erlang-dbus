@@ -105,18 +105,23 @@ signal(Destination, Path, Interface,
        #dbus_signal{name=SigName, out_sig=_Signature, out_types=Types}, Args, Opts)
   when is_list(Args) ->
     {Body, _Pos} = dbus_marshaller:marshal_list(Types, Args),
-    Fields = [
+    Fields = destination(Destination, [
 	      {?FIELD_PATH, #dbus_variant{type=object_path, value=Path}},
 	      {?FIELD_INTERFACE, #dbus_variant{type=string, value=Interface}},
 	      {?FIELD_MEMBER, #dbus_variant{type=string, value=SigName}},
-	      {?FIELD_SIGNATURE, #dbus_variant{type=signature, value=dbus_marshaller:marshal_signature(Types)}},
-	      {?FIELD_DESTINATION, #dbus_variant{type=string, value=Destination}}
-	     ],
+	      {?FIELD_SIGNATURE, #dbus_variant{
+              type=signature, value=dbus_marshaller:marshal_signature(Types)
+            }
+        }]),
     Header = #dbus_header{type=?TYPE_SIGNAL,
 			  flags=process_flags(Opts),
 			  fields=Fields},
     {ok, #dbus_message{header=Header, body=Body}}.
 
+destination(undefined, Fields) -> 
+  Fields;
+destination(Destination, Fields) ->
+  Fields ++ [{?FIELD_DESTINATION, #dbus_variant{type=string, value=Destination}}].
 
 %% @doc Build an error message
 %% @end
@@ -134,6 +139,7 @@ error(#dbus_message{}=Orig, ErrName, ErrText) ->
 	     ],
     Header = #dbus_header{type=?TYPE_ERROR,
 			  fields=Fields},
+
     #dbus_message{header=Header, body=Body}.
 
 
@@ -153,7 +159,6 @@ return(#dbus_message{}=Orig, Types, Body) when is_list(Types) ->
 	     ],
     Header = #dbus_header{type=?TYPE_METHOD_RETURN, fields=Fields},
     #dbus_message{header=Header, body=BinBody}.
-
 
 %% @doc Get serial number from message
 %% @end
