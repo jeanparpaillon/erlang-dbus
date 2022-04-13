@@ -18,9 +18,6 @@
 	 signal/3
 	]).
 
-%% behaviour callback
--export([behaviour_info/1]).
-
 %% gen_server callback2
 -export([
 	 init/1,
@@ -31,11 +28,8 @@
 	 terminate/2
 	]).
 
-behaviour_info(callbacks) ->
-    [
-     {init, 1},
-     {handle_info, 2}
-    ].
+-callback init(tuple()) -> atom().
+-callback handle_info(tuple(), term()) -> atom().
 
 -record(state, {
 	  service,
@@ -67,7 +61,7 @@ signal(Signal, Args, Options) ->
 %% gen_server callbacks
 %%
 init([Module, Args]) ->
-    case Module:init(Args) of
+    case erlang:apply(Module, init, [Args]) of
 	{stop, Reason} ->
 	    {stop, Reason};
 	ignore ->
@@ -261,7 +255,7 @@ do_method_call(Module, Member, Message = #dbus_message{header = Header}, Conn, S
 	end,
 
     Signature =
-        case lists:keysearch(signature, 1, Module:Member(dbus_info)) of
+        case lists:keysearch(signature, 1, erlang:apply(Module, Member, [dbus_info])) of
             {value, {signature, _Args, Returns}} ->
                 Returns;
             false ->
@@ -269,13 +263,13 @@ do_method_call(Module, Member, Message = #dbus_message{header = Header}, Conn, S
         end,
 
     Args =
-        case Message#dbus_message.body of
+        case Message#dbus_message.body of 
             undefined -> [];
             List when is_list(List) -> List;
             Other -> [Other]
         end,
 
-    case {Module:Member(Args , {self(), From}, Sub), From} of
+    case {erlang:apply(Module, Member, [Args , {self(), From}, Sub]), From} of
 	{{dbus_error, Iface, Msg, Sub1}, _} ->
 	    Reply = dbus_message:error(Message, Iface, Msg),
 	    ok = dbus_connection:cast(Conn, Reply),
@@ -325,8 +319,7 @@ member_build_introspect(MemberType, Member,
 
 
 member_info(MemberType, Member, State) ->
-    Module = State#state.module,
-    Info = Module:Member(dbus_info),
+    Info = erlang:apply(State#state.module, Member, [dbus_info]),
     InterfaceName =
 	case lists:keysearch(interface, 1, Info) of
             {value, {interface, Interface1}} ->
