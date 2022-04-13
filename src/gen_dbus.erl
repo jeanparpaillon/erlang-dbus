@@ -29,7 +29,7 @@
 	]).
 
 -callback init(tuple()) -> atom().
--callback handle_info(tuple()) -> atom().
+-callback handle_info(tuple(), term()) -> atom().
 
 -record(state, {
 	  service,
@@ -263,7 +263,8 @@ do_method_call(Module, Member, Message = #dbus_message{header = Header}, Conn, S
         end,
 
     Args =
-        case Message#dbus_message.body of undefined -> [];
+        case Message#dbus_message.body of 
+            undefined -> [];
             List when is_list(List) -> List;
             Other -> [Other]
         end,
