@@ -22,7 +22,7 @@ This example is making a dbus call to the `org.freedesktop.DBus` system service 
   {ok, RemoteObject} = dbus_remote_service:get_object(Service, '/org/freedesktop/DBus'),
   {ok, Iface} = dbus_proxy:interface(RemoteObject, 'org.freedesktop.DBus'),
   {ok, Names} = dbus_proxy:call(Iface, 'ListNames', []),
-  io:format("ListNames: ~p~n", [lists:sort(Reply1)]),
+  io:format("ListNames: ~p~n", [lists:sort(Names)]),
   ok = dbus_remote_service:release_object(Service, RemoteObject),
   ok = dbus_bus:release_service(Bus, Service),
 ```
