@@ -110,12 +110,13 @@ setup(DBus_config, State) ->
 
     {Iface, Interfaces} = lists:foldl(Fun, {undefined, dict:new()},
                                            DBus_config),
+
     Node = #dbus_node{name=State1#state.path,
-                 interfaces=lists:map(fun({Key, {Methods, Signals}}) ->
-                                              #dbus_iface{name=Key,
-                                                         methods=Methods,
-                                                         signals=Signals}
-                                      end, dict:to_list(Interfaces))},
+                 interfaces=gb_trees:from_orddict(lists:map(fun({Key, {Methods, Signals}}) ->
+                                              {Key, #dbus_iface{name=Key,
+                                                         methods=gb_trees:from_orddict(Methods),
+                                                         signals=gb_trees:from_orddict(Signals)}}
+                                      end, dict:to_list(Interfaces)))},
     ?debug("Node: ~p~n", [Node]),
     Xml_body = dbus_introspect:to_xml(Node),
     State2 = State1#state{default_iface=Iface,node=Node,xml_body=Xml_body},
@@ -170,12 +171,10 @@ handle_cast({signal, SignalName, Args, Options}, State) ->
 		State#state.default_iface
 	end,
 
-    Signal = dbus_introspect:find_signal(State#state.node, IfaceName, SignalName),
-
-    case Signal of
+    case dbus_introspect:find_signal(State#state.node, IfaceName, SignalName) of
 	{error, _}=Error ->
 	    {reply, Error, State};
-	_ ->
+	{ok, Signal} ->
 	    do_signal(IfaceName, Signal, Args, Options, State)
     end;
 
@@ -241,7 +240,7 @@ terminate(_Reason, _State) ->
 
 do_signal(IfaceName, Signal, Args, _Options, State) ->
     Path = State#state.path,
-    Message = dbus_message:signal(undefined, Path, IfaceName, Signal, Args),
+    {ok, Message} = dbus_message:signal(undefined, Path, IfaceName, Signal, Args),
     dbus_bus_reg:cast(Message),
     {noreply, State}.
 
@@ -298,7 +297,6 @@ member_build_introspect(MemberType, Member,
                         State, Interfaces) when is_atom(Member),
                                                 is_record(State, state) ->
     {InterfaceName, MemberName} = member_info(MemberType, Member, State),
-
     {Methods, Signals} =
         case dict:find(InterfaceName, Interfaces) of
             {ok, Value} ->
@@ -316,7 +314,7 @@ member_build_introspect(MemberType, Member,
         end,
 
     dict:store(InterfaceName, Interface1, Interfaces).
-
+  
 
 member_info(MemberType, Member, State) ->
     Info = erlang:apply(State#state.module, Member, [dbus_info]),
@@ -329,8 +327,8 @@ member_info(MemberType, Member, State) ->
         end,
 
     MemberName =
-	case lists:keysearch(signature, 1, Info) of
-	    {value, {signature, Args, Results}} ->
+      case lists:keysearch(signature, 1, Info) of
+        {value, {signature, Args, Results}} ->
                 ResultsArg =
                     case args_build_introspect(Results, out) of
                         [] ->
@@ -339,16 +337,16 @@ member_info(MemberType, Member, State) ->
                             E
                     end,
 		ArgsXml = args_build_introspect(Args, in),
-
                 case MemberType of
                     method ->
-                        #dbus_method{name = Member,
+                        {Member, #dbus_method{name = Member,
                                 args = ArgsXml,
-                                result = ResultsArg};
+                                result = ResultsArg}};
                     signal ->
-                        #dbus_signal{name = Member,
+                        {Member, #dbus_signal{name = Member,
                                 args = ArgsXml,
-                                result = ResultsArg}
+                                out_types = Results,
+                                result = ResultsArg}}
                 end;
 	    false ->
 		undefined
