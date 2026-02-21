@@ -83,6 +83,7 @@ marshal_signature(double)      ->   "d";
 marshal_signature(string)      ->   "s";
 marshal_signature(object_path) ->   "o";
 marshal_signature(signature)   ->   "g";
+marshal_signature(unix_fd)     ->   "h";
 marshal_signature({array, Type}) ->
     [$a, marshal_signature(Type)];
 
@@ -210,6 +211,9 @@ marshal(object_path, Value, Pos) ->
 
 marshal(signature, Value, Pos) ->
     marshal_string(byte, Value, Pos);
+
+marshal(unix_fd, Value, Pos) when is_integer(Value), Value >= 0, Value =< 4294967295 ->
+    marshal_uint(4, Value, Pos);
 
 marshal({array, {struct, [_KeyType, _ValueType]}=SubType}, Value, Pos) when is_map(Value) ->
     marshal_array(SubType, maps:to_list(Value), Pos);
@@ -592,6 +596,8 @@ unmarshal(string, Data, Pos, Endian) ->
 unmarshal(object_path, Data, Pos, Endian) ->
     unmarshal_string(uint32, Data, Pos, Endian);
 
+unmarshal(unix_fd, Data, Pos, Endian) ->
+    unmarshal_uint(4, Data, Pos, Endian);
 
 unmarshal({array, SubType}, Data, Pos, Endian) ->
     case unmarshal(uint32, Data, Pos, Endian) of
@@ -759,6 +765,7 @@ unmarshal_type_code($d) -> double;
 unmarshal_type_code($s) -> string;
 unmarshal_type_code($o) -> object_path;
 unmarshal_type_code($g) -> signature;
+unmarshal_type_code($h) -> unix_fd;
 unmarshal_type_code($r) -> struct;
 unmarshal_type_code($v) -> variant;
 unmarshal_type_code($e) -> dict_entry;
@@ -876,6 +883,7 @@ padding(double)           -> 8;
 padding(string)           -> 4;
 padding(object_path)      -> 4;
 padding(signature)        -> 1;
+padding(unix_fd)          -> 4;
 padding({array, _Type})   -> 4;
 padding({struct, _Types}) -> 8;
 padding(variant)          -> 1;
@@ -967,6 +975,9 @@ marshall_int_test_() ->
      ?_assertMatch({<< 4000000:8/integer-little-unsigned-unit:4 >>, 4}, marshal(uint32, 4000000, 0)),
      ?_assertThrow({marshaling, uint32, -67}, marshal(uint32, -67, 0)),
 
+     ?_assertMatch({<< 3:8/integer-little-unsigned-unit:4 >>, 4}, marshal(unix_fd, 3, 0)),
+     ?_assertThrow({marshaling, unix_fd, -1}, marshal(unix_fd, -1, 0)),
+
      ?_assertMatch({<< 4000000000:8/integer-little-signed-unit:8 >>, 8}, marshal(int64, 4000000000, 0)),
 
      ?_assertMatch({<< 4000000000:8/integer-little-unsigned-unit:8 >>, 8}, marshal(uint64, 4000000000, 0)),
@@ -1053,6 +1064,8 @@ unmarshal_endian_test_() ->
     ,?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<0,0,0,1>>, 0, $B))
     ,?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<1,0,0,0, "xyz">>, 0, $l))
     ,?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<0,0,0,1, "xyz">>, 0, $B))
+    ,?_assertEqual({ok, 1, <<>>, 4}, unmarshal(unix_fd, <<1,0,0,0>>, 0, $l))
+    ,?_assertEqual({ok, 1, <<>>, 4}, unmarshal(unix_fd, <<0,0,0,1>>, 0, $B))
     ].
 
 unmarshal_dict_test() ->
@@ -1114,6 +1127,7 @@ unmarshal_signature_test() ->
      ?_assertMatch([
 		    {array, {struct, [string, string, {array, string}, {dict, string, variant}, string]}},
 		    string
-		   ], unmarshal_signature(<<"a(ssasa{sv}s)s">>))
+		   ], unmarshal_signature(<<"a(ssasa{sv}s)s">>)),
+     ?_assertMatch([unix_fd], unmarshal_signature(<<"h">>))
     ].
 -endif.

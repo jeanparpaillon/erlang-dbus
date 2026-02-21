@@ -76,6 +76,7 @@
                      string |
                      object_path |
                      signature |
+                     unix_fd |
                      {array, dbus_type()} |
                      {struct, [dbus_type()]} |
                      variant |
