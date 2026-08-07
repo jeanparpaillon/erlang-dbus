@@ -199,28 +199,29 @@ handle_info({dbus_method_call, Message, Conn}, State) ->
 	_ ->
 	    Sub = State#state.sub,
 
-	    case catch do_method_call(Module, Member, Message, Conn, Sub) of
-		{'EXIT', {undef, _}=Reason} ->
-		    ?debug("undef method ~p~n", [Reason]),
-		    ErrorName = "org.freedesktop.DBus.Error.UnknownMethod",
-		    ErrorText = "Erlang: Function not found: " ++ MemberStr,
-		    Reply = dbus_message:error(Message, ErrorName, ErrorText),
-		    ok = dbus_connection:cast(Conn, Reply),
-		    {noreply, State};
-		{'EXIT', Reason} ->
- 		    ?debug("Error ~p~n", [Reason]),
-		    ErrorName = "org.freedesktop.DBus.Error.InvalidParameters",
-		    ErrorText = "Erlang: Invalid parameters.",
-		    Reply = dbus_message:error(Message, ErrorName, ErrorText),
- 		    ?debug("InvalidParameters ~p~n", [Reply]),
-		    ok = dbus_connection:cast(Conn, Reply),
-		    {noreply, State};
+	    try do_method_call(Module, Member, Message, Conn, Sub) of
 		{ok, Sub1} ->
 		    {noreply, State#state{sub=Sub1}};
 		{pending, From, Sub1, Signature} ->
 		    Pending = [{From, Message, Conn, Signature} |
                                State#state.pending],
 		    {noreply, State#state{sub=Sub1, pending=Pending}}
+	    catch
+		error:undef:Stacktrace ->
+		    ?debug("undef method ~p~n", [{undef, Stacktrace}]),
+		    ErrorName = "org.freedesktop.DBus.Error.UnknownMethod",
+		    ErrorText = "Erlang: Function not found: " ++ MemberStr,
+		    Reply = dbus_message:error(Message, ErrorName, ErrorText),
+		    ok = dbus_connection:cast(Conn, Reply),
+		    {noreply, State};
+		Class:Reason:Stacktrace ->
+ 		    ?debug("Error ~p~n", [{Class, Reason, Stacktrace}]),
+		    ErrorName = "org.freedesktop.DBus.Error.InvalidParameters",
+		    ErrorText = "Erlang: Invalid parameters.",
+		    Reply = dbus_message:error(Message, ErrorName, ErrorText),
+ 		    ?debug("InvalidParameters ~p~n", [Reply]),
+		    ok = dbus_connection:cast(Conn, Reply),
+		    {noreply, State}
 	    end
     end;
 

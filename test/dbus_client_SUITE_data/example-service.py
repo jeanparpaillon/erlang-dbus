@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
+# Deliberately not /usr/bin/env python3: this script needs the distro-provided
+# dbus-python and PyGObject, which only exist for the system interpreter. A
+# version manager (asdf, pyenv, ...) shimming python3 would otherwise win and
+# the service would die on ImportError, leaving the suite with no bus name.
 
 from gi.repository import GObject
 import dbus

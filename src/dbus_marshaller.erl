@@ -948,7 +948,7 @@ marshall_boolean_test_() ->
     [
      ?_assertMatch({<< 1:8/integer-little-unit:4 >>, 4}, marshal(boolean, true, 0)),
      ?_assertMatch({<< 0:8/integer-little-unit:4 >>, 4}, marshal(boolean, false, 0)),
-     ?_assertThrow({marshaling, boolean, else}, marshal(boolean, else, 0))
+     ?_assertThrow({marshaling, boolean, 'else'}, marshal(boolean, 'else', 0))
     ].
 
 marshall_int_test_() ->

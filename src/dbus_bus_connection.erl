@@ -149,10 +149,9 @@ parse_param(Param) when is_list(Param) ->
     {Key, [?KEY_DELIM | Value]} =
 	lists:splitwith(fun(A) -> A =/= ?KEY_DELIM end, Param),
     Key_name =
-        case catch list_to_existing_atom(Key) of
-            {'EXIT', {badarg, _Reason}} ->
-                Key;
-            Key_atom -> Key_atom
+        try list_to_existing_atom(Key)
+        catch error:badarg ->
+                Key
         end,
     {Key_name, parse_value(Key_name, Value)}.
 

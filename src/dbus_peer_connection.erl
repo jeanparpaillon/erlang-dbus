@@ -370,7 +370,7 @@ handle_event({call, From}, auth, authenticated, _State) ->
 handle_event({call, {Pid, Tag}=From}, {call, #dbus_message{}=Msg}, authenticated,
               #state{sock=Sock, serial=S, pending=Pending}=State) ->
     Data = dbus_marshaller:marshal_message(dbus_message:set_serial(S, Msg)),
-    ?debug("Calling ~p", [catch dbus_marshaller:unmarshal_data(list_to_binary(Data))]),
+    ?debug("Calling ~p", [safe_unmarshal(Data)]),
     true = ets:insert(Pending, {S, Pid, Tag}),
     ok = dbus_transport:send(Sock, Data),
     gen_statem:reply(From, {ok, {self(), Tag}}),
@@ -379,7 +379,7 @@ handle_event({call, {Pid, Tag}=From}, {call, #dbus_message{}=Msg}, authenticated
 handle_event(cast, #dbus_message{}=Msg, authenticated,
               #state{sock=Sock, serial=S}=State) ->
     Data = dbus_marshaller:marshal_message(dbus_message:set_serial(S, Msg)),
-    ?debug("Casting ~p", [catch dbus_marshaller:unmarshal_data(list_to_binary(Data))]),
+    ?debug("Casting ~p", [safe_unmarshal(Data)]),
     ok = dbus_transport:send(Sock, Data),
     {keep_state, State#state{serial=S+1}};
 
@@ -404,6 +404,12 @@ terminate(_Reason, _StateName, #state{sock=Sock}) ->
 %%%
 %%% Priv
 %%%
+safe_unmarshal(Data) ->
+    try dbus_marshaller:unmarshal_data(list_to_binary(Data))
+    catch Class:Reason ->
+            {Class, Reason}
+    end.
+
 handle_messages([], State) ->
     {ok, State};
 
