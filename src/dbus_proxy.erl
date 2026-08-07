@@ -400,7 +400,7 @@ do_introspect(Conn, Service, Path) ->
     ?debug("Introspecting: ~p:~p~n", [Service, Path]),
     case dbus_connection:call(Conn, dbus_message:introspect(Service, Path)) of
         {ok, #dbus_message{body=Xml}} when is_binary(Xml) ->
-            try dbus_introspect:from_xml_string(Xml) of
+            try dbus_introspect:from_xml_string(Xml, Path) of
                 #dbus_node{}=Node -> {ok, Node}
             catch _:Err ->
                     ?error("Error parsing introspection infos: ~p~n", [Err]),

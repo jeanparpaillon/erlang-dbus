@@ -94,7 +94,6 @@ The status:
 * Connect through TCP and UNIX socket: ok
 
 ### TODO
-* Figure out why `make ct` tests don't run on github actions
 * Fix signal emission from services
 * Make dializer happy
 * Some authentication mechanisms are not implemented, but architectures allows for easy extension (see https://github.com/lizenn/erlang-dbus/blob/master/src/dbus_auth_cookie_sha1.erl, https://github.com/lizenn/erlang-dbus/blob/master/src/dbus_auth_external.erl and https://github.com/lizenn/erlang-dbus/blob/master/src/dbus_auth_anonymous.erl)

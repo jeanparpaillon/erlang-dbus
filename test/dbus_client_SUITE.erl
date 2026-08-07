@@ -14,7 +14,8 @@
 
 -include("dbus.hrl").
 
--define(SCRIPT, "example-service.py").
+-define(PYTHON_SERVICE, "example-service.py").
+-define(CPP_SERVICE, "example-service/example-service").
 -define(SERVICE, <<"net.lizenn.dbus.SampleService">>).
 -define(IFACE, <<"net.lizenn.dbus.SampleInterface">>).
 
@@ -23,9 +24,9 @@
 %%%
 -compile([export_all]).
 
--define(dbus_session_tcp_anonymous, 
+-define(dbus_session_tcp_anonymous,
 	{"session_tcp_anonymous.conf", "tcp:host=localhost,bind=*,port=55555,family=ipv4"}).
--define(dbus_session_unix_anonymous, 
+-define(dbus_session_unix_anonymous,
 	{"session_unix_anonymous.conf", "unix:path=/tmp/dbus-test"}).
 -define(dbus_session_unix_external,
 	{"session_unix_external.conf", "unix:path=/tmp/dbus-test"}).
@@ -54,7 +55,8 @@ all() ->
      {group, connect_tcp_anonymous}
     ,{group, connect_unix_anonymous}
     ,{group, connect_unix_external}
-    ,{group, service}
+    ,{group, service_python}
+    ,{group, service_cpp}
     ].
 
 
@@ -72,6 +74,8 @@ groups() ->
 		   %%,signal_all
 		   ,signal
 		   ]}
+    ,{service_python, [], [{group, service}]}
+    ,{service_cpp, [], [{group, service}]}
     ].
 
 
@@ -80,16 +84,25 @@ init_per_group(connect_tcp_anonymous, Config) ->
 init_per_group(connect_unix_anonymous, Config) ->
     start_dbus(Config, ?dbus_session_unix_anonymous);
 init_per_group(connect_unix_external, Config) ->
+    application:set_env(dbus, external_cookie, system_user),
     start_dbus(Config, ?dbus_session_unix_external);
-init_per_group(_Name, Config) ->
+init_per_group(service_python, Config) ->
     Config0 = start_dbus(Config, ?dbus_session_unix_external),
-    ServicePath = get_data_path(?SCRIPT, Config0),
+    ServicePath = get_data_path(?PYTHON_SERVICE, Config0),
     ServicePid = start_cmd(ServicePath),
     timer:sleep(1000),
-    [ {service_port, ServicePid}, {connect, true} | Config0 ].
+    [ {service_port, ServicePid}, {connect, true} | Config0 ];
+init_per_group(service_cpp, Config) ->
+    Config0 = start_dbus(Config, ?dbus_session_unix_external),
+    ServicePath = get_data_path(?CPP_SERVICE, Config0),
+    ServicePid = start_cmd(ServicePath),
+    timer:sleep(1000),
+    [ {service_port, ServicePid}, {connect, true} | Config0 ];
+init_per_group(_Name, Config) ->
+    Config.
 
 
-end_per_group(Group, Config) 
+end_per_group(Group, Config)
   when Group =:= connect_tcp_anonymous;
        Group =:= connect_unix_anonymous;
        Group =:= connect_unix_external ->
@@ -145,11 +158,11 @@ interface(Config) ->
     {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
     ?assertMatch(true, dbus_proxy:has_interface(O, ?IFACE)),
     ?assertMatch(false, dbus_proxy:has_interface(O, <<"toto">>)),
-    ok.        
+    ok.
 
 call_method(Config) ->
     {ok, O} = dbus_proxy:start_link(?config(bus, Config), ?SERVICE, <<"/root">>),
-    ?assertMatch({ok,[<<"Hello World">>,<<" from example-service.py">>]},
+    ?assertMatch({ok,[<<"Hello World">>,<<" from example-service">>]},
                  dbus_proxy:call(O, ?IFACE, <<"HelloWorld">>, ["plop"])),
     ?assertMatch({error, {'org.freedesktop.DBus.InvalidParameters', _}},
                  dbus_proxy:call(O, ?IFACE, <<"HelloWorld">>, [])),
@@ -208,11 +221,11 @@ signal(Config) ->
                ([ Signal | Signals ], [], F) ->
                    receive Signal -> F(lists:delete(Signal, Signals), [], F)
                    after 100 -> ?assert(false)
-                   end;        
+                   end;
                ([], [ BadSignal | BadSignals ], F) ->
                    receive BadSignal -> ?assert(false)
                    after 100 -> F([], BadSignals, F)
-                   end;        
+                   end;
                ([ Signal | Signals ], [ BadSignal | BadSignals ], F) ->
                    receive Signal -> F(lists:delete(Signal, Signals), [ BadSignal | BadSignals ], F);
                            BadSignal -> ?assert(false)
@@ -238,7 +251,7 @@ start_dbus(Config, {DBusConfig, DBusEnv}) ->
 
 stop_dbus(Config) ->
     stop_cmd(?config(dbus, Config)),
-    proplists:delete(dbus_env, 
+    proplists:delete(dbus_env,
 		     proplists:delete(dbus, Config)).
 
 

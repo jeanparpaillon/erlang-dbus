@@ -20,7 +20,7 @@
          find_signal/3,
          to_xml/1,
          from_xml/1,
-         from_xml_string/1
+         from_xml_string/2
         ]).
 
 -record(state, {node         :: dbus_node(),
@@ -96,14 +96,19 @@ to_xml(#dbus_node{}=Node) ->
 %%
 %% @throws {error, parse_error}
 %% @end
--spec from_xml_string(binary()) -> dbus_node().
-from_xml_string(Data) when is_binary(Data) ->
+-spec from_xml_string(binary(), binary()) -> dbus_node().
+from_xml_string(Data, RootPath) when is_binary(Data) ->
     Opts = [{event_fun, fun xml_event/3},
             {event_state, #state{}},
             skip_external_dtd],
     case xmerl_sax_parser:stream(Data, Opts) of
         {ok, #dbus_node{}=Node, _Rest} ->
-            Node;
+            case Node#dbus_node.name of
+                undefined ->
+                    Node#dbus_node{name=RootPath};
+                _ ->
+                    Node
+            end;
         {_Tag, _Location, Reason, _EndTags, _State} ->
             ?error("Error parsing introspection: ~p~n", [Reason]),
             throw({error, parse_error})
@@ -289,19 +294,19 @@ xml_event({endElement, _, "node", _}, _L, #state{s=child_node, node=#dbus_node{e
     S#state{s=node, node=N#dbus_node{elements=[C | E]}, child=undefined};
 
 xml_event({endElement, _, "interface", _}, _L, #state{s=iface, node=#dbus_node{interfaces=Ifaces}=N, iface=I}=S) ->
-    NewNode = N#dbus_node{interfaces=gb_trees:insert(I#dbus_iface.name, I, Ifaces)},
+    NewNode = N#dbus_node{interfaces=gb_trees:enter(I#dbus_iface.name, I, Ifaces)},
     S#state{s=node, node=NewNode, iface=undefined, method=undefined};
 
 xml_event({endElement, _, "method", _}, _L, #state{s=method, iface=#dbus_iface{methods=Methods}=I, method=M}=S) ->
-    NewIface = I#dbus_iface{methods=gb_trees:insert(M#dbus_method.name, end_method(M), Methods)},
+    NewIface = I#dbus_iface{methods=gb_trees:enter(M#dbus_method.name, end_method(M), Methods)},
     S#state{s=iface, iface=NewIface, method=undefined};
 
 xml_event({endElement, _, "signal", _}, _L, #state{s=signal, iface=#dbus_iface{signals=Signals}=I, signal=Sig}=S) ->
-    NewIface = I#dbus_iface{signals=gb_trees:insert(Sig#dbus_signal.name, end_signal(Sig), Signals)},
+    NewIface = I#dbus_iface{signals=gb_trees:enter(Sig#dbus_signal.name, end_signal(Sig), Signals)},
     S#state{s=iface, iface=NewIface, signal=undefined};
 
 xml_event({endElement, _, "property", _}, _L, #state{s=property, iface=#dbus_iface{properties=Props}=I, property=P}=S) ->
-    NewIface = I#dbus_iface{properties=gb_trees:insert(P#dbus_property.name, P, Props)},
+    NewIface = I#dbus_iface{properties=gb_trees:enter(P#dbus_property.name, P, Props)},
     S#state{s=iface, iface=NewIface, property=undefined};
 
 xml_event({endElement, _, "arg", _}, _L, #state{s=method_arg}=S) ->

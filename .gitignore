@@ -27,3 +27,8 @@
 
 # EDTS
 .edts
+
+# Build artifacts for cpp test client
+/test/dbus_client_SUITE_data/example-service/*
+!/test/dbus_client_SUITE_data/example-service/main.cpp
+!/test/dbus_client_SUITE_data/example-service/example-service.pro

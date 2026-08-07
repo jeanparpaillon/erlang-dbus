@@ -19,16 +19,16 @@ class SampleObject(dbus.service.Object):
         print (str(hello_message))
         self.SampleSignal(42, 24)
         self.SampleSignal2()
-        return ["Hello World", " from example-service.py"]
+        return ["Hello World", " from example-service"]
 
     @dbus.service.method("net.lizenn.dbus.SampleInterface",
                          out_signature='as')
     def GetTuple(self):
-        return ("Hello Tuple", " from example-service.py")
+        return ("Hello Tuple", " from example-service")
 
     @dbus.service.method("net.lizenn.dbus.SampleInterface")
     def GetDict(self):
-        return {"first": "Hello Dict", "second": " from example-service.py"}
+        return {"first": "Hello Dict", "second": " from example-service"}
 
     @dbus.service.method("net.lizenn.dbus.SampleInterface", in_signature='u')
     def GetString(self, size):
