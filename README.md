@@ -81,6 +81,7 @@ When the `dbus` application is running you can start this service with `my_modul
 
 * [API documentation](doc/README.md)
 * [Manual](https://github.com/jeanparpaillon/erlang-dbus/wiki)
+* [D-Bus Specifications](https://dbus.freedesktop.org/doc/dbus-specification.html)
 
 ## Current status
 

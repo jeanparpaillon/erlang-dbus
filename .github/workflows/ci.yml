@@ -1,0 +1,37 @@
+# .github/workflows/ci.yml
+
+name: Build and Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+
+
+    strategy:
+      fail-fast: false
+      matrix:
+        otp:
+          - '27'
+          - '28'
+          - '29'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Erlang and Rebar3
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+
+      - name: Compile
+        run: make
+
+      - name: Run EUnit
+        run: make eunit
