@@ -6,8 +6,8 @@ language-independant, object-oriented RPC system.
 
 The erlang platform needs an erlang native implementation.
 
+[![CI](https://github.com/jeanparpaillon/erlang-dbus/actions/workflows/ci.yml/badge.svg)](https://github.com/jeanparpaillon/erlang-dbus/actions/workflows/ci.yml)
 [![Hex.pm](https://img.shields.io/hexpm/v/dbus.svg)](https://hex.pm/packages/dbus)
-[![Hex.pm](https://img.shields.io/hexpm/dt/dbus.svg)](https://hex.pm/packages/dbus)
 
 # Usage as Client
 
