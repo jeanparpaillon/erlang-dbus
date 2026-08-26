@@ -167,17 +167,17 @@ to_xmerl(#dbus_node{}=Elem) ->
              [{name, Name}]
      end,
      to_xmerl(Elem#dbus_node.elements) ++
-         to_xmerl(Elem#dbus_node.interfaces)
+         to_xmerl(gb_trees:to_list(Elem#dbus_node.interfaces))
     };
 
-to_xmerl(#dbus_iface{}=Elem) ->
+to_xmerl({_, #dbus_iface{}=Elem}) ->
     {interface,
      [{name, to_binary(Elem#dbus_iface.name)}],
-     to_xmerl(Elem#dbus_iface.methods) ++
-         to_xmerl(Elem#dbus_iface.signals) ++
+     to_xmerl(gb_trees:to_list(Elem#dbus_iface.methods)) ++
+         to_xmerl(gb_trees:to_list(Elem#dbus_iface.signals)) ++
          to_xmerl(Elem#dbus_iface.properties)};
 
-to_xmerl(#dbus_method{}=Elem) ->
+to_xmerl({_ , #dbus_method{}=Elem}) ->
     Result =
         case Elem#dbus_method.result of
             none ->
@@ -196,7 +196,8 @@ to_xmerl(#dbus_method{}=Elem) ->
      end,
      to_xmerl(Elem#dbus_method.args) ++ Result};
 
-to_xmerl(#dbus_signal{}=Elem) ->
+to_xmerl({_, #dbus_signal{}=Elem}) ->
+    ?info("singal: ~p~n", [Elem#dbus_signal.name]),
     Result =
         case Elem#dbus_signal.result of
             none ->
@@ -207,7 +208,7 @@ to_xmerl(#dbus_signal{}=Elem) ->
                 [to_xmerl(Arg)]
         end,
     {signal,
-     case list_to_binary(Elem#dbus_signal.name) of
+     case to_binary(Elem#dbus_signal.name) of
          undefined ->
              [];
          Name ->
