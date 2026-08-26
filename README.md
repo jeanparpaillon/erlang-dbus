@@ -9,7 +9,7 @@ The erlang platform needs an erlang native implementation.
 [![Hex.pm](https://img.shields.io/hexpm/v/dbus.svg)](https://hex.pm/packages/dbus)
 [![Hex.pm](https://img.shields.io/hexpm/dt/dbus.svg)](https://hex.pm/packages/dbus)
 
-## Usage as Client
+# Usage as Client
 
 This example is making a dbus call to the `org.freedesktop.DBus` system service (under linux) and a list of registered services.
 
@@ -24,7 +24,7 @@ This example is making a dbus call to the `org.freedesktop.DBus` system service 
   ok = dbus_bus:release_service(Bus, Service),
 ```
 
-## Usage as Service
+# Usage as Service
 
 In the demo folder there is a bigger example, but is a minimal service callback module:
 
@@ -77,7 +77,7 @@ When the `dbus` application is running you can start this service with `my_modul
 
 *Caveat* at the moment the service creation does not open a dbus connection and as a result the service will not be visible until you create the first dbus connection e.g. via `dbus_bus_reg:get_bus(session).`
 
-## Documentation
+# Documentation
 
 * [API documentation](doc/README.md)
 * [Manual](https://github.com/jeanparpaillon/erlang-dbus/wiki)
@@ -90,16 +90,46 @@ The status:
 * Tests for both are working!
 * Connect through TCP and UNIX socket: ok
 
-### TODO
-* Figure out why `make ct` tests don't run on github actions
-* Fix signal emission from services
-* Make dializer happy
-* Some authentication mechanisms are not implemented, but architectures allows for easy extension (see https://github.com/jeanparpaillon/erlang-dbus/blob/master/src/dbus_auth_cookie_sha1.erl, https://github.com/jeanparpaillon/erlang-dbus/blob/master/src/dbus_auth_external.erl and https://github.com/jeanparpaillon/erlang-dbus/blob/master/src/dbus_auth_anonymous.erl)
-* Create new gen_dbus.erl that uses `handle_dbus_call(Name, Args)` form instead of current.
-* Cleanup Supervisor & gen_server hierarchy
-  * Remove superfluos gen_servers (proxy / peer / dbus)
-  * Make service registration more explicit when using multiple busses
-* Fix indentation
-* More docs & examples
-* More tests: unit tests regarding (un)marshaling would be really great, even if the above mentioned xample has rather complex interfaces which works both with Python and Java implementations
-* Provide facilities for standard interfaces: Properties, ObjectManager, etc.
+# Issue format
+
+`submit_issue.sh` parses these files, so the header is structural, not decorative.
+It takes the **title from the first line** (stripping `# `), reads the four `**Key:**`
+lines, and uses **everything from the first `##` heading onward** as the issue body.
+
+```markdown
+# Fix parsing env var
+
+**Workstream:** 2.3 - Fixes
+**Context:** [arch.md](doc/connections.md) 
+**Requires:** [1.2]
+**State:** draft
+
+## What
+
+...
+
+## Checklist
+
+- [ ] ...
+
+## Acceptance
+
+- [ ] ...
+```
+
+Rules the script enforces, or that follow from how it works:
+
+- **Filename is the issue number with dots as underscores** — `3_1.md` is issue 3.1.
+- **The number must be in the title.** `Requires:` refs are resolved with
+  `gh issue list --search "<ref> in:title"` to build `--blocked-by`, so a title without
+  its number cannot be depended on.
+- **`Requires:` refs are `[N.N]` in square brackets**, comma-separated or in prose;
+  the extractor only sees the bracketed forms. Use `none — <why>` when there are no
+  dependencies.
+- **Submit in dependency order.** Refs resolve against issues that already exist on
+  GitHub; an issue submitted before its dependency gets no `--blocked-by` link and the
+  script says nothing about it.
+- **`Workstream:` and `Context:` are re-emitted as `##` headings** at the top of the
+  body. Do not repeat them in the prose.
+- **`State:`** — `draft` until the issue is submitted.
+- Requires `gh` and `gum`.
