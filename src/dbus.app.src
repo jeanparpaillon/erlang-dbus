@@ -8,4 +8,4 @@
               {applications,[kernel,stdlib,sasl,crypto,xmerl]},
               {maintainers,["Jean Parpaillon"]},
               {licenses,["Apache"]},
-              {links,[{"Github","https://github.com/lizenn/erlang-dbus"}]}]}.
+              {links,[{"Github","https://github.com/jeanparpaillon/erlang-dbus"}]}]}.

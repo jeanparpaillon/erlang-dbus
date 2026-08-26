@@ -6,11 +6,8 @@ language-independant, object-oriented RPC system.
 
 The erlang platform needs an erlang native implementation.
 
-[![Flattr this git repo](http://api.flattr.com/button/flattr-badge-large.png)](https://flattr.com/submit/auto?user_id=jeanparpaillon&url=https://github.com/lizenn/erlang-dbus.git&title=erlang-dbus&language=erlang&tags=github&category=software)
-[![Build Status](https://travis-ci.org/lizenn/erlang-dbus.svg?branch=master)](https://travis-ci.org/lizenn/erlang-dbus)
 [![Hex.pm](https://img.shields.io/hexpm/v/dbus.svg)](https://hex.pm/packages/dbus)
 [![Hex.pm](https://img.shields.io/hexpm/dt/dbus.svg)](https://hex.pm/packages/dbus)
-[![Project Stats](https://www.openhub.net/p/erlang-dbus2/widgets/project_thin_badge.gif)](https://www.openhub.net/p/erlang-dbus2)
 
 ## Usage as Client
 
@@ -83,7 +80,7 @@ When the `dbus` application is running you can start this service with `my_modul
 ## Documentation
 
 * [API documentation](doc/README.md)
-* [Manual](https://github.com/lizenn/erlang-dbus/wiki)
+* [Manual](https://github.com/jeanparpaillon/erlang-dbus/wiki)
 
 ## Current status
 
@@ -97,7 +94,7 @@ The status:
 * Figure out why `make ct` tests don't run on github actions
 * Fix signal emission from services
 * Make dializer happy
-* Some authentication mechanisms are not implemented, but architectures allows for easy extension (see https://github.com/lizenn/erlang-dbus/blob/master/src/dbus_auth_cookie_sha1.erl, https://github.com/lizenn/erlang-dbus/blob/master/src/dbus_auth_external.erl and https://github.com/lizenn/erlang-dbus/blob/master/src/dbus_auth_anonymous.erl)
+* Some authentication mechanisms are not implemented, but architectures allows for easy extension (see https://github.com/jeanparpaillon/erlang-dbus/blob/master/src/dbus_auth_cookie_sha1.erl, https://github.com/jeanparpaillon/erlang-dbus/blob/master/src/dbus_auth_external.erl and https://github.com/jeanparpaillon/erlang-dbus/blob/master/src/dbus_auth_anonymous.erl)
 * Create new gen_dbus.erl that uses `handle_dbus_call(Name, Args)` form instead of current.
 * Cleanup Supervisor & gen_server hierarchy
   * Remove superfluos gen_servers (proxy / peer / dbus)
