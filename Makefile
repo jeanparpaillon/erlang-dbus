@@ -7,7 +7,10 @@ deps:
 tests:
 	rebar3 eunit --cover
 
+docs:
+	rebar3 edoc
+
 dialyze:
 	rebar3 dialyzer
 
-.PHONY: all deps tests dialyze
+.PHONY: all deps docs tests dialyze

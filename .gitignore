@@ -25,10 +25,8 @@
 /demo/ebin
 /rel
 /deps
-/issues
 
 # Documentation
-/doc/edoc-info
-
+/doc
 # EDTS
 .edts
