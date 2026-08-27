@@ -7,31 +7,30 @@
 
 %% api
 -export([
-         start_link/3,
-         get_object/2,
-         release_object/2
-        ]).
+    start_link/3,
+    get_object/2,
+    release_object/2
+]).
 
 %% gen_server callback2
 -export([
-         init/1,
-         code_change/3,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2
-        ]).
+    init/1,
+    code_change/3,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2
+]).
 
 -record(state, {
-          name,
-          bus,
-          conn,
-          objects
-         }).
+    name,
+    bus,
+    conn,
+    objects
+}).
 
 start_link(Bus, Conn, ServiceName) ->
     gen_server:start_link(?MODULE, [Bus, Conn, ServiceName], []).
-
 
 -spec get_object(dbus_name(), dbus_path()) -> {ok, pid()} | {error, term()}.
 get_object(Service, Path) ->
@@ -45,13 +44,16 @@ release_object(Service, Object) ->
 %%
 init([Bus, Conn, ServiceName]) ->
     Reg = ets:new(objects, [set, private]),
-    {ok, #state{name=ServiceName, bus=Bus, conn=Conn, objects=Reg}}.
+    {ok, #state{name = ServiceName, bus = Bus, conn = Conn, objects = Reg}}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-handle_call({get_object, Path}, {Pid, _Tag},
-            #state{objects=Reg, conn=Conn, name=Name}=State) ->
+handle_call(
+    {get_object, Path},
+    {Pid, _Tag},
+    #state{objects = Reg, conn = Conn, name = Name} = State
+) ->
     case ets:lookup(Reg, Path) of
         [{Path, Object, Pids}] ->
             ets:insert(Reg, {Path, Object, sets:add_element(Pid, Pids)}),
@@ -66,7 +68,6 @@ handle_call({get_object, Path}, {Pid, _Tag},
                     {reply, {error, Err}, State}
             end
     end;
-
 handle_call({release_object, Object}, {Pid, _}, State) ->
     case handle_release_object(Object, Pid, State) of
         {ok, State1} ->
@@ -76,11 +77,9 @@ handle_call({release_object, Object}, {Pid, _}, State) ->
         {stop, State1} ->
             {stop, normal, ok, State1}
     end;
-
 handle_call(Request, _From, State) ->
     ?error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
-
 
 handle_cast(stop, State) ->
     {stop, normal, State};
@@ -88,10 +87,8 @@ handle_cast(Request, State) ->
     ?error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
 
-
 handle_info(setup, State) ->
     {noreply, State};
-
 handle_info({'EXIT', Pid, Reason}, State) ->
     case handle_release_all_objects(Pid, State) of
         {ok, State1} ->
@@ -106,24 +103,20 @@ handle_info({'EXIT', Pid, Reason}, State) ->
                     {stop, Reason, State1}
             end
     end;
-
 handle_info({proxy, ok, From, Obj}, State) ->
     gen_server:reply(From, {ok, Obj}),
     {noreply, State};
-
 handle_info({proxy, Result, From, _Obj}, State) ->
     gen_server:reply(From, Result),
     {noreply, State};
-
 handle_info(Info, State) ->
     ?error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
 
-
 terminate(_Reason, _State) ->
     terminated.
 
-handle_release_object(Object, Pid, #state{objects=Reg}=State) ->
+handle_release_object(Object, Pid, #state{objects = Reg} = State) ->
     ?debug("~p: ~p handle_release_object ~p~n", [?MODULE, self(), Object]),
     case ets:match_object(Reg, {'_', Object, '_'}) of
         [{Path, _, Pids}] ->
@@ -141,7 +134,7 @@ handle_release_object(Object, Pid, #state{objects=Reg}=State) ->
 
 %% Drop the object from the registry once no pid holds it any more, and stop the
 %% service when that empties the registry.
-release_pid(Object, Path, Pids, #state{objects=Reg}=State) ->
+release_pid(Object, Path, Pids, #state{objects = Reg} = State) ->
     case sets:size(Pids) of
         0 ->
             %% No more pids, remove object
@@ -149,8 +142,10 @@ release_pid(Object, Path, Pids, #state{objects=Reg}=State) ->
             ets:delete(Reg, Path),
             case ets:info(Reg, size) of
                 0 ->
-                    ?debug("No more object in service, stopping service ~p~n",
-                           [State#state.name]),
+                    ?debug(
+                        "No more object in service, stopping service ~p~n",
+                        [State#state.name]
+                    ),
                     {stop, State};
                 _ ->
                     {ok, State}

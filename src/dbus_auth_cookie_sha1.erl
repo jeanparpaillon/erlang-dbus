@@ -11,8 +11,10 @@ for the complete specification.
 -behaviour(dbus_auth).
 
 %% dbus_auth callbacks
--export([init/0,
-         challenge/2]).
+-export([
+    init/0,
+    challenge/2
+]).
 
 -doc "Initialize DBUS_AUTH_COOKIE_SHA1 authentication.".
 init() ->
@@ -26,12 +28,11 @@ init() ->
             {continue, <<"DBUS_COOKIE_SHA1 ", HexUser/binary>>, waiting_challenge}
     end.
 
-
 -doc "Answer challenge.".
 challenge(HexChall, waiting_challenge) ->
     Chall = dbus_hex:decode(HexChall),
     ?debug("DBUS_COOKIE_SHA1 challenge: ~p", [Chall]),
-    case binary:split(Chall, [<< $\s >>], [global]) of
+    case binary:split(Chall, [<<$\s>>], [global]) of
         [Context, CookieId, ServerChallenge] ->
             case read_cookie(Context, CookieId) of
                 {error, _} ->
@@ -55,12 +56,10 @@ calc_challenge() ->
     BinTime = integer_to_binary(UnixTime),
     dbus_hex:encode(<<"Hello ", BinTime/binary>>).
 
-
 calc_response(ServerChallenge, Challenge, Cookie) ->
-    A1 = << ServerChallenge/binary, $:, Challenge/binary, $:, Cookie/binary >>,
+    A1 = <<ServerChallenge/binary, $:, Challenge/binary, $:, Cookie/binary>>,
     DigestHex = dbus_hex:encode(crypto:hash(sha, A1)),
     dbus_hex:encode(<<Challenge/binary, " ", DigestHex/binary>>).
-
 
 read_cookie(Context, CookieId) ->
     ?debug("Reading DBUS cookie: context=~s, cookie_id=~s~n", [Context, CookieId]),
@@ -79,7 +78,7 @@ read_cookie2(Device, CookieId) ->
         eof ->
             {error, no_cookie};
         {ok, Line} ->
-            case binary:split(Line, [<< $\s >>], [global]) of
+            case binary:split(Line, [<<$\s>>], [global]) of
                 [CookieId, _Time, Cookie] ->
                     {ok, strip(Cookie)};
                 [_Id, _Time, _] ->
@@ -88,7 +87,6 @@ read_cookie2(Device, CookieId) ->
                     {error, {malformed_cookie, Else}}
             end
     end.
-
 
 strip(Bin) ->
     [S | _] = binary:split(Bin, [<<$\n>>]),

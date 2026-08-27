@@ -23,24 +23,20 @@ describes additional transports.
 close(Conn) ->
     gen_server:cast(Conn, close).
 
-
 -doc "Send data to a transport.".
 -spec send(pid(), iodata()) -> ok.
 send(Conn, Data) ->
     gen_server:cast(Conn, {send, Data}).
-
 
 -doc "Set transport in raw mode (used after authentication is done).".
 -spec set_raw(pid(), boolean()) -> ok.
 set_raw(Conn, Raw) ->
     gen_server:call(Conn, {set_raw, Raw}).
 
-
 -doc "Stop transport.".
 -spec stop(pid()) -> ok.
 stop(Conn) ->
     gen_server:cast(Conn, stop).
-
 
 -doc "Check if this transport support UNIX FD passing.".
 -spec support_unix_fd(pid()) -> boolean().

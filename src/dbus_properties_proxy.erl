@@ -9,11 +9,12 @@ See [D-Bus specification](https://dbus.freedesktop.org/doc/dbus-specification.ht
 -include("dbus_client.hrl").
 -include("dbus_properties.hrl").
 
--export([get/3,
-         set/4,
-         get_all/2,
-         connect/2]).
-
+-export([
+    get/3,
+    set/4,
+    get_all/2,
+    connect/2
+]).
 
 -doc "Get a property value.".
 -spec get(Proxy :: dbus_proxy:t(), Iface :: dbus_name(), Prop :: dbus_name()) -> term().
@@ -21,9 +22,9 @@ get(Proxy, Iface, Prop) ->
     case dbus_proxy:call(Proxy, ?DBUS_IFACE_PROPERTIES, <<"Get">>, [Iface, Prop]) of
         {ok, Value} ->
             Value;
-        {error, Err} -> throw(Err)
+        {error, Err} ->
+            throw(Err)
     end.
-
 
 -doc "Set a property value.".
 -spec set(Proxy :: dbus_proxy:t(), Iface :: dbus_name(), Prop :: dbus_name(), Val :: term()) -> ok.
@@ -33,7 +34,6 @@ set(Proxy, Iface, Prop, Value) ->
         {error, Err} -> throw(Err)
     end.
 
-
 -doc "Get a key-value list of properties.".
 -spec get_all(Proxy :: dbus_proxy:t(), Iface :: dbus_name()) -> [{dbus_name(), dbus_variant()}].
 get_all(Proxy, Iface) ->
@@ -41,7 +41,6 @@ get_all(Proxy, Iface) ->
         {ok, [Props]} -> Props;
         {error, Err} -> throw(Err)
     end.
-
 
 -doc "Connect to the `PropertiesChanged` signal.".
 -spec connect(Proxy :: dbus_proxy:t(), Handler :: dbus_proxy:handler()) -> ok | {error, term()}.

@@ -7,29 +7,29 @@
 
 %% api
 -export([
-         start_link/0,
-         get_bus/1,
-         release_bus/1,
-         export_service/2,
-         unexport_service/2,
-         set_service_reg/1,
-         cast/1
-        ]).
+    start_link/0,
+    get_bus/1,
+    release_bus/1,
+    export_service/2,
+    unexport_service/2,
+    set_service_reg/1,
+    cast/1
+]).
 
 %% gen_server callbacks
 -export([
-         init/1,
-         code_change/3,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2
-        ]).
+    init/1,
+    code_change/3,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2
+]).
 
 -record(state, {
-          busses=[],
-          service_reg
-         }).
+    busses = [],
+    service_reg
+}).
 
 -define(SERVER, ?MODULE).
 
@@ -38,7 +38,7 @@ start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 -spec get_bus(bus_id() | atom()) -> {ok, pid()}.
-get_bus(#bus_id{}=BusId) ->
+get_bus(#bus_id{} = BusId) ->
     gen_server:call(?SERVER, {get_bus, BusId});
 get_bus(BusName) when is_atom(BusName) ->
     get_bus(dbus_bus_connection:get_bus_id(BusName)).
@@ -56,7 +56,7 @@ unexport_service(Service, ServiceName) ->
 set_service_reg(ServiceReg) ->
     gen_server:cast(?SERVER, {set_service_reg, ServiceReg}).
 
-cast(#dbus_message{}=Msg) ->
+cast(#dbus_message{} = Msg) ->
     gen_server:cast(?SERVER, Msg).
 
 %%
@@ -65,67 +65,58 @@ cast(#dbus_message{}=Msg) ->
 init([]) ->
     {ok, #state{}}.
 
-
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-
-handle_call({get_bus, #bus_id{}=BusId}, _From, #state{busses=Busses}=State) ->
+handle_call({get_bus, #bus_id{} = BusId}, _From, #state{busses = Busses} = State) ->
     case proplists:get_value(BusId, Busses) of
         undefined ->
-      {ok, BusConn} = dbus_bus_connection:connect(BusId),
+            {ok, BusConn} = dbus_bus_connection:connect(BusId),
             {ok, Bus} = gen_server:start_link(dbus_bus, [BusConn, self()], []),
             Busses1 = [{BusId, Bus} | Busses],
             dbus_service_reg ! {new_bus, Bus},
-            {reply, {ok, Bus}, State#state{busses=Busses1}};
+            {reply, {ok, Bus}, State#state{busses = Busses1}};
         Bus ->
             {reply, {ok, Bus}, State}
     end;
-
-handle_call({release_bus, Bus}, _From, #state{busses=Busses}=State) when is_pid(Bus) ->
+handle_call({release_bus, Bus}, _From, #state{busses = Busses} = State) when is_pid(Bus) ->
     case lists:keysearch(Bus, 2, Busses) of
         {value, {BusId, _Bus}} ->
             ?debug("Release BusId ~p~n", [BusId]),
             Busses1 = lists:keydelete(Bus, 2, Busses),
             ok = dbus_bus:stop(Bus),
-            {reply, ok, State#state{busses=Busses1}};
+            {reply, ok, State#state{busses = Busses1}};
         false ->
             {reply, {error, not_registered}, State}
     end;
-
-handle_call({export_service, _Service, ServiceName}, _From, #state{busses=Busses}=State) ->
+handle_call({export_service, _Service, ServiceName}, _From, #state{busses = Busses} = State) ->
     Fun = fun({_, Bus}) ->
-                  ?debug("export_service bus ~p~n", [Bus]),
-                  ok = dbus_bus:export_service(Bus, ServiceName)
-          end,
+        ?debug("export_service bus ~p~n", [Bus]),
+        ok = dbus_bus:export_service(Bus, ServiceName)
+    end,
     ?debug("export_service name ~p~n", [ServiceName]),
     lists:foreach(Fun, Busses),
     {reply, ok, State};
-
-handle_call({unexport_service, _Service, ServiceName}, _From, #state{busses=Busses}=State) ->
+handle_call({unexport_service, _Service, ServiceName}, _From, #state{busses = Busses} = State) ->
     Fun = fun({_, Bus}) ->
-                  ?debug("~p unexport_service bus ~p~n", [?MODULE, Bus]),
-                  ok = dbus_bus:unexport_service(Bus, ServiceName)
-          end,
+        ?debug("~p unexport_service bus ~p~n", [?MODULE, Bus]),
+        ok = dbus_bus:unexport_service(Bus, ServiceName)
+    end,
     ?debug("~p unexport_service name ~p~n", [?MODULE, ServiceName]),
     lists:foreach(Fun, Busses),
     {reply, ok, State};
-
 handle_call(Request, _From, State) ->
     ?error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
     {reply, ok, State}.
 
-
 handle_cast({set_service_reg, ServiceReg}, State) ->
-    {noreply, State#state{service_reg=ServiceReg}};
-
-handle_cast(#dbus_message{}=Msg, #state{busses=Buses}=State) ->
+    {noreply, State#state{service_reg = ServiceReg}};
+handle_cast(#dbus_message{} = Msg, #state{busses = Buses} = State) ->
     Fun = fun({_, Bus}) ->
-                  dbus_bus:cast(Bus, Msg)
-          end,
+        dbus_bus:cast(Bus, Msg)
+    end,
     lists:foreach(Fun, Buses),
     {noreply, State};
-
 handle_cast(Request, State) ->
     ?error("Unhandled cast in ~p: ~p~n", [?MODULE, Request]),
     {noreply, State}.
@@ -133,7 +124,6 @@ handle_cast(Request, State) ->
 handle_info(Info, State) ->
     ?error("Unhandled info in ~p: ~p~n", [?MODULE, Info]),
     {noreply, State}.
-
 
 terminate(_Reason, _State) ->
     terminated.

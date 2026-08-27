@@ -3,33 +3,34 @@
 
 -include("dbus.hrl").
 
--export([list_to_iface/1,
-         list_to_method/1,
-         list_to_signal/1]).
+-export([
+    list_to_iface/1,
+    list_to_method/1,
+    list_to_signal/1
+]).
 
--export([bin_to_iface/1,
-         bin_to_method/1,
-         bin_to_signal/1,
-         bin_to_member/1,
-         bin_to_error/1]).
+-export([
+    bin_to_iface/1,
+    bin_to_method/1,
+    bin_to_signal/1,
+    bin_to_member/1,
+    bin_to_error/1
+]).
 
 -doc #{equiv => bin_to_iface(list_to_binary(Str))}.
 -spec list_to_iface(string()) -> dbus_name().
 list_to_iface(Str) when is_list(Str) ->
     bin_to_iface(list_to_binary(Str)).
 
-
 -doc #{equiv => bin_to_method(list_to_binary(Str))}.
 -spec list_to_method(string()) -> dbus_name().
 list_to_method(Str) when is_list(Str) ->
     bin_to_method(list_to_binary(Str)).
 
-
 -doc #{equiv => bin_to_signal(list_to_binary(Str))}.
 -spec list_to_signal(string()) -> dbus_name().
 list_to_signal(Str) when is_list(Str) ->
     bin_to_signal(list_to_binary(Str)).
-
 
 -doc """
 Well-known interface names:
@@ -47,7 +48,6 @@ bin_to_iface(<<"org.freedesktop.DBus.Introspectable">>) -> 'org.freedesktop.DBus
 bin_to_iface(<<"org.freedesktop.DBus.Properties">>) -> 'org.freedesktop.DBus.Properties';
 bin_to_iface(<<"org.freedesktop.DBus.ObjectManager">>) -> 'org.freedesktop.DBus.ObjectManager';
 bin_to_iface(Bin) when is_binary(Bin) -> Bin.
-
 
 -doc """
 Well-known method names:
@@ -104,7 +104,6 @@ bin_to_method(<<"GetAll">>) -> 'GetAll';
 bin_to_method(<<"GetManagedObjects">>) -> 'GetManagedObjects';
 bin_to_method(Bin) when is_binary(Bin) -> Bin.
 
-
 -doc """
 Well-known signal names:
 
@@ -124,7 +123,6 @@ bin_to_signal(<<"InterfacesAdded">>) -> 'InterfacesAdded';
 bin_to_signal(<<"InterfacesRemoved">>) -> 'InterfacesRemoved';
 bin_to_signal(Bin) when is_binary(Bin) -> Bin.
 
-
 -doc "Well-known method OR signal name.".
 -spec bin_to_member(binary()) -> dbus_name().
 bin_to_member(Bin) ->
@@ -135,7 +133,6 @@ bin_to_member(Bin) ->
             Atom
     end.
 
-
 -doc """
 Well-known error names:
 
@@ -144,7 +141,10 @@ Well-known error names:
 - `org.freedesktop.DBus.Error.MatchRuleNotFound`
 """.
 -spec bin_to_error(binary()) -> dbus_name().
-bin_to_error(<<"org.freedesktop.DBus.Error.NameHasNoOwner">>) -> 'org.freedesktop.DBus.Error.NameHasNoOwner';
-bin_to_error(<<"org.freedesktop.DBus.Error.OOM">>) -> 'org.freedesktop.DBus.Error.OOM';
-bin_to_error(<<"org.freedesktop.DBus.Error.MatchRuleNotFound">>) -> 'org.freedesktop.DBus.Error.MatchRuleNotFound';
+bin_to_error(<<"org.freedesktop.DBus.Error.NameHasNoOwner">>) ->
+    'org.freedesktop.DBus.Error.NameHasNoOwner';
+bin_to_error(<<"org.freedesktop.DBus.Error.OOM">>) ->
+    'org.freedesktop.DBus.Error.OOM';
+bin_to_error(<<"org.freedesktop.DBus.Error.MatchRuleNotFound">>) ->
+    'org.freedesktop.DBus.Error.MatchRuleNotFound';
 bin_to_error(Bin) when is_binary(Bin) -> Bin.

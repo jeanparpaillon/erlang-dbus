@@ -33,11 +33,11 @@ of the mechanisms.
 """.
 
 -callback init() ->
-    {ok, Resp :: binary()} |
-    {continue, Resp :: binary(), State :: term()} |
-    {error, term()}.
+    {ok, Resp :: binary()}
+    | {continue, Resp :: binary(), State :: term()}
+    | {error, term()}.
 
 -callback challenge(Chall :: binary(), State :: term()) ->
-    {ok, Resp :: binary()} |
-    {continue, Resp :: binary(), State :: term()} |
-    {error, Reason :: term()}.
+    {ok, Resp :: binary()}
+    | {continue, Resp :: binary(), State :: term()}
+    | {error, Reason :: term()}.

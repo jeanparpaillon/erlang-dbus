@@ -68,127 +68,146 @@
 %% is what makes an unknown scheme well-typed. It costs the union its
 %% checking value -- dialyzer collapses the whole thing to atom() -- so the
 %% names below are documentation of the known set, not a constraint.
--type dbus_address_scheme() :: unix          %% transports-unix-domain-sockets
-                             | launchd       %% transports-launchd
-                             | systemd       %% transports-systemd
-                             | tcp           %% transports-tcp-sockets
-                             | 'nonce-tcp'   %% transports-nonce-tcp-sockets
-                             | unixexec      %% transports-exec
-                             | autolaunch    %% transports-autolaunch
-                             | atom().       %% unknown or future transport
+
+%% transports-unix-domain-sockets
+-type dbus_address_scheme() ::
+    unix
+    %% transports-launchd
+    | launchd
+    %% transports-systemd
+    | systemd
+    %% transports-tcp-sockets
+    | tcp
+    %% transports-nonce-tcp-sockets
+    | 'nonce-tcp'
+    %% transports-exec
+    | unixexec
+    %% transports-autolaunch
+    | autolaunch
+    %% unknown or future transport
+    | atom().
 
 -type dbus_address_option() :: atom().
 
--type dbus_type() :: byte |
-                     boolean |
-                     int16 |
-                     uint16 |
-                     int32 |
-                     uint32 |
-                     int64 |
-                     uint64 |
-                     double |
-                     string |
-                     object_path |
-                     signature |
-                     {array, dbus_type()} |
-                     {struct, [dbus_type()]} |
-                     variant |
-                     {dict, dbus_type(), dbus_type()} |
-                     empty.
+-type dbus_type() ::
+    byte
+    | boolean
+    | int16
+    | uint16
+    | int32
+    | uint32
+    | int64
+    | uint64
+    | double
+    | string
+    | object_path
+    | signature
+    | {array, dbus_type()}
+    | {struct, [dbus_type()]}
+    | variant
+    | {dict, dbus_type(), dbus_type()}
+    | empty.
 -type dbus_signature() :: [dbus_type()].
 
 -record(bus_id, {
-          scheme  :: dbus_address_scheme(),
-          guid    :: binary() | undefined,
-          options :: [{dbus_address_option(), binary()}]
-         }).
+    scheme :: dbus_address_scheme(),
+    guid :: binary() | undefined,
+    options :: [{dbus_address_option(), binary()}]
+}).
 -type bus_id() :: #bus_id{}.
 
 -record(dbus_message, {
-          header     :: dbus_header() | undefined,
-          body       :: term() | tuple() | undefined}).
+    header :: dbus_header() | undefined,
+    body :: term() | tuple() | undefined
+}).
 -type dbus_message() :: #dbus_message{}.
 
--type endianness() :: integer().         % $l (little) or $B (big)
+% $l (little) or $B (big)
+-type endianness() :: integer().
 
 -record(dbus_header, {
-          endian   = $l                  :: endianness(),
-          type                           :: integer() | undefined,
-          flags    = 0                   :: integer(),
-          version  = ?DBUS_VERSION_MAJOR :: integer(),
-          size     = 0                   :: integer(),
-          serial                         :: integer() | undefined,
-          fields                         :: map() | list() | undefined
-         }).
+    endian = $l :: endianness(),
+    type :: integer() | undefined,
+    flags = 0 :: integer(),
+    version = ?DBUS_VERSION_MAJOR :: integer(),
+    size = 0 :: integer(),
+    serial :: integer() | undefined,
+    fields :: map() | list() | undefined
+}).
 -type dbus_header() :: #dbus_header{}.
 
 -record(dbus_variant, {
-          type           :: dbus_type() | undefined,
-          value          :: term()
-         }).
+    type :: dbus_type() | undefined,
+    value :: term()
+}).
 -type dbus_variant() :: #dbus_variant{}.
 
 -record(dbus_node, {
-          name            :: binary() | undefined,
-          elements   = [] :: [dbus_node()],
-          interfaces      :: term()           % gb_tree()
-         }).
+    name :: binary() | undefined,
+    elements = [] :: [dbus_node()],
+    % gb_tree()
+    interfaces :: term()
+}).
 -type dbus_node() :: #dbus_node{}.
 
--type dbus_annotation_name() :: 'org.freedesktop.DBus.Deprecated'
-                              | 'org.freedesktop.DBus.GLib.CSymbol'
-                              | 'org.freedesktop.DBus.Method.NoReply'
-                              | 'org.freedesktop.DBus.Property.EmitsChangedSignal'
-                              | binary().
--type dbus_annotation_value() :: true
-                               | false
-                               | invalidates
-                               | binary().
+-type dbus_annotation_name() ::
+    'org.freedesktop.DBus.Deprecated'
+    | 'org.freedesktop.DBus.GLib.CSymbol'
+    | 'org.freedesktop.DBus.Method.NoReply'
+    | 'org.freedesktop.DBus.Property.EmitsChangedSignal'
+    | binary().
+-type dbus_annotation_value() ::
+    true
+    | false
+    | invalidates
+    | binary().
 -type dbus_annotation() :: {dbus_annotation_name(), dbus_annotation_value()}.
 
 -record(dbus_iface, {
-          name             :: dbus_name() | undefined,
-          methods          :: term(),              % gb_tree()
-          signals          :: term(),              % gb_tree()
-          properties       :: term(),              % gb_tree()
-          annotations      :: [dbus_annotation()] | undefined
-         }).
+    name :: dbus_name() | undefined,
+    % gb_tree()
+    methods :: term(),
+    % gb_tree()
+    signals :: term(),
+    % gb_tree()
+    properties :: term(),
+    annotations :: [dbus_annotation()] | undefined
+}).
 -type dbus_iface() :: #dbus_iface{}.
 
 -record(dbus_method, {
-          name             :: dbus_name() | undefined,
-          args       = []  :: [dbus_arg()],
-          result           :: none | undefined | dbus_arg(),
-          in_sig           :: binary() | undefined,
-          in_types         :: dbus_signature() | undefined,
-          annotations = [] :: [dbus_annotation()]
-         }).
+    name :: dbus_name() | undefined,
+    args = [] :: [dbus_arg()],
+    result :: none | undefined | dbus_arg(),
+    in_sig :: binary() | undefined,
+    in_types :: dbus_signature() | undefined,
+    annotations = [] :: [dbus_annotation()]
+}).
 -type dbus_method() :: #dbus_method{}.
 
 -record(dbus_signal, {
-          name             :: dbus_name() | undefined,
-          args        = [] :: [dbus_arg()],
-          result           :: none | undefined | dbus_arg(),
-          out_sig          :: binary() | undefined,
-          out_types        :: dbus_signature() | undefined,
-          annotations = [] :: [dbus_annotation()]
-         }).
+    name :: dbus_name() | undefined,
+    args = [] :: [dbus_arg()],
+    result :: none | undefined | dbus_arg(),
+    out_sig :: binary() | undefined,
+    out_types :: dbus_signature() | undefined,
+    annotations = [] :: [dbus_annotation()]
+}).
 -type dbus_signal() :: #dbus_signal{}.
 
 -record(dbus_property, {
-          name             :: dbus_name() | undefined,
-          type             :: binary() | undefined,
-          access           :: read | write | readwrite | undefined,
-          annotations = [] :: [dbus_annotation()]
-         }).
+    name :: dbus_name() | undefined,
+    type :: binary() | undefined,
+    access :: read | write | readwrite | undefined,
+    annotations = [] :: [dbus_annotation()]
+}).
 -type dbus_property() :: #dbus_property{}.
 
 -record(dbus_arg, {
-          name       = <<>> :: dbus_name(),
-          direction         :: in | out | undefined,
-          type              :: iolist() | binary() | undefined
-         }).
+    name = <<>> :: dbus_name(),
+    direction :: in | out | undefined,
+    type :: iolist() | binary() | undefined
+}).
 -type dbus_arg() :: #dbus_arg{}.
 
 -endif.
