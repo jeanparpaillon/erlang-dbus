@@ -1,12 +1,13 @@
-PROJECT = dbus
-PROJECT_VERSION = 0.8.0
+all:
+	rebar3 compile
 
-BUILD_DEPS = hexer_mk
+deps:
+	rebar3 get-deps
 
-PLT_APPS = crypto xmerl
+tests:
+	rebar3 eunit --cover
 
-dep_hexer_mk = git https://github.com/inaka/hexer.mk.git 1.1.0
+dialyze:
+	rebar3 dialyzer
 
-DEP_PLUGINS = hexer_mk
-
-include $(if $(ERLANG_MK_FILENAME),$(ERLANG_MK_FILENAME),erlang.mk)
+.PHONY: all deps tests dialyze

@@ -20,10 +20,12 @@
 /logs
 /log
 /.erlang.mk
+/test/ct.cover.spec
 
 /demo/ebin
 /rel
 /deps
+/issues
 
 # Documentation
 /doc/edoc-info

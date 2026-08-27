@@ -31,21 +31,23 @@ jobs:
         uses: erlef/setup-beam@v1
         with:
           otp-version: ${{ matrix.otp }}
+          rebar3-version: 3.20.0
 
       - name: Compile
-        run: make
+        run: rebar3 compile
 
       - name: Run EUnit
         if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
-        run: |
-          make eunit COVER=1
-          make cover-report
+        run: rebar3 eunit -cover
+
+      - name: Creates Cobertura coverage report
+        run: rebar3 covertool generate
 
       - name: Upload coverage to Codecov
         if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
         uses: codecov/codecov-action@v7
         with:
-          directory: cover
+          files: _build/test/covertool/dbus.covertool.xml
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
 
