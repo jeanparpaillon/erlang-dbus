@@ -27,12 +27,8 @@ Other classes are _ignored_, in particular `kernel`.
          call/2,
          cast/2]).
 
--define(DEFAULT_BUS_SYSTEM, #bus_id{scheme=unix, options=[{path, "/var/run/dbus/system_bus_socket"}]}).
+-define(DEFAULT_BUS_SYSTEM, #bus_id{scheme=unix, options=[{path, <<"/var/run/dbus/system_bus_socket">>}]}).
 -define(SESSION_ENV, "DBUS_SESSION_BUS_ADDRESS").
--define(SERVER_DELIM, $;).
--define(TRANSPORT_DELIM, $:).
--define(PARAM_DELIM, $,).
--define(KEY_DELIM, $=).
 
 
 -doc "Retrieve a `bus_id` from well-known names.".
@@ -110,44 +106,21 @@ get_unique_name(Bus) ->            dbus_proxy:get_unique_name(Bus).
 %%% Priv
 %%%
 env_to_bus_id() ->
-    str_to_bus_id(os:getenv(?SESSION_ENV)).
-
-str_to_bus_id(Addr) when is_list(Addr) ->
-    list_to_bus_id(string:tokens(Addr, [?SERVER_DELIM]), []).
-
-list_to_bus_id([], Acc) ->
-    lists:reverse(Acc);
-list_to_bus_id([L | Rest], Acc) ->
-    list_to_bus_id(Rest, [to_bus_id(L) | Acc]).
-
-to_bus_id(Server) when is_list(Server) ->
-    {Transport, [?TRANSPORT_DELIM | Params]} =
-        lists:splitwith(fun(A) -> A =/= ?TRANSPORT_DELIM end, Server),
-    #bus_id{scheme=list_to_existing_atom(Transport),
-            options=parse_params(Params)}.
-
-parse_params(Params) when is_list(Params) ->
-    parse_params(string:tokens(Params, [?PARAM_DELIM]), []).
-
-parse_params([], Acc) ->
-    Acc;
-parse_params([Param | Rest], Acc) ->
-    parse_params(Rest, [parse_param(Param) | Acc]).
-
-parse_param(Param) when is_list(Param) ->
-    {Key, [?KEY_DELIM | Value]} =
-        lists:splitwith(fun(A) -> A =/= ?KEY_DELIM end, Param),
-    KeyName =
-        try list_to_existing_atom(Key)
-        catch error:badarg ->
-                Key
-        end,
-    {KeyName, parse_value(KeyName, Value)}.
-
-parse_value(port, Value) ->
-    list_to_integer(Value);
-parse_value(_, Value) ->
-    Value.
+    case os:getenv(?SESSION_ENV) of
+        false ->
+            %% No session bus advertised at all: not an error here, get_bus_id/1
+            %% reports it as {unsupported, []}.
+            [];
+        Addr ->
+            case dbus_address:parse(list_to_binary(Addr)) of
+                {ok, BusIds} ->
+                    BusIds;
+                {error, Reason} ->
+                    %% A malformed environment is a configuration bug, not one
+                    %% of the alternatives a caller can fall back from.
+                    error({invalid_address, ?SESSION_ENV, Reason})
+            end
+    end.
 
 hello(DBusObj) ->
     {ok, Ret} = dbus_proxy:call(DBusObj, 'org.freedesktop.DBus', 'Hello', []),

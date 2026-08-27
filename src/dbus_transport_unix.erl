@@ -63,7 +63,7 @@ Support UNIX fd passing.
   `abstract` key value pair.
 """.
 -spec connect(
-        [{path, string() | binary()} | {abstract, string()}],
+        [{path, string() | binary()} | {abstract, string() | binary()}],
         _Options :: any()) ->
                      {ok, pid()} | ignore | {error, term()}.
 connect(BusOptions, _Options) ->
@@ -73,10 +73,14 @@ connect(BusOptions, _Options) ->
                        undefined ->
                            throw(no_path);
                        V ->
-                           <<0, (list_to_binary(V))/binary>>
+                           %% Abstract sockets live in their own namespace,
+                           %% addressed by a leading NUL.
+                           <<0, (iolist_to_binary(V))/binary>>
                    end;
                V ->
-                   list_to_binary(V)
+                   %% iolist_to_binary/1, not list_to_binary/1: dbus_address
+                   %% yields binaries, a hand-built #bus_id{} may hold a string.
+                   iolist_to_binary(V)
            end,
     gen_server:start_link(?MODULE, [Path, self()], []).
 

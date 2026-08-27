@@ -167,7 +167,7 @@ init([#bus_id{scheme=tcp, options=BusOptions}, ServiceReg, Options, Owner]) ->
     {Host, Port} = case {lists:keysearch(host, 1, BusOptions),
                          lists:keysearch(port, 1, BusOptions)} of
                        {{value, {host, Host1}}, {value, {port, Port1}}} ->
-                           {Host1, Port1};
+                           {host(Host1), port(Port1)};
                        _ ->
                            throw(no_host_or_port)
                    end,
@@ -178,6 +178,18 @@ init([#bus_id{scheme=tcp, options=BusOptions}, ServiceReg, Options, Owner]) ->
 init([#bus_id{scheme=unix, options=BusOptions}, ServiceReg, Options, Owner]) ->
     {ok, Sock} = dbus_transport_unix:connect(BusOptions, Options),
     init_connection(Sock, ServiceReg, Owner).
+
+%% dbus_address:parse/1 hands every parameter value over as the binary it was
+%% written as -- deciding what a value *means* belongs to the transport layer,
+%% per docs/addresses.md "Transport Interpretation". Lists are still accepted so
+%% that a hand-built #bus_id{} keeps working.
+host(Host) when is_binary(Host) -> binary_to_list(Host);
+host(Host) -> Host.
+
+%% gen_tcp wants an integer, and the address grammar has no notion of one.
+port(Port) when is_binary(Port) -> binary_to_integer(Port);
+port(Port) when is_list(Port) -> list_to_integer(Port);
+port(Port) when is_integer(Port) -> Port.
 
 
 callback_mode() ->

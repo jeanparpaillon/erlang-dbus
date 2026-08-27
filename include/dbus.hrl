@@ -57,6 +57,27 @@
 -type dbus_name() :: atom() | binary().
 -type dbus_path() :: atom() | binary().
 -type dbus_option() :: no_reply_expected | no_auto_start.
+%% Transports defined by the specification, sections "Transports" and
+%% "Meta Transports", keeping their spec spelling, hence the quoted 'nonce-tcp'.
+%% `systemd' is listenable but not connectable; `unix' and `tcp' also have
+%% listen-only forms (dir, tmpdir, runtime). Telling those apart is the
+%% transport layer's job, not the address parser's.
+%%
+%% The address format is extensible, so dbus_address:parse/1 accepts a
+%% transport it does not know rather than rejecting it: the trailing atom()
+%% is what makes an unknown scheme well-typed. It costs the union its
+%% checking value -- dialyzer collapses the whole thing to atom() -- so the
+%% names below are documentation of the known set, not a constraint.
+-type dbus_address_scheme() :: unix          %% transports-unix-domain-sockets
+                             | launchd       %% transports-launchd
+                             | systemd       %% transports-systemd
+                             | tcp           %% transports-tcp-sockets
+                             | 'nonce-tcp'   %% transports-nonce-tcp-sockets
+                             | unixexec      %% transports-exec
+                             | autolaunch    %% transports-autolaunch
+                             | atom().       %% unknown or future transport
+
+-type dbus_address_option() :: atom().
 
 -type dbus_type() :: byte |
                      boolean |
@@ -78,9 +99,9 @@
 -type dbus_signature() :: [dbus_type()].
 
 -record(bus_id, {
-          scheme,               %% tcp or unix
-          options               %% * tcp: address, port
-                                %% * unix: path|abstract
+          scheme  :: dbus_address_scheme(),
+          guid    :: binary() | undefined,
+          options :: [{dbus_address_option(), binary()}]
          }).
 -type bus_id() :: #bus_id{}.
 
