@@ -162,5 +162,6 @@ handle_release_object(Object, Pid, #state{objects=Reg}=State) ->
 	    {error, not_registered, State}
     end.
 
+-dialyzer({nowarn_function, handle_release_all_objects/2}).
 handle_release_all_objects(_Pid, _State) ->
     throw(unimplemented).

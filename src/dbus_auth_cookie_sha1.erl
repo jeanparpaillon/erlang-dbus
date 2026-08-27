@@ -40,7 +40,7 @@ challenge(HexChall, waiting_challenge) ->
     case binary:split(Chall, [<< $\s >>], [global]) of
         [Context, CookieId, ServerChallenge] ->
             case read_cookie(Context, CookieId) of
-                error ->
+                {error, _} ->
                     {error, no_cookie};
                 {ok, Cookie} ->
                     Challenge = calc_challenge(),

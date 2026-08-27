@@ -48,7 +48,7 @@
 %% Options are the gen_tcp:connect options for the link
 %% @end
 -type host() :: [inet:socket_address()|inet:hostname()].
--type connect_options() :: [get_tcp:connect_option()].
+-type connect_options() :: [gen_tcp:connect_option()].
 -spec connect(host(),integer(),connect_options()) -> 
 		     {ok,pid()} | ignore | {error,{already_started,pid()} | term()}.
 connect(Host, Port, Options) ->
@@ -87,7 +87,7 @@ handle_call(Request, _From, State) ->
 
 
 handle_cast({send, Data}, #state{sock=Sock}=State) ->
-    gen_tcp:send(Sock, Data),
+    _ = gen_tcp:send(Sock, Data),
     {noreply, State};
 
 handle_cast(close, State) ->

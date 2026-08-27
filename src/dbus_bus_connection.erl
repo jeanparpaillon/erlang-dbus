@@ -77,7 +77,7 @@ connect(#bus_id{}=BusId, ServiceReg) ->
 			    ConnId = hello(DBus),
 			    ?debug("Hello connection id: ~p~n", [ConnId]),
                 dbus_peer_connection:set_unique_name(PConn, ConnId),
-			    dbus_peer_connection:set_controlling_process(PConn, DBus),
+			    _ = dbus_peer_connection:set_controlling_process(PConn, DBus),
 			    {ok, {?MODULE, DBus}};
 			{error, Err} -> {error, Err}
 		    end;

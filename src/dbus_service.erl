@@ -150,10 +150,10 @@ handle_method_call(<<"/">>, #dbus_message{}=Msg, Conn,
     case dbus_constants:to_atom(Member) of
 	'Introspect' ->
 	    Elements = lists:foldl(fun({Path, _}, Res) ->
-					   [$/ | PathStr] = binary_to_list(Path),
+					   << $/, PathStr/binary >> = Path,
 					   [#dbus_node{name=PathStr} | Res]
 				   end, [], Objects),
-	    Node = #dbus_node{name="/", elements=Elements},
+	    Node = #dbus_node{name= <<"/">>, elements=Elements},
 	    ReplyBody = dbus_introspect:to_xml(Node),
 	    ?debug("Introspect ~p~n", [ReplyBody]),
 	    Reply = dbus_message:return(Msg, [string], [ReplyBody]),
@@ -169,7 +169,7 @@ handle_method_call(<<"/">>, #dbus_message{}=Msg, Conn,
 
 handle_method_call(Path, #dbus_message{}=Msg, Conn, #state{objects=Objects}=State)
   when is_binary(Path) ->
-    case proplists:get_value(Path, Objects) of
+    _ = case proplists:get_value(Path, Objects) of
 	undefined ->
 	    ErrorName = 'org.freedesktop.DBus.Error.UnknownObject',
 	    ErrorText = <<"Erlang: Object not found: ", Path/binary>>,
@@ -177,7 +177,7 @@ handle_method_call(Path, #dbus_message{}=Msg, Conn, #state{objects=Objects}=Stat
 	    ?debug("Reply ~p~n", [Reply]),
 	    ok = dbus_connection:cast(Conn, Reply);
 	Object ->
-	    Object ! {dbus_method_call, Msg, Conn}
+	    _ = Object ! {dbus_method_call, Msg, Conn}
     end,
     {noreply, State}.
 

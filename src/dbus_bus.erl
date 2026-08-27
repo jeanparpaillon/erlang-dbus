@@ -118,7 +118,7 @@ handle_cast(stop, State) ->
     {stop, normal, State};
 
 handle_cast(#dbus_message{}=Msg, #state{conn=Conn}=State) ->
-    dbus_connection:cast(Conn, Msg),
+    _ = dbus_connection:cast(Conn, Msg),
     {noreply, State};
 
 handle_cast(Request, State) ->
@@ -157,6 +157,7 @@ terminate(_Reason, _State) ->
     terminated.
 
 
+-dialyzer({nowarn_function, handle_release_all_services/2}).
 handle_release_all_services(Pid, _State) ->
     ?error("~p: handle_release_all_services ~p~n", [?MODULE, Pid]),
     throw(unimplemented).

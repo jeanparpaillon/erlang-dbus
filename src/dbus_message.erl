@@ -115,13 +115,13 @@ signal(Destination, Path, Interface,
     Header = #dbus_header{type=?TYPE_SIGNAL,
 			  flags=process_flags(Opts),
 			  fields=Fields},
-    {ok, #dbus_message{header=Header, body=Body}}.
+    #dbus_message{header=Header, body=Body}.
 
 
 %% @doc Build an error message
 %% @end
 -spec error(Orig      :: dbus_message(),
-	    ErrName   :: binary() | list(),
+	    ErrName   :: dbus_name() | list(),
 	    ErrText   :: binary() | list()) -> dbus_message().
 error(#dbus_message{}=Orig, ErrName, ErrText) ->
     From = get_field(?FIELD_SENDER, Orig),
@@ -173,7 +173,7 @@ set_serial(Serial, #dbus_message{header=Header}=Message) ->
 %%
 %% Returns `undefined' if not found
 %% @end
--spec find_field(Code :: integer(), dbus_header() | dbus_message()) -> dbus_variant() | undefined.
+-spec find_field(Code :: integer(), dbus_header() | dbus_message()) -> term() | undefined.
 find_field(Code, #dbus_message{header=Header}) ->
     find_field(Code, Header);
 
@@ -187,7 +187,7 @@ find_field(Code, #dbus_header{fields=Fields}) ->
 %%
 %% @throws {no_such_field, integer()}
 %% @end
--spec get_field(Code :: integer(), Header :: #dbus_header{}) -> dbus_variant().
+-spec get_field(Code :: integer(), Msg :: dbus_header() | dbus_message()) -> term().
 get_field(Code, #dbus_message{ header=Header }) ->
     get_field(Code, Header);
 

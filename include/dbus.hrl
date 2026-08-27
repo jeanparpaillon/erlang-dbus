@@ -91,7 +91,7 @@
 -type bus_id() :: #bus_id{}.
 
 -record(dbus_message, {
-          header     :: dbus_header(),
+          header     :: dbus_header() | undefined,
           body       :: term() | tuple() | undefined}).
 -type dbus_message() :: #dbus_message{}.
 
@@ -99,7 +99,7 @@
 
 -record(dbus_header, {
           endian   = $l                  :: endianness(),
-          type                           :: integer(),
+          type                           :: integer() | undefined,
           flags    = 0                   :: integer(),
           version  = ?DBUS_VERSION_MAJOR :: integer(),
           size     = 0                   :: integer(),
@@ -109,13 +109,13 @@
 -type dbus_header() :: #dbus_header{}.
 
 -record(dbus_variant, {
-          type           :: dbus_type(),
+          type           :: dbus_type() | undefined,
           value          :: term()
          }).
 -type dbus_variant() :: #dbus_variant{}.
 
 -record(dbus_node, {
-          name            :: binary(),
+          name            :: binary() | undefined,
           elements   = [] :: [dbus_node()],
           interfaces      :: term()           % gb_tree()
          }).
@@ -133,7 +133,7 @@
 -type dbus_annotation() :: {dbus_annotation_name(), dbus_annotation_value()}.
 
 -record(dbus_iface, {
-          name             :: dbus_name(),
+          name             :: dbus_name() | undefined,
           methods          :: term(),              % gb_tree()
           signals          :: term(),              % gb_tree()
           properties       :: term(),              % gb_tree()
@@ -142,7 +142,7 @@
 -type dbus_iface() :: #dbus_iface{}.
 
 -record(dbus_method, {
-          name             :: dbus_name(),
+          name             :: dbus_name() | undefined,
           args       = []  :: [dbus_arg()],
           result           :: none | undefined | dbus_arg(),
           in_sig           :: binary() | undefined,
@@ -152,9 +152,9 @@
 -type dbus_method() :: #dbus_method{}.
 
 -record(dbus_signal, {
-          name             :: dbus_name(),
+          name             :: dbus_name() | undefined,
           args        = [] :: [dbus_arg()],
-          result           :: none | dbus_arg(),
+          result           :: none | undefined | dbus_arg(),
           out_sig          :: binary() | undefined,
           out_types        :: dbus_signature() | undefined,
           annotations = [] :: [dbus_annotation()]
@@ -162,17 +162,17 @@
 -type dbus_signal() :: #dbus_signal{}.
 
 -record(dbus_property, {
-          name             :: dbus_name(),
-          type             :: binary(),
-          access           :: read | write | readwrite,
+          name             :: dbus_name() | undefined,
+          type             :: binary() | undefined,
+          access           :: read | write | readwrite | undefined,
           annotations = [] :: [dbus_annotation()]
          }).
 -type dbus_property() :: #dbus_property{}.
 
 -record(dbus_arg, {
           name       = <<>> :: dbus_name(),
-          direction         :: in | out,
-          type              :: iolist() | binary()
+          direction         :: in | out | undefined,
+          type              :: iolist() | binary() | undefined
          }).
 -type dbus_arg() :: #dbus_arg{}.
 

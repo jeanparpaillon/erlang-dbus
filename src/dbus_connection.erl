@@ -13,9 +13,9 @@
 -include("dbus.hrl").
 -include("dbus_client.hrl").
 
--callback close(dbus_connection()) -> ok.
--callback call(dbus_connection(), dbus_message()) -> {ok, term()} | {error, term()}.
--callback cast(dbus_connection(), dbus_message()) -> ok | {error, term()}.
+-callback close(Conn :: term()) -> ok.
+-callback call(Conn :: term(), dbus_message()) -> {ok, term()} | {error, term()}.
+-callback cast(Conn :: term(), dbus_message()) -> ok | {error, term()}.
 
 -export([close/1,
 	 call/2,

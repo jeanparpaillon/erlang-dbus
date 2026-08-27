@@ -31,7 +31,7 @@ close(Conn) ->
 
 %% @doc Send data to a transport
 %% @end
--spec send(pid(), binary()) -> ok.
+-spec send(pid(), iodata()) -> ok.
 send(Conn, Data) -> 
     gen_server:cast(Conn, {send, Data}).
 

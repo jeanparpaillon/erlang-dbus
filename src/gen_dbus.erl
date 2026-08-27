@@ -170,12 +170,11 @@ handle_cast({signal, SignalName, Args, Options}, State) ->
 		State#state.default_iface
 	end,
 
-    Signal = dbus_introspect:find_signal(State#state.node, IfaceName, SignalName),
-
-    case Signal of
-	{error, _}=Error ->
-	    {reply, Error, State};
-	_ ->
+    case dbus_introspect:find_signal(State#state.node, IfaceName, SignalName) of
+	{error, Err} ->
+	    ?error("Unknown signal ~p.~p: ~p~n", [IfaceName, SignalName, Err]),
+	    {noreply, State};
+	{ok, Signal} ->
 	    do_signal(IfaceName, Signal, Args, Options, State)
     end;
 
@@ -210,7 +209,7 @@ handle_info({dbus_method_call, Message, Conn}, State) ->
 		error:undef:Stacktrace ->
 		    ?debug("undef method ~p~n", [{undef, Stacktrace}]),
 		    ErrorName = "org.freedesktop.DBus.Error.UnknownMethod",
-		    ErrorText = "Erlang: Function not found: " ++ MemberStr,
+		    ErrorText = << "Erlang: Function not found: ", MemberStr/binary >>,
 		    Reply = dbus_message:error(Message, ErrorName, ErrorText),
 		    ok = dbus_connection:cast(Conn, Reply),
 		    {noreply, State};
@@ -249,7 +248,7 @@ do_signal(IfaceName, Signal, Args, _Options, State) ->
 do_method_call(Module, Member, Message = #dbus_message{header = Header}, Conn, Sub) ->
     From =
 	if
-	    Header#dbus_header.flags band ?NO_REPLY_EXPECTED ->
+	    Header#dbus_header.flags band ?NO_REPLY_EXPECTED =/= 0 ->
 		none;
 	    true ->
 		make_ref()

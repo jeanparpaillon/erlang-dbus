@@ -3,6 +3,8 @@ PROJECT_VERSION = 0.8.0
 
 BUILD_DEPS = hexer_mk
 
+PLT_APPS = crypto xmerl
+
 dep_hexer_mk = git https://github.com/inaka/hexer.mk.git 1.1.0
 
 DEP_PLUGINS = hexer_mk

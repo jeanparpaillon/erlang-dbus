@@ -12,6 +12,9 @@
 
 -include("dbus.hrl").
 
+%% marshal_dict/4 accepts a legacy dict(), which is an opaque type
+-dialyzer({no_opaque, marshal_dict/4}).
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
@@ -70,7 +73,7 @@ marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial
 
 %% @doc Encode a signature
 %% @end
--spec marshal_signature(dbus_signature()) -> iolist().
+-spec marshal_signature(dbus_type() | dbus_signature()) -> iolist().
 marshal_signature(byte)        ->   "y";
 marshal_signature(boolean)     ->   "b";
 marshal_signature(int16)       ->   "n";
@@ -433,10 +436,7 @@ unmarshal_data(Data, Acc) ->
         more when [] =:= Acc ->
             more;
         more ->
-            {ok, lists:reverse(Acc), Data};
-        _ ->
-            ?error("Error parsing data~n", []),
-            throw(dbus_parse_error)
+            {ok, lists:reverse(Acc), Data}
     catch
         {'EXIT', Err} ->
             throw({dbus_parse_error, Err})
@@ -832,8 +832,6 @@ unmarshal_array(SubType, Length, Data, Acc, Pos, Endian) when is_integer(Length)
     end.
 
 
-unmarshal_tuple(Type, Data, Endian) when is_atom(Type), is_binary(Data), byte_size(Data) > 0 ->
-    unmarshal(Type, Data, 0, Endian);
 unmarshal_tuple(Types, Data, Endian) when is_list(Types), is_binary(Data) ->
     unmarshal_tuple(Types, Data, [], 0, Endian).
 
@@ -881,7 +879,7 @@ padding({struct, _Types}) -> 8;
 padding(variant)          -> 1;
 padding(dict)             -> 4.
 
--spec pad(Size :: atom()|integer(), MessagePos :: integer()) ->
+-spec pad(Size :: dbus_type()|integer(), MessagePos :: integer()) ->
 		 PaddingBits :: integer().
 % @param Size
 % The size of the binary alignment in bytes

@@ -23,12 +23,12 @@
          from_xml_string/1
         ]).
 
--record(state, {node         :: dbus_node(),
-                child        :: dbus_node(),
-                iface        :: dbus_iface(),
-                method       :: dbus_method(),
-                signal       :: dbus_signal(),
-                property     :: dbus_property(),
+-record(state, {node         :: dbus_node() | undefined,
+                child        :: dbus_node() | undefined,
+                iface        :: dbus_iface() | undefined,
+                method       :: dbus_method() | undefined,
+                signal       :: dbus_signal() | undefined,
+                property     :: dbus_property() | undefined,
                 s     = root :: atom()}).
 
 %%%
@@ -148,8 +148,6 @@ find_name(Name, Tree, ToKnownFun) when is_binary(Name) ->
 
 to_binary(Item) when is_atom(Item) ->
     atom_to_binary(Item, utf8);
-to_binary(Item) when is_list(Item) ->
-    list_to_binary(Item);
 to_binary(Item) when is_binary(Item) ->
     Item.
 
@@ -160,11 +158,11 @@ to_xmerl(List) when is_list(List) ->
 
 to_xmerl(#dbus_node{}=Elem) ->
     {node,
-     case to_binary(Elem#dbus_node.name) of
+     case Elem#dbus_node.name of
          undefined ->
              [];
          Name ->
-             [{name, Name}]
+             [{name, to_binary(Name)}]
      end,
      to_xmerl(Elem#dbus_node.elements) ++
          to_xmerl(Elem#dbus_node.interfaces)
@@ -188,11 +186,11 @@ to_xmerl(#dbus_method{}=Elem) ->
                 [to_xmerl(Arg)]
         end,
     {method,
-     case to_binary(Elem#dbus_method.name) of
+     case Elem#dbus_method.name of
          undefined ->
              [];
          Name ->
-             [{name, Name}]
+             [{name, to_binary(Name)}]
      end,
      to_xmerl(Elem#dbus_method.args) ++ Result};
 
@@ -207,21 +205,21 @@ to_xmerl(#dbus_signal{}=Elem) ->
                 [to_xmerl(Arg)]
         end,
     {signal,
-     case list_to_binary(Elem#dbus_signal.name) of
+     case Elem#dbus_signal.name of
          undefined ->
              [];
          Name ->
-             [{name, Name}]
+             [{name, to_binary(Name)}]
      end,
      to_xmerl(Elem#dbus_signal.args) ++ Result};
 
 to_xmerl(#dbus_arg{}=Elem) ->
     {arg,
-     case to_binary(Elem#dbus_arg.name) of
+     case Elem#dbus_arg.name of
          undefined ->
              [];
          Name ->
-             [{name, Name}]
+             [{name, to_binary(Name)}]
      end ++
          [{direction, Elem#dbus_arg.direction}, {type, Elem#dbus_arg.type}],  []}.
 

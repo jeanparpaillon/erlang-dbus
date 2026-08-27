@@ -368,7 +368,7 @@ terminate(_Reason, #state{conn=Conn}=_State) ->
     terminated.
 
 reply(From, Reply, Options) ->
-    case lists:keysearch(reply, 1, Options) of
+    _ = case lists:keysearch(reply, 1, Options) of
         {value, {reply, Pid, Ref}} ->
             Pid ! {reply, Ref, Reply};
         _ ->
@@ -449,15 +449,8 @@ find_handlers(Signal, Acc, [ Handler | Tail ]) ->
     end.
 
 
-match_handler({signal_handler, '_', '_', '_', '_',       _}, {_, _, _, _}) -> true;
-match_handler({signal_handler, S,   '_', '_', '_',       _}, {S, _, _, _}) -> true;
-match_handler({signal_handler, '_', I,   '_', '_',       _}, {_, I, _, _}) -> true;
-match_handler({signal_handler, '_', '_', M,   '_',       _}, {_, _, M, _}) -> true;
 match_handler({signal_handler, '_', '_', '_', PathMatch, _}, {_, _, _, P}) -> match_path(PathMatch, P);
-match_handler({signal_handler, S,   I,   '_', '_',       _}, {S, I, _, _}) -> true;
-match_handler({signal_handler, S,   '_', M,   '_',       _}, {S, _, M, _}) -> true;
 match_handler({signal_handler, S,   '_', '_', PathMatch, _}, {S, _, _, P}) -> match_path(PathMatch, P);
-match_handler({signal_handler, S,   I,   M,   '_',       _}, {S, I, M, _}) -> true;
 match_handler({signal_handler, S,   I,   '_', PathMatch, _}, {S, I, _, P}) -> match_path(PathMatch, P);
 match_handler({signal_handler, S,   I,   M,   PathMatch, _}, {S, I, M, P}) -> match_path(PathMatch, P);
 match_handler(_,                                             _)            -> false.

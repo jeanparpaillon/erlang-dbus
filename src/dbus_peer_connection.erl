@@ -68,7 +68,7 @@ start_link(BusId) ->
 
 %% @doc Start a connection to a peer
 %% @end
--spec start_link(bus_id(), pid() | list()) -> {ok, dbus_connection()} | {error, term()}.
+-spec start_link(bus_id(), pid() | undefined | list()) -> {ok, dbus_connection()} | {error, term()}.
 start_link(BusId, Options) when is_record(BusId, bus_id),
                                 is_list(Options) ->
     start_link(BusId, undefined, Options);
