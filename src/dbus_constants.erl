@@ -1,11 +1,5 @@
-%%
-%% @copyright 2014 Jean Parpaillon
-%%
-%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%%
-%% @doc DBUS constants to atom
-%% @end
 -module(dbus_constants).
+-moduledoc "DBUS constants to atom.".
 
 -export([
 	 to_atom/1

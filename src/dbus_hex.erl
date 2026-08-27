@@ -1,8 +1,3 @@
-%% @copyright 2014 Jean Parpaillon
-%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%% @doc
-%%
-%% @end
 -module(dbus_hex).
 
 %%--------------------------------------------------------------------
@@ -15,15 +10,13 @@
 %% External functions
 %%====================================================================
 
-%% @doc Encode a binary string as hex
-%% @end
+-doc "Encode a binary string as hex.".
 -spec encode(binary()) -> binary().
 encode(Bin) ->
     encode(Bin, <<>>).
 
 
-%% @doc Decode an hex string
-%% @end
+-doc "Decode an hex string.".
 -spec decode(binary()) -> binary().
 decode(Bin) ->
     decode(Bin, <<>>).

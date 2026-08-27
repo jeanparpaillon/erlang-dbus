@@ -1,24 +1,18 @@
-%% @private
-%% @copyright 2006-2007 Mikael Magnusson, 2014-2016 Jean Parpaillon
-%% @author Mikael Magnusson <mikma@users.sourceforge.net>
-%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%% @author Tony Wallace <tony@tony.gen.nz> - added comments to code
-%% @doc Implements D-Bus connection over TCP
-%% This is done by starting a gen_server in response to a connect/3
-%% 
-%% Once started this server accepts the following calls:
-%%   gen_server:call(ServerRef,support_unix_fd) -> false
-%%   gen_server:call(ServerRef,{set_raw,true}) -> ok
-%%
-%% The following casts are supported:
-%%   gen_server:cast(ServerRef,{send,Data}) -> ok
-%%   gen_server:cast(ServerRef,close) -> ok
-%%   gen_server:cast(ServerRef,stop) -> ok
-%%
-%% Do not support UNIX FD passing
-%% @end
-
 -module(dbus_transport_tcp).
+-moduledoc """
+Implements D-Bus connection over TCP.
+This is done by starting a gen_server in response to a connect/3
+
+Once started this server accepts the following calls:
+  gen_server:call(ServerRef,support_unix_fd) -> false
+  gen_server:call(ServerRef,{set_raw,true}) -> ok
+
+The following casts are supported:
+  gen_server:cast(ServerRef,{send,Data}) -> ok
+  gen_server:cast(ServerRef,close) -> ok
+  gen_server:cast(ServerRef,stop) -> ok
+Do not support UNIX FD passing
+""".
 
 -include("dbus.hrl").
 
@@ -38,17 +32,15 @@
 
 -record(state, {sock, owner}).
 
-%% @doc
-%% connect/3 starts a gen_server to look after a tcp connection.
-%% @param Host
-%% The host parameter is either a host name, or a tcpid address
-%% @param Port
-%% The port parameter is a tcp/ip port, an integer 0..65535
-%% @param Options
-%% Options are the gen_tcp:connect options for the link
-%% @end
 -type host() :: [inet:socket_address()|inet:hostname()].
 -type connect_options() :: [gen_tcp:connect_option()].
+-doc """
+`connect/3` starts a gen_server to look after a tcp connection.
+
+- `Host` — either a host name, or a tcpid address
+- `Port` — a tcp/ip port, an integer 0..65535
+- `Options` — the `gen_tcp:connect/3` options for the link
+""".
 -spec connect(host(),integer(),connect_options()) -> 
 		     {ok,pid()} | ignore | {error,{already_started,pid()} | term()}.
 connect(Host, Port, Options) ->

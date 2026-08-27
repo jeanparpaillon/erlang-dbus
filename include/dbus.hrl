@@ -1,9 +1,3 @@
-%%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%%% @copyright (C) 2014, Jean Parpaillon
-%%% @doc
-%%%
-%%% @end
-%%% Created : 28 Jul 2014 by Jean Parpaillon <jean.parpaillon@free.fr>
 -ifndef(dbus_hrl).
 -define(dbus_hrl, true).
 

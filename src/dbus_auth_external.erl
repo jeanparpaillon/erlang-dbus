@@ -1,14 +1,9 @@
-%%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%%% @copyright (C) 2014, Jean Parpaillon
-%%% @doc Implements EXTERNAL SASL mechanism.
-%%%
-%%% See <a href="https://tools.ietf.org/html/rfc4422" >RFC 4422</a> for complete
-%%% specification.
-%%%
-%%% @end
-%%% Created : 5 Jul 2014 by Jean Parpaillon <jean.parpaillon@free.fr>
-
 -module(dbus_auth_external).
+-moduledoc """
+Implements EXTERNAL SASL mechanism.
+
+See [RFC 4422](https://tools.ietf.org/html/rfc4422) for the complete specification.
+""".
 
 -include("dbus.hrl").
 
@@ -20,17 +15,14 @@
 
 -define(cookie, <<"31303030">>).
 
-%% @doc Initialize EXTERNAL mechanism.
-%% 
-%% @end
+-doc "Initialize EXTERNAL mechanism.".
 -spec init() -> {ok, binary()}.
 init() ->
     Cookie = get_cookie(),
     {ok, <<"EXTERNAL ", Cookie/binary>>}.
 
 
-%% @doc Not implemented: ANONYMOUS does not require challenge
-%% @end
+-doc "Not implemented: ANONYMOUS does not require challenge.".
 -spec challenge(binary(), any()) -> {error, invalid_challenge}.
 challenge(_, _) ->
     {error, invalid_challenge}.

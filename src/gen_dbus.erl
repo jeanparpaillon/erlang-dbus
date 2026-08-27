@@ -1,9 +1,5 @@
-%%
-%% @copyright 2006-2007 Mikael Magnusson
-%% @author Mikael Magnusson <mikma@users.sourceforge.net>
-%% @doc dbus object behaviour
-%%
 -module(gen_dbus).
+-moduledoc "dbus object behaviour.".
 
 -behaviour(gen_server).
 

@@ -1,10 +1,5 @@
-%%
-%% @copyright 2015 Jean Parpaillon
-%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%% @doc Peer connections
-%%
-%% @end
 -module(dbus_peer_connection).
+-moduledoc "Peer connections.".
 
 -behaviour(gen_statem).
 -behaviour(dbus_connection).
@@ -59,15 +54,13 @@
 -define(TIMEOUT, 10000).
 
 
-%% @equiv start_link(BusId, [list, {packet, 0}])
-%% @end
+-doc #{equiv => start_link(BusId, [list, {packet, 0}])}.
 -spec start_link(bus_id()) -> {ok, dbus_connection()} | {error, term()}.
 start_link(BusId) ->
     start_link(BusId, [list, {packet, 0}]).
 
 
-%% @doc Start a connection to a peer
-%% @end
+-doc "Start a connection to a peer.".
 -spec start_link(bus_id(), pid() | undefined | list()) -> {ok, dbus_connection()} | {error, term()}.
 start_link(BusId, Options) when is_record(BusId, bus_id),
                                 is_list(Options) ->
@@ -83,15 +76,13 @@ start_link(BusId, ServiceReg, Options) when is_record(BusId, bus_id),
         {error, Err} -> {error, Err}
     end.                           
 
-%% @doc Close the connection
-%% @end
+-doc "Close the connection.".
 -spec close(pid()) -> ok.
 close(Conn) when is_pid(Conn) ->
     gen_statem:cast(Conn, close).
 
 
-%% @doc Synchronously send a message
-%% @end
+-doc "Synchronously send a message.".
 -spec call(pid(), dbus_message()) -> {ok, term()} | {error, term()}.
 call(Conn, #dbus_message{}=Msg) when is_pid(Conn) ->
     case gen_statem:call(Conn, {call, Msg}, infinity) of
@@ -110,17 +101,17 @@ call(Conn, #dbus_message{}=Msg) when is_pid(Conn) ->
     end.
 
 
-%% @doc Asynchronously send a message
-%% @end
+-doc "Asynchronously send a message.".
 -spec cast(pid(), dbus_message()) -> ok | {error, term()}.
 cast(Conn, #dbus_message{}=Msg) when is_pid(Conn) ->
     gen_statem:cast(Conn, Msg).
 
 
-%% @doc Launch authentication on this connection
-%% No message can be sent before authentication.
-%%
-%% @end
+-doc """
+Launch authentication on this connection.
+
+No message can be sent before authentication.
+""".
 -spec auth(pid()) -> {ok, ConnexionId :: undefined | binary()} | {error, term()}.
 auth(Conn) ->
     case gen_statem:call(Conn, auth) of
@@ -140,10 +131,11 @@ auth(Conn) ->
     end.
 
 
-%% @doc Change controlling process for the connection.
-%%
-%% If called by someone else than current owner, `{error, unauthorized}' is returned.
-%% @end
+-doc """
+Change controlling process for the connection.
+
+If called by someone else than current owner, `{error, unauthorized}` is returned.
+""".
 -spec set_controlling_process(Connection :: pid(), Client :: pid()) -> ok | {error, unauthorized}.
 set_controlling_process(Conn, Client) ->
     case gen_statem:call(Conn, {set_controlling_process, Client}) of
@@ -392,7 +384,6 @@ handle_event(info, closed, _, State) ->
 handle_event(What, Evt, StateName, State) ->
     ?error("Unhandled event: ~p:~p @ ~p~n", [What, Evt, StateName]),
     {next_state, StateName, State}.
-
 
 terminate(_Reason, _StateName, #state{sock=Sock}) ->
     case Sock of

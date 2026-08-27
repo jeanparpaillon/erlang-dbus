@@ -1,17 +1,14 @@
-%%%
-%%% @copyright 2014 Jean Parpaillon
-%%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%%% @doc Implements the connection to a D-Bus bus.
-%%%
-%%% Actually, the following addresses classes are supported:
-%%% * `unix'
-%%% * `tcp'
-%%%
-%%% Other classes are _ignored_, in particular `kernel'.
-%%%
-%%% @end
-%%% Created : 22 Jul 2014 by Jean Parpaillon <jean.parpaillon@free.fr>
 -module(dbus_bus_connection).
+-moduledoc """
+Implements the connection to a D-Bus bus.
+
+Actually, the following addresses classes are supported:
+
+- `unix`
+- `tcp`
+
+Other classes are _ignored_, in particular `kernel`.
+""".
 
 -behaviour(dbus_connection).
 
@@ -38,9 +35,7 @@
 -define(KEY_DELIM, $=).
 
 
-%% @doc Retrieve a bus_id from well-known names
-%%
-%% @end
+-doc "Retrieve a `bus_id` from well-known names.".
 -spec get_bus_id(dbus_known_bus()) -> bus_id() | {unsupported, [bus_id()]}.
 get_bus_id(session) ->
     Ids = env_to_bus_id(),
@@ -56,9 +51,7 @@ get_bus_id(system) ->
     ?DEFAULT_BUS_SYSTEM.
 
 
-%% @doc Start a proxy to a bus.
-%%
-%% @end
+-doc "Start a proxy to a bus.".
 -spec connect(bus_id() | dbus_known_bus()) -> {ok, dbus_connection()} | {error, term()}.
 connect(#bus_id{}=BusId) ->
     connect(BusId, undefined);
@@ -91,28 +84,24 @@ connect(BusName, ServiceReg) when BusName =:= system;
     connect(get_bus_id(BusName), ServiceReg).
 
 
-%% @doc Stop the bus proxy
-%% @end
+-doc "Stop the bus proxy.".
 -spec close({?MODULE, dbus_connection()} | dbus_connection()) -> ok.
 close({?MODULE, Bus}) ->     dbus_proxy:stop(Bus);
 close(Bus) ->                dbus_proxy:stop(Bus).
 
 
-%% @doc Send a message to the bus connection, synchronously.
-%% @end
+-doc "Send a message to the bus connection, synchronously.".
 -spec call({?MODULE, dbus_connection()} | dbus_connection(), dbus_message()) -> {ok, term()} | {error, term()}.
 call({?MODULE, Bus}, Msg) -> dbus_proxy:call(Bus, Msg);
 call(Bus, Msg) ->            dbus_proxy:call(Bus, Msg).
 
 
-%% @doc Send a message to the bus connection, asynchronously.
-%% @end
+-doc "Send a message to the bus connection, asynchronously.".
 -spec cast({?MODULE, dbus_connection()} | dbus_connection(), dbus_message()) -> ok | {error, term()}.
 cast({?MODULE, Bus}, Msg) -> dbus_proxy:cast(Bus, Msg);
 cast(Bus, Msg) ->            dbus_proxy:cast(Bus, Msg).
 
-%% @doc Get the DBUS connection unique name.
-%% @end
+-doc "Get the DBUS connection unique name.".
 -spec get_unique_name({?MODULE, dbus_connection()} | dbus_connection()) -> {ok, binary()} | {error, term()}.
 get_unique_name({?MODULE, Bus}) -> dbus_proxy:get_unique_name(Bus);
 get_unique_name(Bus) ->            dbus_proxy:get_unique_name(Bus).

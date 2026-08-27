@@ -1,14 +1,9 @@
-%%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%%% @copyright (C) 2014, Jean Parpaillon
-%%% @doc Implements ANONYMOUS authentication
-%%%
-%%% See <a href="https://tools.ietf.org/html/rfc2245" >RFC 2245</a>
-%%% for complete specification.
-%%%
-%%% @end
-%%% Created : 19 November 2015 by Jean Parpaillon <jean.parpaillon@free.fr>
-
 -module(dbus_auth_anonymous).
+-moduledoc """
+Implements ANONYMOUS authentication.
+
+See [RFC 2245](https://tools.ietf.org/html/rfc2245) for the complete specification.
+""".
 
 -behaviour(dbus_auth).
 
@@ -16,15 +11,13 @@
 -export([init/0,
          challenge/2]).
 
-%% @doc Init ANONYMOUS mechanism
-%% @end
+-doc "Init ANONYMOUS mechanism.".
 -spec init() -> {ok, binary()}.
 init() ->
     {ok, <<"ANONYMOUS">>}.
 
 
-%% @doc Not implemented: ANONYMOUS does not require challenge
-%% @end
+-doc "Not implemented: ANONYMOUS does not require challenge.".
 -spec challenge(binary(), any()) -> {error, invalid_challenge}.
 challenge(_, _) ->
     {error, invalid_challenge}.

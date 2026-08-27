@@ -1,11 +1,3 @@
-%%%-------------------------------------------------------------------
-%%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%%% @copyright (C) 2015, Jean Parpaillon
-%%% @doc
-%%%
-%%% @end
-%%% Created :  26 Jan 2015 by Jean Parpaillon <jean.parpaillon@free.fr>
-%%%-------------------------------------------------------------------
 -module(dbus_client_SUITE).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -42,12 +34,11 @@ end_per_suite(Config) ->
     Config.
 
 %%--------------------------------------------------------------------
-%% @spec all() -> GroupsAndTestCases | {skip,Reason}
+%% all() -> GroupsAndTestCases | {skip,Reason}
 %% GroupsAndTestCases = [{group,GroupName} | TestCase]
 %% GroupName = atom()
 %% TestCase = atom()
 %% Reason = term()
-%% @end
 %%--------------------------------------------------------------------
 all() ->
     [

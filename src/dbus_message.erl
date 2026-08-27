@@ -1,14 +1,9 @@
-%%
-%% @copyright 2006-2007 Mikael Magnusson, 2014-2016 Jean Parpaillon
-%%
-%% @author Mikael Magnusson <mikma@users.sourceforge.net>
-%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%% @doc Build messages
-%%
-%% See <a href="https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-messages" >D-Bus Specification</a>
-%%
-%% @end
 -module(dbus_message).
+-moduledoc """
+Build messages
+
+See [D-Bus Specification](https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-messages).
+""".
 
 -include("dbus.hrl").
 -include("dbus_introspectable.hrl").
@@ -33,6 +28,7 @@
 
 -export([introspect/2]).
 
+-doc "Message type, as encoded in the message header.".
 -type type() :: ?TYPE_INVALID
 	      | ?TYPE_METHOD_CALL
 	      | ?TYPE_METHOD_RETURN
@@ -45,8 +41,7 @@
 %%% API
 %%%
 
-%% @equiv call(Destination, Path, Interface, Member, [])
-%% @end
+-doc #{equiv => call(Destination, Path, Interface, Member, [])}.
 -spec call(Destination :: dbus_name(),
 	   Path        :: dbus_name(),
 	   Interface   :: dbus_name(),
@@ -58,8 +53,7 @@ call(Destination, Path, Interface, Member) ->
     call(Destination, Path, Interface, Member, []).
 
 
-%% @doc Build a method call message
-%% @end
+-doc "Build a method call message.".
 -spec call(Destination :: dbus_name(),
 	   Path        :: dbus_name(),
 	   Interface   :: dbus_name(),
@@ -82,8 +76,7 @@ call(Destination, Path, Interface, Member, Opts) ->
     #dbus_message{header=Header, body= <<>>}.
 
 
-%% @equiv signal(Destination, Path, Interface, Signal, Args, [])
-%% @end
+-doc #{equiv => signal(Destination, Path, Interface, Signal, Args, [])}.
 -spec signal(Destination :: dbus_name(),
 	     Path        :: dbus_name(),
 	     Interface   :: dbus_name(),
@@ -93,8 +86,7 @@ signal(Destination, Path, Interface, Signal, Args) ->
     signal(Destination, Path, Interface, Signal, Args, []).
 
 
-%% @doc Build a signal message
-%% @end
+-doc "Build a signal message.".
 -spec signal(Destination :: dbus_name(),
 	     Path        :: dbus_name(),
 	     Interface   :: dbus_name(),
@@ -118,8 +110,7 @@ signal(Destination, Path, Interface,
     #dbus_message{header=Header, body=Body}.
 
 
-%% @doc Build an error message
-%% @end
+-doc "Build an error message.".
 -spec error(Orig      :: dbus_message(),
 	    ErrName   :: dbus_name() | list(),
 	    ErrText   :: binary() | list()) -> dbus_message().
@@ -137,8 +128,7 @@ error(#dbus_message{}=Orig, ErrName, ErrText) ->
     #dbus_message{header=Header, body=Body}.
 
 
-%% @doc Build a return message
-%% @end
+-doc "Build a return message.".
 -spec return(Orig       :: dbus_message(),
 	     Types      :: [dbus_type()],
 	     Body       :: term()) -> dbus_message().
@@ -155,24 +145,23 @@ return(#dbus_message{}=Orig, Types, Body) when is_list(Types) ->
     #dbus_message{header=Header, body=BinBody}.
 
 
-%% @doc Get serial number from message
-%% @end
+-doc "Get serial number from message.".
 -spec get_serial(dbus_message()) -> integer().
 get_serial(#dbus_message{header=#dbus_header{serial=Serial}}) ->
     Serial.
 
 
-%% @doc Set serial number of a message
-%% @end
+-doc "Set serial number of a message.".
 -spec set_serial(integer(), dbus_message()) -> dbus_message().
 set_serial(Serial, #dbus_message{header=Header}=Message) ->
     Message#dbus_message{header=Header#dbus_header{serial=Serial}}.
 
 
-%% @doc Find a specific field of a message
-%%
-%% Returns `undefined' if not found
-%% @end
+-doc """
+Find a specific field of a message.
+
+Returns `undefined` if not found.
+""".
 -spec find_field(Code :: integer(), dbus_header() | dbus_message()) -> term() | undefined.
 find_field(Code, #dbus_message{header=Header}) ->
     find_field(Code, Header);
@@ -181,12 +170,11 @@ find_field(Code, #dbus_header{fields=Fields}) ->
     proplists:get_value(Code, Fields, undefined).
 
 
-%% @doc Get a specific field of a message.
-%%
-%% Throws error if not found.
-%%
-%% @throws {no_such_field, integer()}
-%% @end
+-doc """
+Get a specific field of a message.
+
+Throws `{no_such_field, Code}` if not found.
+""".
 -spec get_field(Code :: integer(), Msg :: dbus_header() | dbus_message()) -> term().
 get_field(Code, #dbus_message{ header=Header }) ->
     get_field(Code, Header);
@@ -203,9 +191,7 @@ get_field(Code, _) ->
     throw({no_such_field, Code}).
 
 
-%% @doc Set body of a message.
-%%
-%% @end
+-doc "Set body of a message.".
 -spec set_body(Method    :: dbus_method(),
 	       Body      :: term(),
 	       Message   :: dbus_message()) -> dbus_message() | {error, dbus_err()}.
@@ -213,9 +199,7 @@ set_body(#dbus_method{in_sig=Signature, in_types=Types}, Body, Message) ->
     set_body(Signature, Types, Body, Message).
 
 
-%% @doc Set body of a message.
-%%
-%% @end
+-doc "Set body of a message.".
 -spec set_body(Signature :: binary(),
 	       Types     :: [dbus_type()],
 	       Body      :: term(),
@@ -236,24 +220,22 @@ set_body(Signature, Types, Body, #dbus_message{header=#dbus_header{fields=Fields
     end.
 
 
-%% @doc Check message headers matches some values.
-%%
-%% '_' means the header exists with any value
-%%
-%% @end
+-doc """
+Check message headers matches some values.
+
+`'_'` means the header exists with any value.
+""".
 -spec match(HeaderMatches :: [{integer(), dbus_name() | '_'}], dbus_message()) -> boolean().
 match(HeaderMatches, #dbus_message{header=#dbus_header{fields=Fields}}) when is_list(HeaderMatches) ->
     match(true, HeaderMatches, Fields).
 
 
-%% @doc Get message type
-%% @end
+-doc "Get message type.".
 -spec type(dbus_message()) -> type().
 type(#dbus_message{header=#dbus_header{type=T}}) ->
     T.
 
-%% @doc Check message is an error and of the given type
-%% @end
+-doc "Check message is an error and of the given type.".
 -spec is_error(dbus_message(), dbus_name()) -> boolean().
 is_error(Msg, ErrName) ->
     case type(Msg) of
@@ -266,9 +248,7 @@ is_error(Msg, ErrName) ->
 	    false
     end.
 
-%% @doc Build `Introspect' method call message
-%%
-%% @end
+-doc "Build `Introspect` method call message.".
 -spec introspect(Service :: dbus_name(), Path :: dbus_name()) -> dbus_message().
 introspect(Service, Path) ->
     dbus_message:call(Service, Path, ?DBUS_INTROSPECTABLE_IFACE, 'Introspect').

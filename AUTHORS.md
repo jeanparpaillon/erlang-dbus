@@ -4,7 +4,7 @@ Mikael Magnusson <mikma@users.sourceforge.net>
 
 # Maintainer (seemed abandoned by original author)
 
-Jean Parpaillon <jean.parpaillon@free.fr>
+Jean Parpaillon <jean@parpaillon.info>
 
 # Contributors
 

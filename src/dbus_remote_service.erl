@@ -1,11 +1,5 @@
-%%
-%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%% @copyright Copyright 2014 Jean Parpaillon
-%% @doc Implements a remote service ...
-%%
-%% @todo Remember what this module does ;)
-%% @end
 -module(dbus_remote_service).
+-moduledoc "Implements a remote service ...".
 
 -behaviour(gen_server).
 

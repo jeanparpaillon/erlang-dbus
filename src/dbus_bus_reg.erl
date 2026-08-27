@@ -1,12 +1,5 @@
-%%
-%% @copyright 2006-2007 Mikael Magnusson, 2014-2016 Jean Parpaillon
-%% @author Mikael Magnusson <mikma@users.sourceforge.net>
-%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%% @doc Bus registry
-%%
-%% @todo Finish, test, ...
-%% @end
 -module(dbus_bus_reg).
+-moduledoc "Bus registry.".
 
 -behaviour(gen_server).
 

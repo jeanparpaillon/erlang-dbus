@@ -1,8 +1,6 @@
 %%
 %% @copyright 2006-2009 Mikael Magnusson
 %% @author Mikael Magnusson <mikma@users.sourceforge.net>
-%% @doc
-%%
 
 -module(dbus_list_system_services).
 

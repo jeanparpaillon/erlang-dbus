@@ -1,14 +1,9 @@
-%%
-%% @copyright 2006-2007 Mikael Magnusson, 2014-2106 Jean Parpaillon
-%%
-%% @author Mikael Magnusson <mikma@users.sourceforge.net>
-%% @author Jean Parpaillon <jean.parpaillon@free.fr>
-%% @doc D-Bus binary format (un)marshaling.
-%%
-%% See <a href="https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-marshaling" >D-Bus Specification</a>.
-%%
-%% @end
 -module(dbus_marshaller).
+-moduledoc """
+D-Bus binary format (un)marshaling.
+
+See [D-Bus Specification](https://dbus.freedesktop.org/doc/dbus-specification.html#message-protocol-marshaling).
+""".
 
 -include("dbus.hrl").
 
@@ -46,18 +41,21 @@
 %%% API
 %%%
 
-%% @doc Encode a message
-%% Encodes a dbus_message into iolist, including any padding that may be required
-%% Such a marshalled message is ready to send through a socket onto dbus.
-%% As defined in dbus.hrl, a message is a header record and a body.
-%% The marshal_message/1 function marshals the header but passes through
-%% the body portion unchanged. It follows that given the result of this function is
-%% an iolist, and the result of this function is [Header,Body], then Body must
-%% be a valid iolist.
-%% Note that prior to marshalling the message serial must be set, and that
-%% the message body is unaffected by marshalling and so should be in a final form
-%% ready for transmission.
-%% @end
+-doc """
+Encode a message.
+
+Encodes a `dbus_message()` into an iolist, including any padding that may be
+required. Such a marshalled message is ready to send through a socket onto D-Bus.
+
+As defined in `dbus.hrl`, a message is a header record and a body. `marshal_message/1`
+marshals the header but passes through the body portion unchanged. It follows that,
+given the result of this function is an iolist and that result is `[Header, Body]`,
+then `Body` must be a valid iolist.
+
+Note that prior to marshalling the message serial must be set, and that the message
+body is unaffected by marshalling and so should be in a final form ready for
+transmission.
+""".
 -spec marshal_message(dbus_message()) -> iolist().
 marshal_message(#dbus_message{header=#dbus_header{serial=0}}=_Msg) ->
     throw(invalid_serial);
@@ -71,8 +69,7 @@ marshal_message(#dbus_message{header=#dbus_header{type=Type, flags=Flags, serial
     [ marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, iolist_size(Body), S, Fields]), Body ].
 
 
-%% @doc Encode a signature
-%% @end
+-doc "Encode a signature.".
 -spec marshal_signature(dbus_type() | dbus_signature()) -> iolist().
 marshal_signature(byte)        ->   "y";
 marshal_signature(boolean)     ->   "b";
@@ -107,19 +104,21 @@ marshal_signature([Type|R]) ->
     [marshal_signature(Type), marshal_signature(R)].
 
 
-%% @doc Encode objects, given a signature
-%% @end
+-doc "Encode objects, given a signature.".
 -spec marshal_list(dbus_signature(), term()) -> {iolist(), integer()}.
 marshal_list(Types, Value) ->
     marshal_list(Types, Value, 0, []).
 
 
-%% @doc Decode messages
-%%
-%% Returns:
-%% * `{ok, [dbus_message()], binary()}': if binary describe a complete list of messages, eventually with remaining binary.
-%% * `more': if no complete message could be decoded.
-%% @end
+-doc """
+Decode messages.
+
+Returns:
+
+- `{ok, [dbus_message()], binary()}`: if the binary describes a complete list of
+  messages, eventually with a remaining binary.
+- `more`: if no complete message could be decoded.
+""".
 -spec unmarshal_data(binary()) -> {ok, Msgs :: [dbus_message()], Rest :: binary()}
 				      | {error, errors()}
 				      | more.
@@ -130,10 +129,11 @@ unmarshal_data(Data) ->
     end.
 
 
-%% @doc Decode a signature
-%%
-%% Returns `more' if no complete signature could be decoded.
-%% @end
+-doc """
+Decode a signature.
+
+Returns `more` if no complete signature could be decoded.
+""".
 -spec unmarshal_signature(binary()) -> {ok, dbus_signature()} | more.
 unmarshal_signature(<<>>) ->
     {ok, []};
@@ -881,10 +881,8 @@ padding(dict)             -> 4.
 
 -spec pad(Size :: dbus_type()|integer(), MessagePos :: integer()) ->
 		 PaddingBits :: integer().
-% @param Size
-% The size of the binary alignment in bytes
-% @param Pos
-% The length of the formatted message in bytes
+% Size: the size of the binary alignment in bytes
+% Pos: the length of the formatted message in bytes
 %
 % Pos rem Size gives how many bytes beyond padding boundary
 % the current data sits.
