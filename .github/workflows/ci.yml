@@ -38,15 +38,14 @@ jobs:
       - name: Run EUnit
         if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
         run: |
-          rebar3 eunit
-          rebar3 cover
-          rebar3 covertool generate
+          make eunit COVER=1
+          make cover-report
 
       - name: Upload coverage to Codecov
         if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
         uses: codecov/codecov-action@v7
         with:
-          files: coverage.xml
+          directory: cover
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
 

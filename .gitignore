@@ -8,6 +8,7 @@
 /_build
 /hexer
 /hexer.config
+/cover
 
 # erlang
 *.swp
