@@ -18,10 +18,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        otp:
-          - '27'
-          - '28'
-          - '29'
+        include:
+          - otp: '27'
+            rebar3: '3.25.1'
+          - otp: '28'
+            rebar3: '3.25.1'
+          - otp: '29'
+            rebar3: '3.27.0'
 
     steps:
       - name: Checkout
@@ -31,14 +34,14 @@ jobs:
         uses: erlef/setup-beam@v1
         with:
           otp-version: ${{ matrix.otp }}
-          rebar3-version: 3.20.0
+          rebar3-version: ${{ matrix.rebar3 }}
 
       - name: Compile
         run: rebar3 compile
 
       - name: Run EUnit
         if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
-        run: rebar3 eunit -cover
+        run: rebar3 eunit --cover
 
       - name: Creates Cobertura coverage report
         run: rebar3 covertool generate
