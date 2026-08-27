@@ -7,26 +7,26 @@
 
 %% api
 -export([
-	 start_link/1,
-	 register_object/3,
-	 unregister_object/2
-	]).
+         start_link/1,
+         register_object/3,
+         unregister_object/2
+        ]).
 
 %% gen_server callback2
 -export([
-	 init/1,
-	 code_change/3,
-	 handle_call/3,
-	 handle_cast/2,
-	 handle_info/2,
-	 terminate/2
-	]).
+         init/1,
+         code_change/3,
+         handle_call/3,
+         handle_cast/2,
+         handle_info/2,
+         terminate/2
+        ]).
 
 -record(state, {
-	  name,
-	  xml_body,
-	  objects=[]
-	 }).
+          name,
+          xml_body,
+          objects=[]
+         }).
 
 start_link(ServiceName) ->
     gen_server:start_link(?MODULE, [ServiceName], []).
@@ -54,22 +54,22 @@ code_change(_OldVsn, State, _Extra) ->
 handle_call({register_object, Path, Object}, _From, State) ->
     Objects = State#state.objects,
     case lists:keysearch(Path, 1, Objects) of
-	{value, _} ->
-	    {reply, {already_registered, Path}, State};
-	false ->
-	    true = link(Object),
-	    Objects1 = [{Path, Object} | Objects],
-	    {reply, ok, State#state{objects=Objects1}}
+        {value, _} ->
+            {reply, {already_registered, Path}, State};
+        false ->
+            true = link(Object),
+            Objects1 = [{Path, Object} | Objects],
+            {reply, ok, State#state{objects=Objects1}}
     end;
 
 handle_call({unregister_object, Object}, _From, State) ->
     case handle_unregister_object(Object, State) of
-	{ok, State1} ->
-	    {reply, ok, State1};
-	{error, Reason, State1} ->
-	    {reply, Reason, State1};
-	{stop, State1} ->
-	    {stop, normal, State1}
+        {ok, State1} ->
+            {reply, ok, State1};
+        {error, Reason, State1} ->
+            {reply, Reason, State1};
+        {stop, State1} ->
+            {stop, normal, State1}
     end;
 
 handle_call(Request, _From, State) ->
@@ -93,17 +93,17 @@ handle_info({dbus_method_call, Msg, Conn}, State) ->
 
 handle_info({'EXIT', Pid, Reason}, State) ->
     case handle_unregister_object(Pid, State) of
-	{ok, State1} ->
-	    {noreply, State1};
-	{stop, State1} ->
-	    {stop, normal, State1};
-	{error, not_registered, State1} ->
-	    if
-		Reason /= normal ->
-		    {stop, Reason, State1};
-		true ->
-		    {noreply, State1}
-	    end
+        {ok, State1} ->
+            {noreply, State1};
+        {stop, State1} ->
+            {stop, normal, State1};
+        {error, not_registered, State1} ->
+            case Reason of
+                normal ->
+                    {noreply, State1};
+                _ ->
+                    {stop, Reason, State1}
+            end
     end;
 
 handle_info(Info, State) ->
@@ -120,56 +120,56 @@ terminate(_Reason, _State) ->
 handle_unregister_object(Object, State) ->
     Objects = State#state.objects,
     case lists:keysearch(Object, 2, Objects) of
-	{value, {Path, _}} ->
-	    true = unlink(Object),
-	    ?debug("~p: Object terminated ~p ~p~n", [?MODULE, Object, Path]),
-	    Objects1 = lists:keydelete(Object, 2, Objects),
-	    if
-		Objects1 == [] ->
-		    ?debug("~p: No more objects stopping ~p service~n", [?MODULE, State#state.name]),
-		    {stop, State};
-		true ->
-		    {ok, State#state{objects=Objects1}}
-	    end;
-	false ->
-	    {error, not_registered, State}
+        {value, {Path, _}} ->
+            true = unlink(Object),
+            ?debug("~p: Object terminated ~p ~p~n", [?MODULE, Object, Path]),
+            Objects1 = lists:keydelete(Object, 2, Objects),
+            case Objects1 of
+                [] ->
+                    ?debug("~p: No more objects stopping ~p service~n", [?MODULE, State#state.name]),
+                    {stop, State};
+                _ ->
+                    {ok, State#state{objects=Objects1}}
+            end;
+        false ->
+            {error, not_registered, State}
     end.
 
 
 handle_method_call(<<"/">>, #dbus_message{}=Msg, Conn,
-		   #state{objects=Objects}=State) ->
+                   #state{objects=Objects}=State) ->
     Member = dbus_message:get_field(?FIELD_MEMBER, Msg),
     case dbus_constants:to_atom(Member) of
-	'Introspect' ->
-	    Elements = lists:foldl(fun({Path, _}, Res) ->
-					   << $/, PathStr/binary >> = Path,
-					   [#dbus_node{name=PathStr} | Res]
-				   end, [], Objects),
-	    Node = #dbus_node{name= <<"/">>, elements=Elements},
-	    ReplyBody = dbus_introspect:to_xml(Node),
-	    ?debug("Introspect ~p~n", [ReplyBody]),
-	    Reply = dbus_message:return(Msg, [string], [ReplyBody]),
-	    ok = dbus_connection:cast(Conn, Reply),
-	    {noreply, State};
-	_ ->
-	    ErrorName = 'org.freedesktop.DBus.Error.UnknownMethod',
-	    ErrorText = <<"Erlang: Function not found: ", Member/binary>>,
-	    Reply = dbus_message:error(Msg, ErrorName, ErrorText),
-	    ok = dbus_connection:cast(Conn, Reply),
-	    {noreply, State}
+        'Introspect' ->
+            Elements = lists:foldl(fun({Path, _}, Res) ->
+                                           << $/, PathStr/binary >> = Path,
+                                           [#dbus_node{name=PathStr} | Res]
+                                   end, [], Objects),
+            Node = #dbus_node{name= <<"/">>, elements=Elements},
+            ReplyBody = dbus_introspect:to_xml(Node),
+            ?debug("Introspect ~p~n", [ReplyBody]),
+            Reply = dbus_message:return(Msg, [string], [ReplyBody]),
+            ok = dbus_connection:cast(Conn, Reply),
+            {noreply, State};
+        _ ->
+            ErrorName = 'org.freedesktop.DBus.Error.UnknownMethod',
+            ErrorText = <<"Erlang: Function not found: ", Member/binary>>,
+            Reply = dbus_message:error(Msg, ErrorName, ErrorText),
+            ok = dbus_connection:cast(Conn, Reply),
+            {noreply, State}
     end;
 
 handle_method_call(Path, #dbus_message{}=Msg, Conn, #state{objects=Objects}=State)
   when is_binary(Path) ->
     _ = case proplists:get_value(Path, Objects) of
-	undefined ->
-	    ErrorName = 'org.freedesktop.DBus.Error.UnknownObject',
-	    ErrorText = <<"Erlang: Object not found: ", Path/binary>>,
-	    Reply = dbus_message:error(Msg, ErrorName, ErrorText),
-	    ?debug("Reply ~p~n", [Reply]),
-	    ok = dbus_connection:cast(Conn, Reply);
-	Object ->
-	    _ = Object ! {dbus_method_call, Msg, Conn}
+        undefined ->
+            ErrorName = 'org.freedesktop.DBus.Error.UnknownObject',
+            ErrorText = <<"Erlang: Object not found: ", Path/binary>>,
+            Reply = dbus_message:error(Msg, ErrorName, ErrorText),
+            ?debug("Reply ~p~n", [Reply]),
+            ok = dbus_connection:cast(Conn, Reply);
+        Object ->
+            _ = Object ! {dbus_method_call, Msg, Conn}
     end,
     {noreply, State}.
 

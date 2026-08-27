@@ -70,7 +70,7 @@ read_cookie(Context, CookieId) ->
             Result = read_cookie2(File, CookieId),
             ok = file:close(File),
             Result;
-        {error, Err}->
+        {error, Err} ->
             {error, Err}
     end.
 
@@ -81,9 +81,9 @@ read_cookie2(Device, CookieId) ->
         {ok, Line} ->
             case binary:split(Line, [<< $\s >>], [global]) of
                 [CookieId, _Time, Cookie] ->
-		    {ok, strip(Cookie)};
-		[_Id, _Time, _] ->
-		    read_cookie2(Device, CookieId);
+                    {ok, strip(Cookie)};
+                [_Id, _Time, _] ->
+                    read_cookie2(Device, CookieId);
                 Else ->
                     {error, {malformed_cookie, Else}}
             end

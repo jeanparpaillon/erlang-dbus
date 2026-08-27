@@ -4,14 +4,14 @@
 -include("dbus.hrl").
 
 -export([list_to_iface/1,
-	 list_to_method/1,
-	 list_to_signal/1]).
+         list_to_method/1,
+         list_to_signal/1]).
 
 -export([bin_to_iface/1,
-	 bin_to_method/1,
-	 bin_to_signal/1,
-	 bin_to_member/1,
-	 bin_to_error/1]).
+         bin_to_method/1,
+         bin_to_signal/1,
+         bin_to_member/1,
+         bin_to_error/1]).
 
 -doc #{equiv => bin_to_iface(list_to_binary(Str))}.
 -spec list_to_iface(string()) -> dbus_name().
@@ -129,10 +129,10 @@ bin_to_signal(Bin) when is_binary(Bin) -> Bin.
 -spec bin_to_member(binary()) -> dbus_name().
 bin_to_member(Bin) ->
     case bin_to_method(Bin) of
-	Bin2 when is_binary(Bin2) ->
-	    bin_to_signal(Bin2);
-	Atom ->
-	    Atom
+        Bin2 when is_binary(Bin2) ->
+            bin_to_signal(Bin2);
+        Atom ->
+            Atom
     end.
 
 

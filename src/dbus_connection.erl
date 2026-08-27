@@ -16,8 +16,8 @@ Actually implemented by:
 -callback cast(Conn :: term(), dbus_message()) -> ok | {error, term()}.
 
 -export([close/1,
-	 call/2,
-	 cast/2]).
+         call/2,
+         cast/2]).
 
 -doc "Close the connection.".
 -spec close(dbus_connection()) -> ok.

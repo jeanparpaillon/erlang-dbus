@@ -26,14 +26,14 @@ See [D-Bus Specification](https://dbus.freedesktop.org/doc/dbus-specification.ht
 -define(HEADER_SIGNATURE, [byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}]).
 
 -type errors() :: invalid_serial
-		| {marshaling, dbus_type(), binary()}
-		| {unmarshaling, dbus_type(), binary()}
-		| {dbus_parse_error, term()}
-		| {bad_type_code, integer()}
-		| dbus_parse_error
-		| body_parse_error
-		| bad_header
-		| term().
+                | {marshaling, dbus_type(), binary()}
+                | {unmarshaling, dbus_type(), binary()}
+                | {dbus_parse_error, term()}
+                | {bad_type_code, integer()}
+                | dbus_parse_error
+                | body_parse_error
+                | bad_header
+                | term().
 
 -export_type([errors/0]).
 
@@ -100,7 +100,7 @@ marshal_signature({dict, KeyType, ValueType}) ->
 marshal_signature([]) ->
     "";
 
-marshal_signature([Type|R]) ->
+marshal_signature([Type | R]) ->
     [marshal_signature(Type), marshal_signature(R)].
 
 
@@ -120,12 +120,12 @@ Returns:
 - `more`: if no complete message could be decoded.
 """.
 -spec unmarshal_data(binary()) -> {ok, Msgs :: [dbus_message()], Rest :: binary()}
-				      | {error, errors()}
-				      | more.
+                                      | {error, errors()}
+                                      | more.
 unmarshal_data(Data) ->
     try unmarshal_data(Data, [])
     catch throw:Err ->
-	    {error, Err}
+            {error, Err}
     end.
 
 
@@ -164,7 +164,7 @@ marshal_list([Type | T], [Value | V], Pos, Res) ->
 marshal(byte, Value, Pos) when is_integer(Value) andalso 255 >= Value ->
     marshal_uint(1, Value, Pos);
 
-marshal(boolean, Value, Pos) when true =:= Value orelse false =:= Value ->
+marshal(boolean, Value, Pos) when is_boolean(Value) ->
     Int =
         case Value of
             true -> 1;
@@ -178,7 +178,7 @@ marshal(int16, Value, Pos) when Value > -32767 andalso Value =< 32767 ->
 marshal(uint16, Value, Pos) when Value >= 0 andalso Value =< 65535 ->
     marshal_uint(2, Value, Pos);
 
-marshal(int32, Value, Pos) when Value >= -2147483647 andalso Value =< 2147483647->
+marshal(int32, Value, Pos) when Value >= -2147483647 andalso Value =< 2147483647 ->
     marshal_int(4, Value, Pos);
 
 marshal(uint32, Value, Pos) when Value >= 0 andalso Value =< 4294967295 ->
@@ -193,11 +193,11 @@ marshal(uint64, Value, Pos) when Value >= 0 ->
 
 marshal(double, Value, Pos) when is_integer(Value) ->
     Pad = pad(8, Pos),
-    {<< 0:Pad, (float(Value)):64/little-float >>, Pos + Pad div 8+ 8};
+    {<< 0:Pad, (float(Value)):64/little-float >>, Pos + Pad div 8 + 8};
 
 marshal(double, Value, Pos) when is_float(Value) ->
     Pad = pad(8, Pos),
-    {<< 0:Pad, Value:64/little-float >>, Pos + Pad div 8+ 8};
+    {<< 0:Pad, Value:64/little-float >>, Pos + Pad div 8 + 8};
 
 marshal(string, Value, Pos) when is_atom(Value) ->
     marshal(string, atom_to_binary(Value, utf8), Pos);
@@ -247,10 +247,10 @@ marshal(variant, false=Value, Pos) ->
 marshal(variant, Value, Pos) when is_float(Value) ->
     marshal_variant(double, Value, Pos);
 
-marshal(variant, Value, Pos) when is_integer(Value), Value < 0 ->
+marshal(variant, Value, Pos) when is_integer(Value) andalso Value < 0 ->
     marshal_int_variant(Value, Pos);
 
-marshal(variant, Value, Pos) when is_integer(Value), Value >= 0 ->
+marshal(variant, Value, Pos) when is_integer(Value) andalso Value >= 0 ->
     marshal_uint_variant(Value, Pos);
 
 marshal(variant, Value, Pos) when is_list(Value) ->
@@ -270,7 +270,7 @@ marshal(Type, Value, _) ->
     throw({marshaling, Type, Value}).
 
 
-infer_type(Value) when is_binary(Value)->
+infer_type(Value) when is_binary(Value) ->
     {array, byte};
 infer_type(true) ->
     boolean;
@@ -282,7 +282,7 @@ infer_type(Value) when is_integer(Value), Value >= 0 ->
     infer_uint(Value);
 infer_type(Value) when is_tuple(Value) ->
     infer_struct(tuple_to_list(Value));
-infer_type(Value) when is_atom(Value)->
+infer_type(Value) when is_atom(Value) ->
     string;
 infer_type(Value) when is_list(Value) ->
     string;
@@ -400,16 +400,16 @@ marshal_dict(KeyType, ValueType, Value, Pos) when element(1, Value) == dict ->
 marshal_struct(SubTypes, Values, Pos) ->
     Pad = pad(8, Pos),
     {Values1, Pos1} = marshal_struct(SubTypes, Values, Pos + Pad div 8, []),
-    if
-        Pad == 0 ->
+    case Pad of
+        0 ->
             {Values1, Pos1};
-        Pad > 0 ->
+        _ when Pad > 0 ->
             {[<< 0:Pad >>, Values1], Pos1}
     end.
 
 marshal_struct([], [], Pos, Res) ->
     {Res, Pos};
-marshal_struct([SubType|R], [Value|V], Pos, Res) ->
+marshal_struct([SubType | R], [Value | V], Pos, Res) ->
     {Value1, Pos1} = marshal(SubType, Value, Pos),
     marshal_struct(R, V, Pos1, [Res, Value1]).
 
@@ -417,7 +417,7 @@ marshal_struct([SubType|R], [Value|V], Pos, Res) ->
 
 marshal_struct_signature([], Res) ->
     Res;
-marshal_struct_signature([SubType|R], Res) ->
+marshal_struct_signature([SubType | R], Res) ->
     marshal_struct_signature(R, [Res, marshal_signature(SubType)]).
 
 %%%
@@ -491,8 +491,8 @@ unmarshal_header(Bin) when byte_size(Bin) < 16 ->
     more;
 unmarshal_header(<<Endian/integer, Type/integer, Flags/integer, ?DBUS_VERSION_MAJOR, Rest/bits>>) ->
     unmarshal_header2(Rest, #dbus_header{endian=Endian, type=Type, flags=Flags});
-unmarshal_header(_Data) ->
-    ?debug("Bad message header: ~p~n", [_Data]),
+unmarshal_header(Data) ->
+    ?debug("Bad message header: ~p~n", [Data]),
     throw(bad_header).
 
 unmarshal_header2(<<Length:4/unsigned-little-integer-unit:8, Serial:4/unsigned-little-integer-unit:8, Bin/bits>>,
@@ -510,10 +510,10 @@ unmarshal_header_fields(Bin, #dbus_header{endian=Endian, size=Size}=Header) ->
             more;
         {ok, Fields, Rest, Pos} ->
             Pad = pad(8, Pos),
-            if
-                byte_size(Rest) < Pad/8 + Size ->
-                    more;
+            case byte_size(Rest) < Pad / 8 + Size of
                 true ->
+                    more;
+                false ->
                     <<0:Pad, Body:Size/binary, Rest2/binary>> = Rest,
                     {ok, Header#dbus_header{fields=Fields}, Body, Rest2}
             end
@@ -526,7 +526,7 @@ unmarshal_single_type(<<>>) ->
 unmarshal_single_type(Bin) when is_binary(Bin) ->
     case unmarshal_signature(Bin, []) of
         {ok, [Type], <<>>} -> {ok, Type};
-	{ok, _, _} -> throw({unmarshaling, signature, Bin});
+        {ok, _, _} -> throw({unmarshaling, signature, Bin});
         more -> more
     end.
 
@@ -695,7 +695,7 @@ unmarshal_signature(<<$a, ${, KeySig, Rest/bits>>, Acc) ->
         {ok, [ValueType], Rest2} ->
             unmarshal_signature(Rest2, [ {dict, KeyType, ValueType} | Acc ]);
         {ok, _, _} ->
-	    throw({unmarshaling, dict, KeySig, Rest});
+            throw({unmarshaling, dict, KeySig, Rest});
         more ->
             more
     end;
@@ -703,7 +703,7 @@ unmarshal_signature(<<$a, ${, KeySig, Rest/bits>>, Acc) ->
 unmarshal_signature(<<$a, Rest/bits>>, Acc) ->
     case unmarshal_array_signature(Rest) of
         {ok, Type, Rest2} ->
-	    unmarshal_signature(Rest2, [ {array, Type} | Acc ]);
+            unmarshal_signature(Rest2, [ {array, Type} | Acc ]);
         more -> more
     end;
 
@@ -711,7 +711,7 @@ unmarshal_signature(<<$(, Rest/bits>>, Acc) ->
     case unmarshal_signature(Rest, []) of
         {ok, [], _} -> more;
         {ok, Types, Rest2} ->
-	    unmarshal_signature(Rest2, [ {struct, Types} | Acc ]);
+            unmarshal_signature(Rest2, [ {struct, Types} | Acc ]);
         more -> more
     end;
 
@@ -734,12 +734,12 @@ unmarshal_array_signature(<< $a, Rest/bits >>) ->
 
 unmarshal_array_signature(<< $(, Rest/bits >>) ->
     case unmarshal_signature(Rest, []) of
-	{ok, [], _} ->
-	    more;
-	{ok, Types, Rest2} ->
-	    {ok, {struct, Types}, Rest2};
-	more ->
-	    more
+        {ok, [], _} ->
+            more;
+        {ok, Types, Rest2} ->
+            {ok, {struct, Types}, Rest2};
+        more ->
+            more
     end;
 
 unmarshal_array_signature(<< C, Rest/bits >>) ->
@@ -763,7 +763,7 @@ unmarshal_type_code($r) -> struct;
 unmarshal_type_code($v) -> variant;
 unmarshal_type_code($e) -> dict_entry;
 unmarshal_type_code($a) -> array;
-unmarshal_type_code(_C) -> throw({bad_type_code, _C}).
+unmarshal_type_code(C) -> throw({bad_type_code, C}).
 
 
 unmarshal_struct(SubTypes, Data, Pos, Endian) ->
@@ -784,10 +784,10 @@ unmarshal_struct([SubType | S], Data, Acc, Pos, Endian) ->
 unmarshal_dict(KeyType, ValueType, Length, Data, Pos, Endian) ->
     SubType = {struct, [KeyType, ValueType]},
     Pad = pad(padding(SubType), Pos),
-    if
-        byte_size(Data) < Pad / 8 ->
-            more;
+    case byte_size(Data) < Pad / 8 of
         true ->
+            more;
+        false ->
             << 0:Pad, Rest/binary >> = Data,
             NewPos = Pos + Pad div 8,
             unmarshal_dict(KeyType, ValueType, Length, Rest, #{}, NewPos, Endian)
@@ -810,10 +810,10 @@ unmarshal_dict(KeyType, ValueType, Length, Data, Acc, Pos, Endian) when is_integ
 
 unmarshal_array(SubType, Length, Data, Pos, Endian) ->
     Pad = pad(padding(SubType), Pos),
-    if
-        byte_size(Data) < Pad / 8 ->
-            more;
+    case byte_size(Data) < Pad / 8 of
         true ->
+            more;
+        false ->
             << 0:Pad, Rest/binary >> = Data,
             NewPos = Pos + Pad div 8,
             unmarshal_array(SubType, Length, Rest, [], NewPos, Endian)
@@ -838,7 +838,7 @@ unmarshal_tuple(Types, Data, Endian) when is_list(Types), is_binary(Data) ->
 
 unmarshal_tuple([], Rest, Acc, Pos, _) ->
     {ok, list_to_tuple(lists:reverse(Acc)), Rest, Pos};
-unmarshal_tuple([Type|T], Data, Acc, Pos, Endian) when byte_size(Data) > 0 ->
+unmarshal_tuple([Type | T], Data, Acc, Pos, Endian) when byte_size(Data) > 0 ->
     case unmarshal(Type, Data, Pos, Endian) of
         more ->
             more;
@@ -879,8 +879,8 @@ padding({struct, _Types}) -> 8;
 padding(variant)          -> 1;
 padding(dict)             -> 4.
 
--spec pad(Size :: dbus_type()|integer(), MessagePos :: integer()) ->
-		 PaddingBits :: integer().
+-spec pad(Size :: dbus_type() | integer(), MessagePos :: integer()) ->
+                 PaddingBits :: integer().
 % Size: the size of the binary alignment in bytes
 % Pos: the length of the formatted message in bytes
 %
@@ -897,7 +897,7 @@ pad(Size, Pos) when is_integer(Size) ->
     ((Size - (Pos rem Size)) rem Size) * 8;
 pad(Type, Pos) when is_atom(Type);
                     array =:= element(1, Type);
-                    struct =:= element(1, Type)->
+                    struct =:= element(1, Type) ->
     pad(padding(Type), Pos).
 
 %%%
@@ -906,33 +906,33 @@ pad(Type, Pos) when is_atom(Type);
 -ifdef(TEST).
 marshal_list_test() ->
     {Bin, Pos} = marshal_list([string, {array, {struct, [byte, string, variant]}}, uint32, int32],
-			      [<<"http://schemas.ogf.org/occi/infrastructure#compute">>, [], 1, -1]),
+                              [<<"http://schemas.ogf.org/occi/infrastructure#compute">>, [], 1, -1]),
     ?assertMatch({<<
-		    50:8/little-unsigned-unit:4, "http://schemas.ogf.org/occi/infrastructure#compute", 0,
-		    0,                                                          %% string + padding
-		    0:8/little-unsigned-unit:4, 0:8/little-unsigned-unit:4,     %% array length + padding (struct)
-		    1:8/little-unsigned-unit:4,                                 %% 1 (uint32)
-		    -1:8/little-signed-unit:4                                   %% -1 (int32
-		  >>,
-		  72},
-		 {iolist_to_binary(Bin), Pos}),
+                    50:8/little-unsigned-unit:4, "http://schemas.ogf.org/occi/infrastructure#compute", 0,
+                    0,                                                          %% string + padding
+                    0:8/little-unsigned-unit:4, 0:8/little-unsigned-unit:4,     %% array length + padding (struct)
+                    1:8/little-unsigned-unit:4,                                 %% 1 (uint32)
+                    -1:8/little-signed-unit:4                                   %% -1 (int32
+                  >>,
+                  72},
+                 {iolist_to_binary(Bin), Pos}),
     {Bin2, Pos2} = marshal_list([string, {array, {struct, [byte, string, variant]}}, uint32, int32],
-				[<<"http://schemas.ogf.org/occi/infrastructure#compute">>,
-				 [{1, <<"str">>, 24}], 1, -1]),
+                                [<<"http://schemas.ogf.org/occi/infrastructure#compute">>,
+                                 [{1, <<"str">>, 24}], 1, -1]),
 
     ?assertMatch({<<
-		    50:8/little-unsigned-unit:4, "http://schemas.ogf.org/occi/infrastructure#compute", 0,
-		    0,                                                          %% string + padding
-		    18:8/little-unsigned-unit:4, 0:8/little-unsigned-unit:4,    %% array length + padding (struct)
-		    1:8, 0:8/unit:3,                                            %% struct<byte + padding, ...
-		    3:8/little-unsigned-unit:4, "str", 0,                       %% ...string...
-		    1:8/little-unsigned-unit:1, $q, 0, 0,                       %% ...variant...
-		    24:8/little-unsigned-unit:2, 0:8/little-unsigned-unit:2,    %% uint16> + padding
-		    1:8/little-unsigned-unit:4,                                 %% 1 (uint32)
-		    -1:8/little-signed-unit:4                                   %% -1 (int32
-		  >>,
-		  92},
-		 {iolist_to_binary(Bin2), Pos2}).
+                    50:8/little-unsigned-unit:4, "http://schemas.ogf.org/occi/infrastructure#compute", 0,
+                    0,                                                          %% string + padding
+                    18:8/little-unsigned-unit:4, 0:8/little-unsigned-unit:4,    %% array length + padding (struct)
+                    1:8, 0:8/unit:3,                                            %% struct<byte + padding, ...
+                    3:8/little-unsigned-unit:4, "str", 0,                       %% ...string...
+                    1:8/little-unsigned-unit:1, $q, 0, 0,                       %% ...variant...
+                    24:8/little-unsigned-unit:2, 0:8/little-unsigned-unit:2,    %% uint16> + padding
+                    1:8/little-unsigned-unit:4,                                 %% 1 (uint32)
+                    -1:8/little-signed-unit:4                                   %% -1 (int32
+                  >>,
+                  92},
+                 {iolist_to_binary(Bin2), Pos2}).
 
 marshall_byte_test_() ->
     [
@@ -979,137 +979,137 @@ marshall_float_test_() ->
 marshall_string_test_() ->
     [
      ?_assertMatch({[<< 9:8/integer-little-unsigned-unit:4 >>, <<"my string">>, 0 ], 14},
-		   marshal(string, "my string", 0)),
+                   marshal(string, "my string", 0)),
      ?_assertMatch({[<< 9:8/integer-little-unsigned-unit:4 >>, <<"my string">>, 0 ], 14},
-		   marshal(string, <<"my string">>, 0)),
+                   marshal(string, <<"my string">>, 0)),
      ?_assertMatch({[<< 7:8/integer-little-unsigned-unit:4 >>, <<"an_atom">>, 0 ], 12},
-		   marshal(string, 'an_atom', 0)),
+                   marshal(string, 'an_atom', 0)),
 
      ?_assertMatch({[<< 0:8/unit:2, 9:8/integer-little-unsigned-unit:4 >>, <<"my string">>, 0 ], 18},
-		   marshal(string, "my string", 2))
+                   marshal(string, "my string", 2))
     ].
 
 marshall_object_path_test_() ->
     [
      ?_assertMatch({[<< 10:8/integer-little-unsigned-unit:4 >>, <<"/my/string">>, 0 ], 15},
-		   marshal(object_path, <<"/my/string">>, 0))
+                   marshal(object_path, <<"/my/string">>, 0))
     ].
 
 marshall_signature_test_() ->
     [
      ?_assertMatch({[<< 6:8/integer-little-unsigned-unit:1 >>, <<"yasgoy">>, 0 ], 8},
-		   marshal(signature, <<"yasgoy">>, 0))
+                   marshal(signature, <<"yasgoy">>, 0))
     ].
 
 marshall_array_test() ->
     {Io, Pad} = marshal({array, string}, ["un", "deux", "trois"], 0),
     ?assertMatch({<<
-		     30:8/integer-little-unsigned-unit:4,
-		     2:8/integer-little-unsigned-unit:4, "un", 0, 0:8/unit:1,
-		     4:8/integer-little-unsigned-unit:4, "deux", 0, 0:8/unit:3,
-		     5:8/integer-little-unsigned-unit:4, "trois", 0
-		  >>, 34},
-		 {iolist_to_binary(Io), Pad}),
+                     30:8/integer-little-unsigned-unit:4,
+                     2:8/integer-little-unsigned-unit:4, "un", 0, 0:8/unit:1,
+                     4:8/integer-little-unsigned-unit:4, "deux", 0, 0:8/unit:3,
+                     5:8/integer-little-unsigned-unit:4, "trois", 0
+                  >>, 34},
+                 {iolist_to_binary(Io), Pad}),
 
     {Io2, Pad2} = marshal({array, string}, ["un", "deux", "trois"], 1),
     ?assertMatch({<<
-		     0:8/unit:3, 30:8/integer-little-unsigned-unit:4,
-		     2:8/integer-little-unsigned-unit:4, "un", 0, 0:8/unit:1,
-		     4:8/integer-little-unsigned-unit:4, "deux", 0, 0:8/unit:3,
-		     5:8/integer-little-unsigned-unit:4, "trois", 0
-		  >>, 38},
-		 {iolist_to_binary(Io2), Pad2}),
+                     0:8/unit:3, 30:8/integer-little-unsigned-unit:4,
+                     2:8/integer-little-unsigned-unit:4, "un", 0, 0:8/unit:1,
+                     4:8/integer-little-unsigned-unit:4, "deux", 0, 0:8/unit:3,
+                     5:8/integer-little-unsigned-unit:4, "trois", 0
+                  >>, 38},
+                 {iolist_to_binary(Io2), Pad2}),
 
     {Io3, Pad3} = marshal({array, uint64}, [500, 245], 0),
     ?assertMatch({<<
-		     16:8/integer-little-unsigned-unit:4, 0:8/unit:4,
-		     500:64/integer-little-unsigned-unit:1,
-		     245:64/integer-little-unsigned-unit:1
-		  >>, 24},
-		 {iolist_to_binary(Io3), Pad3}).
+                     16:8/integer-little-unsigned-unit:4, 0:8/unit:4,
+                     500:64/integer-little-unsigned-unit:1,
+                     245:64/integer-little-unsigned-unit:1
+                  >>, 24},
+                 {iolist_to_binary(Io3), Pad3}).
 
 unmarshal_byte_test_() ->
     [
-     ?_assertEqual({ok, 4, <<>>, 1}, unmarshal(byte, <<4>>, 0, $l))
-    ,?_assertEqual({ok, 4, <<"xyz">>, 1}, unmarshal(byte, <<4, "xyz">>, 0, $l))
+     ?_assertEqual({ok, 4, <<>>, 1}, unmarshal(byte, <<4>>, 0, $l)),
+     ?_assertEqual({ok, 4, <<"xyz">>, 1}, unmarshal(byte, <<4, "xyz">>, 0, $l))
     ].
 
 unmarshal_boolean_test_() ->
     [
-     ?_assertEqual({ok, true, <<>>, 4}, unmarshal(boolean, <<1,0,0,0>>, 0, $l))
-    ,?_assertEqual({ok, true, <<"xyz">>, 4}, unmarshal(boolean, <<1,0,0,0,"xyz">>, 0, $l))
-    ,?_assertEqual({ok, false, <<>>, 4}, unmarshal(boolean, <<0,0,0,0>>, 0, $l))
-    ,?_assertEqual(more, unmarshal(boolean, <<"x">>, 0, $l))
-    ,?_assertThrow({unmarshaling, boolean, <<2, 0, 0, 0>>}, unmarshal(boolean, <<2,0,0,0>>, 0, $l))
+     ?_assertEqual({ok, true, <<>>, 4}, unmarshal(boolean, <<1, 0, 0, 0>>, 0, $l)),
+     ?_assertEqual({ok, true, <<"xyz">>, 4}, unmarshal(boolean, <<1, 0, 0, 0, "xyz">>, 0, $l)),
+     ?_assertEqual({ok, false, <<>>, 4}, unmarshal(boolean, <<0, 0, 0, 0>>, 0, $l)),
+     ?_assertEqual(more, unmarshal(boolean, <<"x">>, 0, $l)),
+     ?_assertThrow({unmarshaling, boolean, <<2, 0, 0, 0>>}, unmarshal(boolean, <<2, 0, 0, 0>>, 0, $l))
     ].
 
 unmarshal_endian_test_() ->
     [
-     ?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<1,0,0,0>>, 0, $l))
-    ,?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<0,0,0,1>>, 0, $B))
-    ,?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<1,0,0,0, "xyz">>, 0, $l))
-    ,?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<0,0,0,1, "xyz">>, 0, $B))
+     ?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<1, 0, 0, 0>>, 0, $l)),
+     ?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<0, 0, 0, 1>>, 0, $B)),
+     ?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<1, 0, 0, 0, "xyz">>, 0, $l)),
+     ?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<0, 0, 0, 1, "xyz">>, 0, $B))
     ].
 
 unmarshal_dict_test() ->
     Bin = <<
-	     29:8/integer-little-unsigned-unit:4, 0:8/unit:4,
-	     $a, 0:8/unit:3,
-	     4:8/integer-little-unsigned-unit:4, "plop", 0, 0:8/unit:3,
-	     $b, 0:8/unit:3,
-	     4:8/integer-little-unsigned-unit:4, "truc", 0
-	  >>,
+             29:8/integer-little-unsigned-unit:4, 0:8/unit:4,
+             $a, 0:8/unit:3,
+             4:8/integer-little-unsigned-unit:4, "plop", 0, 0:8/unit:3,
+             $b, 0:8/unit:3,
+             4:8/integer-little-unsigned-unit:4, "truc", 0
+          >>,
     ?assertMatch({ok, #{ $a := <<"plop">>, $b := <<"truc">> }, <<>>, 37},
-		 unmarshal({dict, byte, string}, Bin, 0, $l)),
+                 unmarshal({dict, byte, string}, Bin, 0, $l)),
 
     ?assertMatch({ok, [ {$a, <<"plop">>}, {$b, <<"truc">>} ], <<>>, 37},
-		 unmarshal({array, {struct, [byte, string]}}, Bin, 0, $l)),
+                 unmarshal({array, {struct, [byte, string]}}, Bin, 0, $l)),
 
     DictVariant = <<
-		    5:8/integer-little-unsigned-unit:1, "a{ys}", 0, 0:8/unit:1,
-		    Bin/binary
-		  >>,
+                    5:8/integer-little-unsigned-unit:1, "a{ys}", 0, 0:8/unit:1,
+                    Bin/binary
+                  >>,
     ?assertMatch({ok, #{ $a := <<"plop">>, $b := <<"truc">> }, <<>>, 45},
-		 unmarshal(variant, DictVariant, 0, $l)),
+                 unmarshal(variant, DictVariant, 0, $l)),
 
     ArrayVariant = <<
-		     5:8/integer-little-unsigned-unit:1, "a(ys)", 0, 0:8/unit:1,
-		     Bin/binary
-		   >>,
+                     5:8/integer-little-unsigned-unit:1, "a(ys)", 0, 0:8/unit:1,
+                     Bin/binary
+                   >>,
     ?assertMatch({ok, [ {$a, <<"plop">>}, {$b, <<"truc">>} ], <<>>, 45},
-		 unmarshal(variant, ArrayVariant, 0, $l)).
+                 unmarshal(variant, ArrayVariant, 0, $l)).
 
 
 unmarshal_string_test_() ->
     Bin = <<
-	    8:8/integer-little-unsigned-unit:4,
-	    "a string", 0
-	  >>,
+            8:8/integer-little-unsigned-unit:4,
+            "a string", 0
+          >>,
     Variant = <<
-		1, $s, 0, 0:8/unit:1,
-		Bin/binary
-	      >>,
+                1, $s, 0, 0:8/unit:1,
+                Bin/binary
+              >>,
     [
      ?_assertMatch({ok, <<"a string">>, <<>>, 13},
-		   unmarshal(string, Bin, 0, $l)),
+                   unmarshal(string, Bin, 0, $l)),
      ?_assertMatch({ok, <<"a string">>, <<>>, 17},
-		   unmarshal(variant, Variant, 0, $l))
+                   unmarshal(variant, Variant, 0, $l))
     ].
 
 unmarshal_signature_test() ->
     [
      ?_assertMatch([
-		    {array, {array, {array, string}}}, byte
-		   ], unmarshal_signature(<<"aaasy">>)),
+                    {array, {array, {array, string}}}, byte
+                   ], unmarshal_signature(<<"aaasy">>)),
      ?_assertMatch([
-		    byte,
-		    {dict, boolean, variant},
-		    string,
-		    string
-		   ], unmarshal_signature(<<"ya{bv}ss">>)),
+                    byte,
+                    {dict, boolean, variant},
+                    string,
+                    string
+                   ], unmarshal_signature(<<"ya{bv}ss">>)),
      ?_assertMatch([
-		    {array, {struct, [string, string, {array, string}, {dict, string, variant}, string]}},
-		    string
-		   ], unmarshal_signature(<<"a(ssasa{sv}s)s">>))
+                    {array, {struct, [string, string, {array, string}, {dict, string, variant}, string]}},
+                    string
+                   ], unmarshal_signature(<<"a(ssasa{sv}s)s">>))
     ].
 -endif.

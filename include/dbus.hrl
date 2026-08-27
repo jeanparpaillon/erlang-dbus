@@ -12,7 +12,7 @@
 -endif.
 
 -ifndef(warn).
--define(warn(Msg),error_logger:warning_msg(Msg)).
+-define(warn(Msg), error_logger:warning_msg(Msg)).
 -define(warn(Msg, Data), error_logger:warning_msg(Msg, Data)).
 -endif.
 
@@ -80,7 +80,7 @@
 -record(bus_id, {
           scheme,               %% tcp or unix
           options               %% * tcp: address, port
-	                        %% * unix: path|abstract
+                                %% * unix: path|abstract
          }).
 -type bus_id() :: #bus_id{}.
 

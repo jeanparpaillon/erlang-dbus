@@ -18,16 +18,16 @@ Other classes are _ignored_, in particular `kernel`.
 -include("dbus_introspectable.hrl").
 
 -export([get_bus_id/1,
-	 connect/1,
+         connect/1,
      connect/2,
      get_unique_name/1]).
 
 %% dbus_connection callbacks
 -export([close/1,
-	 call/2,
-	 cast/2]).
+         call/2,
+         cast/2]).
 
--define(DEFAULT_BUS_SYSTEM, #bus_id{scheme=unix,options=[{path, "/var/run/dbus/system_bus_socket"}]}).
+-define(DEFAULT_BUS_SYSTEM, #bus_id{scheme=unix, options=[{path, "/var/run/dbus/system_bus_socket"}]}).
 -define(SESSION_ENV, "DBUS_SESSION_BUS_ADDRESS").
 -define(SERVER_DELIM, $;).
 -define(TRANSPORT_DELIM, $:).
@@ -40,11 +40,11 @@ Other classes are _ignored_, in particular `kernel`.
 get_bus_id(session) ->
     Ids = env_to_bus_id(),
     case lists:filter(fun (#bus_id{scheme=unix}) -> true;
-			  (#bus_id{scheme=tcp}) -> true;
-			  (_) -> false
-		      end, Ids) of
-	[] -> {unsupported, Ids};
-	[Id | _] -> Id
+                          (#bus_id{scheme=tcp}) -> true;
+                          (_) -> false
+                      end, Ids) of
+        [] -> {unsupported, Ids};
+        [Id | _] -> Id
     end;
 
 get_bus_id(system) ->
@@ -62,25 +62,25 @@ connect(BusName) when BusName =:= system;
 
 connect(#bus_id{}=BusId, ServiceReg) ->
     case dbus_peer_connection:start_link(BusId, ServiceReg) of
-	{ok, {dbus_peer_connection, PConn} = Conn} ->
-	    case dbus_peer_connection:auth(PConn) of
-		{ok, undefined} ->
-		    case dbus_proxy:start_link(Conn, ?DBUS_SERVICE, <<"/">>, ?DBUS_NODE) of
-			{ok, DBus} ->
-			    ConnId = hello(DBus),
-			    ?debug("Hello connection id: ~p~n", [ConnId]),
+        {ok, {dbus_peer_connection, PConn} = Conn} ->
+            case dbus_peer_connection:auth(PConn) of
+                {ok, undefined} ->
+                    case dbus_proxy:start_link(Conn, ?DBUS_SERVICE, <<"/">>, ?DBUS_NODE) of
+                        {ok, DBus} ->
+                            ConnId = hello(DBus),
+                            ?debug("Hello connection id: ~p~n", [ConnId]),
                 dbus_peer_connection:set_unique_name(PConn, ConnId),
-			    _ = dbus_peer_connection:set_controlling_process(PConn, DBus),
-			    {ok, {?MODULE, DBus}};
-			{error, Err} -> {error, Err}
-		    end;
-		{error, Err} -> {error, Err}
-	    end;
-	{error, Err} -> {error, Err}
+                            _ = dbus_peer_connection:set_controlling_process(PConn, DBus),
+                            {ok, {?MODULE, DBus}};
+                        {error, Err} -> {error, Err}
+                    end;
+                {error, Err} -> {error, Err}
+            end;
+        {error, Err} -> {error, Err}
     end;
 
 connect(BusName, ServiceReg) when BusName =:= system;
-		      BusName =:= session ->
+                      BusName =:= session ->
     connect(get_bus_id(BusName), ServiceReg).
 
 
@@ -117,32 +117,32 @@ str_to_bus_id(Addr) when is_list(Addr) ->
 
 list_to_bus_id([], Acc) ->
     lists:reverse(Acc);
-list_to_bus_id([L|Rest], Acc) ->
+list_to_bus_id([L | Rest], Acc) ->
     list_to_bus_id(Rest, [to_bus_id(L) | Acc]).
 
 to_bus_id(Server) when is_list(Server) ->
     {Transport, [?TRANSPORT_DELIM | Params]} =
-	lists:splitwith(fun(A) -> A =/= ?TRANSPORT_DELIM end, Server),
+        lists:splitwith(fun(A) -> A =/= ?TRANSPORT_DELIM end, Server),
     #bus_id{scheme=list_to_existing_atom(Transport),
-	    options=parse_params(Params)}.
+            options=parse_params(Params)}.
 
 parse_params(Params) when is_list(Params) ->
     parse_params(string:tokens(Params, [?PARAM_DELIM]), []).
 
 parse_params([], Acc) ->
     Acc;
-parse_params([Param|Rest], Acc) ->
+parse_params([Param | Rest], Acc) ->
     parse_params(Rest, [parse_param(Param) | Acc]).
 
 parse_param(Param) when is_list(Param) ->
     {Key, [?KEY_DELIM | Value]} =
-	lists:splitwith(fun(A) -> A =/= ?KEY_DELIM end, Param),
-    Key_name =
+        lists:splitwith(fun(A) -> A =/= ?KEY_DELIM end, Param),
+    KeyName =
         try list_to_existing_atom(Key)
         catch error:badarg ->
                 Key
         end,
-    {Key_name, parse_value(Key_name, Value)}.
+    {KeyName, parse_value(KeyName, Value)}.
 
 parse_value(port, Value) ->
     list_to_integer(Value);

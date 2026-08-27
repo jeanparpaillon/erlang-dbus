@@ -39,6 +39,9 @@ jobs:
       - name: Compile
         run: rebar3 compile
 
+      - name: Libnt code
+        run: rebar3 lint
+
       - name: Run EUnit
         if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
         run: rebar3 eunit --cover

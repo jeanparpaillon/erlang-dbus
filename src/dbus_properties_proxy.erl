@@ -19,8 +19,8 @@ See [D-Bus specification](https://dbus.freedesktop.org/doc/dbus-specification.ht
 -spec get(Proxy :: dbus_proxy:t(), Iface :: dbus_name(), Prop :: dbus_name()) -> term().
 get(Proxy, Iface, Prop) ->
     case dbus_proxy:call(Proxy, ?DBUS_IFACE_PROPERTIES, <<"Get">>, [Iface, Prop]) of
-        {ok, Value} -> 
-	    Value;
+        {ok, Value} ->
+            Value;
         {error, Err} -> throw(Err)
     end.
 

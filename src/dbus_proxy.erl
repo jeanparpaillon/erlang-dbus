@@ -104,7 +104,7 @@ call(Proxy, #dbus_message{}=Msg) ->
 
 -doc "Sync send an arbitrary message.".
 -spec call(Proxy :: dbus_proxy(), Msg :: dbus_message(),
-	   Timeout :: integer() | infinity) -> {ok, term()} | {error, term()}.
+           Timeout :: integer() | infinity) -> {ok, term()} | {error, term()}.
 call(Proxy, #dbus_message{}=Msg, Timeout) when is_pid(Proxy) ->
     gen_server:call(Proxy, {call, Msg}, Timeout);
 call({interface, Proxy, IfaceName}, MethodName, Args) when is_pid(Proxy) ->
@@ -121,7 +121,7 @@ call(Proxy, IfaceName, MethodName, Args) when is_pid(Proxy) ->
 
 -doc "Sync call a method.".
 -spec call(Proxy :: dbus_proxy(), IfaceName :: dbus_name(), MethodName :: dbus_name(), Args :: term(),
-	   Timeout :: integer() | infinity) ->
+           Timeout :: integer() | infinity) ->
           ok | {ok, term()} | {error, term()}.
 call(Proxy, IfaceName, MethodName, Args, Timeout) when is_pid(Proxy) ->
     may_throw(gen_server:call(Proxy, {method, IfaceName, MethodName, Args}, Timeout)).
@@ -186,15 +186,15 @@ has_interface(Proxy, InterfaceName) ->
 
 
 -doc "Check if object implements the given interface and return `{ok, Iface}` if true.".
--spec interface(Proxy :: dbus_proxy(), InterfaceName :: dbus_name()) -> {ok, dbus_proxy(), dbus_name()} | {error, not_registered}.
+-spec interface(Proxy :: dbus_proxy(), InterfaceName :: dbus_name()) ->
+          {ok, dbus_proxy(), dbus_name()} | {error, not_registered}.
 interface(Proxy, InterfaceName) ->
     case has_interface(Proxy, InterfaceName) of
     true ->
       {ok, {interface, Proxy, InterfaceName}};
     false ->
       {error, not_registered}
-    end
-.
+    end.
 
 -doc "Get the DBUS connection unique name.".
 -spec get_unique_name(Proxy :: dbus_proxy()) -> {ok, binary()} | {error, term()}.
@@ -236,23 +236,23 @@ handle_call({method, IfaceName, MethodName, Args}, _From, #state{node=Node}=Stat
 handle_call({connect_signal, Name, '_', '_', Path, MFA}, _From,
         #state{handlers=Handlers}=State) ->
     Match = [{type, signal},
-	     {sender, Name},
-	     {path_namespace, Path}],
+             {sender, Name},
+             {path_namespace, Path}],
     case do_method(?DBUS_IFACE, ?DBUS_DBUS_ADD_MATCH, [build_match(Match, <<>>)], State) of
-	{reply, ok, S2} ->
-	    Handler = #signal_handler{sender=Name, interface='_', member='_',
-				      path={Path, true}, mfa=MFA},
-	    {reply, ok, S2#state{handlers=[ Handler | Handlers ]}};
-	{reply, {error, Err}, S2} -> {stop, {error, Err}, S2}
+        {reply, ok, S2} ->
+            Handler = #signal_handler{sender=Name, interface='_', member='_',
+                                      path={Path, true}, mfa=MFA},
+            {reply, ok, S2#state{handlers=[ Handler | Handlers ]}};
+        {reply, {error, Err}, S2} -> {stop, {error, Err}, S2}
     end;
 
 handle_call({connect_signal, Name, IfaceName, SignalName, Path, MFA}, _From,
-	    #state{handlers=Handlers}=State) ->
+            #state{handlers=Handlers}=State) ->
     Match = [{type, signal},
-	     {sender, Name},
-	     {interface, IfaceName},
-	     {member, SignalName},
-	     {path, Path}],
+             {sender, Name},
+             {interface, IfaceName},
+             {member, SignalName},
+             {path, Path}],
     case do_method(?DBUS_IFACE, ?DBUS_DBUS_ADD_MATCH, [build_match(Match, <<>>)], State) of
         {reply, ok, S2} ->
             Handler = #signal_handler{sender=Name, interface=IfaceName, member=SignalName,

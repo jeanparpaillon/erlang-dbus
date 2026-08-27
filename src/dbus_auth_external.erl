@@ -11,7 +11,7 @@ See [RFC 4422](https://tools.ietf.org/html/rfc4422) for the complete specificati
 
 %% dbus_auth callbacks
 -export([init/0,
-	 challenge/2]).
+         challenge/2]).
 
 -define(cookie, <<"31303030">>).
 
@@ -32,55 +32,55 @@ challenge(_, _) ->
 %%%
 get_cookie() ->
     case application:get_env(dbus, external_cookie) of
-	undefined -> ?cookie;
-	{ok, system_user} -> 
-			get_current_user_uid();
-	{ok, Val} when is_list(Val) ->
-	    list_to_binary(Val);
-	{ok, Val} when is_binary(Val) ->
-	    Val;
-	{ok, Val} when is_integer(Val) ->
-	    integer_to_binary(Val)
+        undefined -> ?cookie;
+        {ok, system_user} ->
+                        get_current_user_uid();
+        {ok, Val} when is_list(Val) ->
+            list_to_binary(Val);
+        {ok, Val} when is_binary(Val) ->
+            Val;
+        {ok, Val} when is_integer(Val) ->
+            integer_to_binary(Val)
     end.
 
 get_current_user_uid() ->
-	?debug("Getting current USER env~n", []),
-	case os:getenv("USER") of
-			false ->
-					?debug("Missing USER env~n", []),
-					?cookie;
-			User ->
-					% list_to_binary(User)
-					resolve_user_name(User)
-	end.
+        ?debug("Getting current USER env~n", []),
+        case os:getenv("USER") of
+                        false ->
+                                        ?debug("Missing USER env~n", []),
+                                        ?cookie;
+                        User ->
+                                        % list_to_binary(User)
+                                        resolve_user_name(User)
+        end.
 
 resolve_user_name(User) ->
-	?debug("Resolving uid for user ~s~n", [User]),
-	Command = io_lib:format("id -u ~s", [User]),
-	Opts = [stream, exit_status, use_stdio,
-			   stderr_to_stdout, in, eof],
+        ?debug("Resolving uid for user ~s~n", [User]),
+        Command = io_lib:format("id -u ~s", [User]),
+        Opts = [stream, exit_status, use_stdio,
+                           stderr_to_stdout, in, eof],
   P = open_port({spawn, Command}, Opts),
-	case get_data(P, []) of
-		{0, Result} -> 
-			Uid = string:trim(Result),
-			?debug("Successfully resolved user ~s to uid ~s~n", [User, Uid]),
-			dbus_hex:encode(list_to_binary(Uid));
-		{1, Reason} ->
-			?debug("Failed to resolve user ~s to uid: ~s~n", [User, Reason]),
-			?cookie;
-		_ -> ?cookie
-	end.
+        case get_data(P, []) of
+                {0, Result} ->
+                        Uid = string:trim(Result),
+                        ?debug("Successfully resolved user ~s to uid ~s~n", [User, Uid]),
+                        dbus_hex:encode(list_to_binary(Uid));
+                {1, Reason} ->
+                        ?debug("Failed to resolve user ~s to uid: ~s~n", [User, Reason]),
+                        ?cookie;
+                _ -> ?cookie
+        end.
 
 get_data(P, D) ->
     receive
-	{P, {data, D1}} ->
-	    get_data(P, [D1|D]);
-	{P, eof} ->
-	    port_close(P),    
-	    receive
-		{P, {exit_status, N}} ->
-		    {N, normalize(lists:flatten(lists:reverse(D)))}
-	    end
+        {P, {data, D1}} ->
+            get_data(P, [D1 | D]);
+        {P, eof} ->
+            port_close(P),
+            receive
+                {P, {exit_status, N}} ->
+                    {N, normalize(lists:flatten(lists:reverse(D)))}
+            end
     end.
 
 normalize([$\r, $\n | Cs]) ->

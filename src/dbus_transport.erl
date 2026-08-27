@@ -26,7 +26,7 @@ close(Conn) ->
 
 -doc "Send data to a transport.".
 -spec send(pid(), iodata()) -> ok.
-send(Conn, Data) -> 
+send(Conn, Data) ->
     gen_server:cast(Conn, {send, Data}).
 
 

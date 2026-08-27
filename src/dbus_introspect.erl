@@ -79,7 +79,10 @@ find_signal(#dbus_node{interfaces=Ifaces}=Node, IfaceName, SignalName) ->
 -doc "Export a `dbus_node()` into an XML introspection document.".
 -spec to_xml(dbus_node()) -> list().
 to_xml(#dbus_node{}=Node) ->
-    Prolog = "<?xml version=\"1.0\" encoding=\"utf-8\" ?><!DOCTYPE node PUBLIC \"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\" \"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">",
+    Prolog = "<?xml version=\"1.0\" encoding=\"utf-8\" ?>"
+             "<!DOCTYPE node PUBLIC "
+             "\"-//freedesktop//DTD D-BUS Object Introspection 1.0//EN\" "
+             "\"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd\">",
     lists:flatten(xmerl:export_simple([to_xmerl(Node)], xmerl_xml, [{prolog, Prolog}])).
 
 
@@ -147,7 +150,7 @@ to_binary(Item) when is_binary(Item) ->
 to_xmerl(undefined) ->
     [];
 to_xmerl(List) when is_list(List) ->
-    lists:map(fun(Elem) -> to_xmerl(Elem) end, List);
+    lists:map(fun to_xmerl/1, List);
 
 to_xmerl(#dbus_node{}=Elem) ->
     {node,
@@ -257,19 +260,23 @@ xml_event({startElement, _, "arg", _, Attrs}, _L, #state{s=signal, signal=#dbus_
     Arg = build_arg(Attrs, #dbus_arg{}),
     S#state{s=signal_arg, signal=Signal#dbus_signal{args=[Arg | Args]}};
 
-xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=method, method=#dbus_method{annotations=Annotations}=M}=S) ->
+xml_event({startElement, _, "annotation", _, Attrs}, _L,
+          #state{s=method, method=#dbus_method{annotations=Annotations}=M}=S) ->
     S#state{s=method_annotation,
             method=M#dbus_method{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
-xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=iface, iface=#dbus_iface{annotations=Annotations}=I}=S) ->
+xml_event({startElement, _, "annotation", _, Attrs}, _L,
+          #state{s=iface, iface=#dbus_iface{annotations=Annotations}=I}=S) ->
     S#state{s=iface_annotation,
             iface=I#dbus_iface{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
-xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=property, property=#dbus_property{annotations=Annotations}=P}=S) ->
+xml_event({startElement, _, "annotation", _, Attrs}, _L,
+          #state{s=property, property=#dbus_property{annotations=Annotations}=P}=S) ->
     S#state{s=property_annotation,
             property=P#dbus_property{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
-xml_event({startElement, _, "annotation", _, Attrs}, _L, #state{s=signal, signal=#dbus_signal{annotations=Annotations}=Sig}=S) ->
+xml_event({startElement, _, "annotation", _, Attrs}, _L,
+          #state{s=signal, signal=#dbus_signal{annotations=Annotations}=Sig}=S) ->
     S#state{s=signal_annotation,
             signal=Sig#dbus_signal{annotations=[ build_annotation(Attrs, {undefined, undefined}) | Annotations]}};
 
@@ -291,7 +298,8 @@ xml_event({endElement, _, "signal", _}, _L, #state{s=signal, iface=#dbus_iface{s
     NewIface = I#dbus_iface{signals=gb_trees:insert(Sig#dbus_signal.name, end_signal(Sig), Signals)},
     S#state{s=iface, iface=NewIface, signal=undefined};
 
-xml_event({endElement, _, "property", _}, _L, #state{s=property, iface=#dbus_iface{properties=Props}=I, property=P}=S) ->
+xml_event({endElement, _, "property", _}, _L,
+          #state{s=property, iface=#dbus_iface{properties=Props}=I, property=P}=S) ->
     NewIface = I#dbus_iface{properties=gb_trees:insert(P#dbus_property.name, P, Props)},
     S#state{s=iface, iface=NewIface, property=undefined};
 
@@ -334,8 +342,8 @@ xml_event(endCDATA, _L, S) ->
 xml_event({startDTD, "node", "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN", _SysID}, _L, S) ->
     S;
 
-xml_event({startDTD, _Name, PublicID, _SysID}, {_, _, L}, _S) ->
-    throw({error, io_lib:format("(line ~p) Invalid DTD: ~p", [L, PublicID])});
+xml_event({startDTD, _Name, PublicId, _SysID}, {_, _, L}, _S) ->
+    throw({error, io_lib:format("(line ~p) Invalid DTD: ~p", [L, PublicId])});
 
 xml_event(endDTD, _L, S) ->
     S;
@@ -364,7 +372,7 @@ xml_event({unparsedEntityDecl, _Name, _PublicId, _SystemId, _Ndata}, _L, S) ->
 xml_event({notationDecl, _Name, _PublicId, _SystemId}, _L, S) ->
     S;
 
-xml_event(E, {_,_,L}, S) ->
+xml_event(E, {_, _, L}, S) ->
     throw({error, io_lib:format("(line ~p) Unhandled event ~p (state=~p)", [L, E, S])}).
 
 

@@ -42,11 +42,11 @@
                 waiting     = []      :: list(),
                 mechs       = []      :: list(),
                 round       = 1       :: number(),
-		        got_mechs   = false   :: boolean(),
+                        got_mechs   = false   :: boolean(),
                 mech_state            :: term(),
                 guid                  :: binary() | undefined,
                 unix_fd               :: boolean() | undefined,
-		        side        = client  :: client | server,
+                        side        = client  :: client | server,
                 unique_name = <<>>    :: binary()
                }).
 
@@ -74,7 +74,7 @@ start_link(BusId, ServiceReg, Options) when is_record(BusId, bus_id),
     case gen_statem:start_link(?MODULE, [BusId, ServiceReg, Options, self()], []) of
         {ok, Pid} -> {ok, {?MODULE, Pid}};
         {error, Err} -> {error, Err}
-    end.                           
+    end.
 
 -doc "Close the connection.".
 -spec close(pid()) -> ok.
@@ -163,10 +163,10 @@ flush_messages(Client) ->
 %%
 %% gen_fsm callbacks
 %%
-init([#bus_id{scheme=tcp,options=BusOptions}, ServiceReg, Options, Owner]) ->
+init([#bus_id{scheme=tcp, options=BusOptions}, ServiceReg, Options, Owner]) ->
     {Host, Port} = case {lists:keysearch(host, 1, BusOptions),
                          lists:keysearch(port, 1, BusOptions)} of
-                       {{value, {host, Host1}}, {value, {port,Port1}}} ->
+                       {{value, {host, Host1}}, {value, {port, Port1}}} ->
                            {Host1, Port1};
                        _ ->
                            throw(no_host_or_port)
@@ -213,7 +213,7 @@ handle_event(info, {received, Bin}, connected, State) ->
     send_error(State, <<"Unknown command">>),
     {next_state, connected, State};
 
-handle_event({call, {_Pid, Tag}=From}, auth, connected, #state{sock=Sock, mechs=[Mech|Rest]}=State) ->
+handle_event({call, {_Pid, Tag}=From}, auth, connected, #state{sock=Sock, mechs=[Mech | Rest]}=State) ->
     case Mech:init() of
         {ok, Resp} ->
             ?debug("DBUS auth: sending initial data~n", []),
@@ -257,7 +257,7 @@ handle_event({call, From}, {call, _}, waiting_for_data, _State) ->
 
 handle_event({call, {_Pid, Tag}=From}, auth, waiting_for_data, #state{waiting=Waiting}=State) ->
     gen_statem:reply(From, {ok, {self(), Tag}}),
-    {keep_state, State#state{waiting=[From|Waiting]}};
+    {keep_state, State#state{waiting=[From | Waiting]}};
 
 %% STATE: waiting_for_ok
 handle_event(info, {received, <<"REJECTED", Line/binary>>}, waiting_for_ok, State) ->
@@ -287,7 +287,7 @@ handle_event({call, From}, {call, _}, waiting_for_ok, _State) ->
 
 handle_event({call, {_Pid, Tag}=From}, auth, waiting_for_ok, #state{waiting=Waiting}=State) ->
     gen_statem:reply(From, {ok, {self(), Tag}}),
-    {keep_state, State#state{waiting=[From|Waiting]}};
+    {keep_state, State#state{waiting=[From | Waiting]}};
 
 %% STATE: waiting_for_reject
 handle_event(info, {received, <<"REJECTED", Line/binary>>}, waiting_for_reject, State) ->
@@ -303,29 +303,29 @@ handle_event({call, From}, {call, _}, waiting_for_reject, _State) ->
 
 handle_event({call, {_Pid, Tag}=From}, auth, waiting_for_reject, #state{waiting=Waiting}=State) ->
     gen_statem:reply(From, {ok, {self(), Tag}}),
-    {keep_state, State#state{waiting=[From|Waiting]}};
+    {keep_state, State#state{waiting=[From | Waiting]}};
 
 %% STATE: waiting_for_agree
 handle_event(info, {received, <<"AGREE_UNIX_FD\r\n">>}, waiting_for_agree, #state{sock=Sock}=State) ->
     case dbus_transport:support_unix_fd(Sock) of
-	true ->
-	    ?debug("Succesfully negotiated UNIX FD passing~n", []),
-	    begin_session(State#state{unix_fd=true});
-	false ->
-	    ?debug("Unknown command waiting for agree unix fd: AGREE_UNIX_FD", []),
-	    ok = send_error(State, <<"Unknown command">>),
-	    {next_state, waiting_for_agree}
+        true ->
+            ?debug("Succesfully negotiated UNIX FD passing~n", []),
+            begin_session(State#state{unix_fd=true});
+        false ->
+            ?debug("Unknown command waiting for agree unix fd: AGREE_UNIX_FD", []),
+            ok = send_error(State, <<"Unknown command">>),
+            {next_state, waiting_for_agree}
     end;
 
 handle_event(info, {received, <<"ERROR", Line/binary>>}, waiting_for_agree, #state{sock=Sock}=State) ->
     case dbus_transport:support_unix_fd(Sock) of
-	true ->
-	    ?debug("Failed to negotiate UNIX FD passing~n", []),
-	    begin_session(State#state{unix_fd=false});
-	false ->
-	    ?debug("Unknown command waiting for agree unix fd : ~s", [Line]),
-	    ok = send_error(State, <<"Unknown command">>),
-	    {next_state, waiting_for_agreee, State}
+        true ->
+            ?debug("Failed to negotiate UNIX FD passing~n", []),
+            begin_session(State#state{unix_fd=false});
+        false ->
+            ?debug("Unknown command waiting for agree unix fd : ~s", [Line]),
+            ok = send_error(State, <<"Unknown command">>),
+            {next_state, waiting_for_agreee, State}
     end;
 
 handle_event(info, {received, Bin}, waiting_for_agree, State) ->
@@ -338,7 +338,7 @@ handle_event({call, From}, {call, _}, waiting_for_agree, _State) ->
 
 handle_event({call, {_Pid, Tag}=From}, auth, waiting_for_agree, #state{waiting=Waiting}=State) ->
     gen_statem:reply(From, {ok, {self(), Tag}}),
-    {keep_state, State#state{waiting=[From|Waiting]}};
+    {keep_state, State#state{waiting=[From | Waiting]}};
 
 %% STATE: authenticated
 handle_event(info, {received, Data}, authenticated, #state{buf=Buf}=State) ->
@@ -410,7 +410,7 @@ handle_messages([#dbus_message{header=#dbus_header{type=Type}}=Msg | R], State) 
         {ok, State2} ->
             handle_messages(R, State2);
         {error, _, _}=Err ->
-	    Err
+            Err
     end.
 
 handle_message(?TYPE_METHOD_RETURN, Msg, #state{pending=Pending}=State) ->
@@ -419,7 +419,7 @@ handle_message(?TYPE_METHOD_RETURN, Msg, #state{pending=Pending}=State) ->
         [{Serial, Pid, Tag}] ->
             Pid ! {reply, {self(), Tag}, Msg},
             ets:delete(Pending, Serial),
-	    %%?debug("<~p> returns: ~p", [Serial, Msg#dbus_message.body]),
+            %%?debug("<~p> returns: ~p", [Serial, Msg#dbus_message.body]),
             {ok, State};
         _ ->
             ?debug("Unexpected message: ~p~n", [Msg]),
@@ -432,17 +432,17 @@ handle_message(?TYPE_ERROR, Msg, #state{pending=Pending}=State) ->
         [{Serial, Pid, Tag}] ->
             Pid ! {error, {self(), Tag}, Msg},
             ets:delete(Pending, Serial),
-	    ?debug("<~p> error: ~p~n", [Serial, Msg#dbus_message.body]),
+            ?debug("<~p> error: ~p~n", [Serial, Msg#dbus_message.body]),
             {ok, State};
         _Err ->
-	    case dbus_message:is_error(Msg, <<"org.freedesktop.DBus.Error.NoReply">>) of
-		true ->
-		    ?debug("Ignoring NoReply on unknown serial~n", []),
-		    {ok, State};
-		false ->
-		    ?debug("Unexpected message: ~p~n", [Msg]),
-		    {error, unexpected_message, State}
-	    end
+            case dbus_message:is_error(Msg, <<"org.freedesktop.DBus.Error.NoReply">>) of
+                true ->
+                    ?debug("Ignoring NoReply on unknown serial~n", []),
+                    {ok, State};
+                false ->
+                    ?debug("Unexpected message: ~p~n", [Msg]),
+                    {error, unexpected_message, State}
+            end
     end;
 
 handle_message(?TYPE_METHOD_CALL, Msg, #state{service_reg=undefined}=State) ->
@@ -478,7 +478,7 @@ process_ok(Data, #state{sock=Sock, waiting=Waiting}=State) ->
             ok = dbus_transport:send(Sock, <<"NEGOTIATE_UNIX_FD\r\n">>),
             {next_state, waiting_for_agree, State#state{guid=Guid, mech_state=undefined}};
         false ->
-	    ?debug("not negotiating unix fd passing, since not possible~n", []),
+            ?debug("not negotiating unix fd passing, since not possible~n", []),
             ok = dbus_transport:send(Sock, <<"BEGIN\r\n">>),
             lists:foreach(fun ({Pid, Tag}) ->
                                   Pid ! {authenticated, {self(), Tag}}
@@ -510,10 +510,10 @@ process_rejected(_Data, #state{mechs=[], got_mechs=true}=State) ->
 
 process_rejected(Data, #state{mechs=[], got_mechs=false}=State) ->
     case record_mechs(Data, State) of
-	State2 = #state{mechs=[]} ->
-	    process_rejected(Data, State2);
-	State2 ->
-	    try_next_auth(State2)
+        State2 = #state{mechs=[]} ->
+            process_rejected(Data, State2);
+        State2 ->
+            try_next_auth(State2)
     end;
 
 process_rejected(_Data, State) ->
@@ -535,7 +535,7 @@ try_next_auth(#state{sock=Sock, mechs=[ Mech | Rest ]}=State) ->
             ?error("Error initializing authentication mechanism (~s): ~p", [Mech, Err]),
             try_next_auth(State#state{mechs=Rest})
     catch _Cls:Err ->
-	    ?error("Exception initializing authentication mechanism (~s): ~p", [Mech, Err]),
+            ?error("Exception initializing authentication mechanism (~s): ~p", [Mech, Err]),
             try_next_auth(State#state{mechs=Rest})
     end.
 
@@ -574,18 +574,18 @@ record_mechs(<<$\s, Rest/bits>>, S) ->
 
 record_mechs(Bin, #state{mechs=Mechs}=S) ->
     case parse_mech(Bin) of
-	{unsupported, Name, Rest} ->
-	    ?debug("~s: Server offered mechanism \"~s\" that we don't know how to use~n", [S#state.side, Name]),
+        {unsupported, Name, Rest} ->
+            ?debug("~s: Server offered mechanism \"~s\" that we don't know how to use~n", [S#state.side, Name]),
             record_mechs(Rest, S);
         {Mech, Name, Rest} ->
-	    case lists:member(Mech, ?ALL_MECHANISMS) of
-		true ->
-		    ?debug("~s: Already tried mechanism ~s; not adding to list we will try~n", [S#state.side, Name]),
-		    record_mechs(Rest, S);
-		false ->
-		    ?debug("~s: Adding mechanism ~s to list we will try~n", [S#state.side, Name]),
-		    record_mechs(Rest, S#state{mechs=[ Mech | Mechs ]})
-	    end
+            case lists:member(Mech, ?ALL_MECHANISMS) of
+                true ->
+                    ?debug("~s: Already tried mechanism ~s; not adding to list we will try~n", [S#state.side, Name]),
+                    record_mechs(Rest, S);
+                false ->
+                    ?debug("~s: Adding mechanism ~s to list we will try~n", [S#state.side, Name]),
+                    record_mechs(Rest, S#state{mechs=[ Mech | Mechs ]})
+            end
     end.
 
 
@@ -600,7 +600,7 @@ parse_mech(<<$\s, Rest/bits>>, Acc) ->
     valid_mech(Acc, Rest);
 
 parse_mech(<<C, _/bits>>, Acc) when $\r =:= C
-				    orelse $\n =:= C ->
+                                    orelse $\n =:= C ->
     valid_mech(Acc, <<>>);
 
 parse_mech(<<C:8, Rest/bits>>, SoFar) ->
