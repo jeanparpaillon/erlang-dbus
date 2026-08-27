@@ -8,10 +8,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  TEST_OTP_VERSION: '29'
+
 jobs:
   build-and-test:
     runs-on: ubuntu-24.04
-
 
     strategy:
       fail-fast: false
@@ -34,4 +36,31 @@ jobs:
         run: make
 
       - name: Run EUnit
-        run: make eunit
+        if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
+        run: |
+          rebar3 eunit
+          rebar3 cover
+          rebar3 covertool generate
+
+      - name: Upload coverage to Codecov
+        if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
+        uses: codecov/codecov-action@v7
+        with:
+          files: coverage.xml
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      # - name: Cache Dialyzer PLT
+      #   if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
+      #   uses: actions/cache@v6
+      #   with:
+      #     path: |
+      #       .*.plt
+      #       .*.plt.hash
+      #     key: ${{ runner.os }}-otp${{ matrix.otp }}-dialyzer-${{ hashFiles('Makefile', 'erlang.mk') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-otp${{ matrix.otp }}-dialyzer-
+
+      # - name: Dialyzer
+      #   if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
+      #   run: make dialyze

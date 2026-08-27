@@ -3,6 +3,8 @@
 .project
 .settings
 .idea
+/*.plt
+/*.plt.hash
 /_build
 /hexer
 /hexer.config
