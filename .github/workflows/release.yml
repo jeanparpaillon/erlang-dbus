@@ -1,0 +1,40 @@
+# .github/workflows/release.yml
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Erlang and Rebar3
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: 29
+          rebar3-version: 3.27.0
+
+      - name: Compile
+        run: rebar3 compile
+
+      - name: Generate documentation
+        run: rebar3 ex_doc
+
+      - name: Check Hex package
+        run: rebar3 hex build
+
+      - name: Publish package and HexDocs
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        run: rebar3 hex publish --yes
