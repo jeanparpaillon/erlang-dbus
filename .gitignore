@@ -30,3 +30,4 @@
 /doc
 # EDTS
 .edts
+*.crashdump

@@ -57,17 +57,17 @@ jobs:
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
 
-      # - name: Cache Dialyzer PLT
-      #   if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
-      #   uses: actions/cache@v6
-      #   with:
-      #     path: |
-      #       .*.plt
-      #       .*.plt.hash
-      #     key: ${{ runner.os }}-otp${{ matrix.otp }}-dialyzer-${{ hashFiles('Makefile', 'erlang.mk') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-otp${{ matrix.otp }}-dialyzer-
+      - name: Cache Dialyzer PLT
+        if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
+        uses: actions/cache@v6
+        with:
+          path: |
+            .*.plt
+            .*.plt.hash
+          key: ${{ runner.os }}-otp${{ matrix.otp }}-dialyzer-${{ hashFiles('rebar.config', 'rebar.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-otp${{ matrix.otp }}-dialyzer-
 
-      # - name: Dialyzer
-      #   if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
-      #   run: make dialyze
+      - name: Dialyzer
+        if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
+        run: make dialyze
