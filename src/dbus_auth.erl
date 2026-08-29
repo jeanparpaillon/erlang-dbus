@@ -2,7 +2,7 @@
 -moduledoc """
 Defines callbacks for implementing an SASL authentication mechanism.
 
-The authentication state machine is implemented in `m:dbus_peer_connection`.
+The authentication state machine is implemented in `m:dbus_connection`.
 
 ```erlang
 -callback init() ->

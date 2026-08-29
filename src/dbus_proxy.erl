@@ -330,13 +330,13 @@ handle_call(children, _From, #state{node = #dbus_node{name = Name, elements = Ch
     ),
     {reply, Paths, State};
 handle_call(get_unique_name, _From, #state{conn = {dbus_peer_connection, PConn}} = State) ->
-    Ret = dbus_peer_connection:get_unique_name(PConn),
+    Ret = dbus_connection:get_unique_name(PConn),
     {reply, Ret, State};
 handle_call({call, Msg}, _From, #state{conn = Conn} = State) ->
-    Ret = dbus_connection:call(Conn, Msg),
+    Ret = dbus_transport:call(Conn, Msg),
     {reply, Ret, State};
 handle_call({cast, Msg}, _From, #state{conn = Conn} = State) ->
-    Ret = dbus_connection:cast(Conn, Msg),
+    Ret = dbus_transport:cast(Conn, Msg),
     {reply, Ret, State};
 handle_call(Request, _From, State) ->
     ?error("Unhandled call in ~p: ~p~n", [?MODULE, Request]),
@@ -394,7 +394,7 @@ do_method(IfaceName, Method, Args, #state{service = Service, conn = Conn, path =
     Msg = dbus_message:call(Service, Path, IfaceName, Method),
     case dbus_message:set_body(Method, Args, Msg) of
         #dbus_message{} = M2 ->
-            case dbus_connection:call(Conn, M2) of
+            case dbus_transport:call(Conn, M2) of
                 {ok, #dbus_message{body = undefined}} ->
                     {reply, ok, State};
                 {ok, #dbus_message{body = Res}} ->
@@ -412,7 +412,7 @@ may_throw(AnyOther) -> AnyOther.
 
 do_introspect(Conn, Service, Path) ->
     ?debug("Introspecting: ~p:~p~n", [Service, Path]),
-    case dbus_connection:call(Conn, dbus_message:introspect(Service, Path)) of
+    case dbus_transport:call(Conn, dbus_message:introspect(Service, Path)) of
         {ok, #dbus_message{body = Xml}} when is_binary(Xml) ->
             try dbus_introspect:from_xml_string(Xml) of
                 #dbus_node{} = Node -> {ok, Node}
@@ -432,7 +432,7 @@ do_introspect(Conn, Service, Path) ->
 do_unique_name(Conn, Service) ->
     Msg = dbus_message:call(?DBUS_SERVICE, ?DBUS_PATH, ?DBUS_IFACE, 'GetNameOwner'),
     M2 = dbus_message:set_body(?DBUS_DBUS_GET_NAME_OWNER, [Service], Msg),
-    case dbus_connection:call(Conn, M2) of
+    case dbus_transport:call(Conn, M2) of
         {ok, #dbus_message{body = Unique}} when is_binary(Unique) ->
             Unique;
         {ok, Msg} ->
