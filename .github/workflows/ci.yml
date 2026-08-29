@@ -4,7 +4,7 @@ name: Build and Test
 
 on:
   push:
-    branches: [master]
+    branches: [master, next]
   pull_request:
   workflow_dispatch:
 
