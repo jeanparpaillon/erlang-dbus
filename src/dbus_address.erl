@@ -1,10 +1,37 @@
 -module(dbus_address).
 
--include("dbus.hrl").
-
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
+
+%% transports-unix-domain-sockets
+-type dbus_address_scheme() ::
+    unix
+    %% transports-launchd
+    | launchd
+    %% transports-systemd
+    | systemd
+    %% transports-tcp-sockets
+    | tcp
+    %% transports-nonce-tcp-sockets
+    | 'nonce-tcp'
+    %% transports-exec
+    | unixexec
+    %% transports-autolaunch
+    | autolaunch
+    %% unknown or future transport
+    | atom().
+
+-type dbus_address_option() :: atom().
+
+-record(dbus_address, {
+    scheme :: dbus_address_scheme(),
+    guid :: binary() | undefined,
+    options :: [{dbus_address_option(), binary()}]
+}).
+-opaque dbus_address() :: #dbus_address{}.
+
+-export_type([dbus_address/0]).
 
 -export([parse/1, escape/1, unescape/1]).
 
@@ -23,7 +50,7 @@ At this point, options are not validated against scheme.
 `guid` is the exception: being a generic server attribute rather than a
 transport parameter, it is lifted into its own field.
 """.
--spec parse(binary()) -> {ok, [bus_id()]} | {error, term()}.
+-spec parse(binary()) -> {ok, [dbus_address()]} | {error, term()}.
 parse(Addresses) when is_binary(Addresses) ->
     %% docs/addresses.md "Parsing Order": split the structure on literal
     %% delimiters first, percent-decode the values last. Splitting a decoded
@@ -82,7 +109,7 @@ parse_address(Address) ->
 build(Scheme, Options) ->
     case lists:keytake(guid, 1, Options) of
         false ->
-            {ok, #bus_id{scheme = Scheme, options = Options}};
+            {ok, #dbus_address{scheme = Scheme, options = Options}};
         {value, {guid, Guid}, Rest} ->
             case lists:keymember(guid, 1, Rest) of
                 true ->
@@ -90,7 +117,7 @@ build(Scheme, Options) ->
                     %% there is no rule saying which wins.
                     {error, {duplicate_parameter, guid}};
                 false ->
-                    {ok, #bus_id{scheme = Scheme, guid = Guid, options = Rest}}
+                    {ok, #dbus_address{scheme = Scheme, guid = Guid, options = Rest}}
             end
     end.
 
@@ -148,7 +175,8 @@ is_literal(_) ->
 -doc """
 Escape a binary string for use in a D-Bus address.
 
-Characters out of the valid set are escaped where %XX `XX` hexadecimal representation of the character's byte value.
+Characters out of the valid set are escaped where %XX `XX` hexadecimal
+representation of the character's byte value.
 
 Valid set is:
 ```text
@@ -242,29 +270,29 @@ unhex(_) -> error.
 valid_addresses() ->
     [
         %% unix: -- connectable forms
-        {<<"unix:path=/run/user/1000/bus">>, #bus_id{
+        {<<"unix:path=/run/user/1000/bus">>, #dbus_address{
             scheme = unix, options = [{path, <<"/run/user/1000/bus">>}]
         }},
-        {<<"unix:abstract=/tmp/dbus-XYZ">>, #bus_id{
+        {<<"unix:abstract=/tmp/dbus-XYZ">>, #dbus_address{
             scheme = unix, options = [{abstract, <<"/tmp/dbus-XYZ">>}]
         }},
 
         %% unix: -- listen-only forms, parsed but not interpreted
-        {<<"unix:dir=/some/directory">>, #bus_id{
+        {<<"unix:dir=/some/directory">>, #dbus_address{
             scheme = unix, options = [{dir, <<"/some/directory">>}]
         }},
-        {<<"unix:tmpdir=/tmp">>, #bus_id{scheme = unix, options = [{tmpdir, <<"/tmp">>}]}},
-        {<<"unix:runtime=yes">>, #bus_id{scheme = unix, options = [{runtime, <<"yes">>}]}},
+        {<<"unix:tmpdir=/tmp">>, #dbus_address{scheme = unix, options = [{tmpdir, <<"/tmp">>}]}},
+        {<<"unix:runtime=yes">>, #dbus_address{scheme = unix, options = [{runtime, <<"yes">>}]}},
 
         %% tcp:
-        {<<"tcp:host=127.0.0.1,port=12345">>, #bus_id{
+        {<<"tcp:host=127.0.0.1,port=12345">>, #dbus_address{
             scheme = tcp,
             options = [
                 {host, <<"127.0.0.1">>},
                 {port, <<"12345">>}
             ]
         }},
-        {<<"tcp:host=localhost,port=12345,family=ipv4">>, #bus_id{
+        {<<"tcp:host=localhost,port=12345,family=ipv4">>, #dbus_address{
             scheme = tcp,
             options = [
                 {host, <<"localhost">>},
@@ -274,7 +302,7 @@ valid_addresses() ->
         }},
 
         %% nonce-tcp:
-        {<<"nonce-tcp:host=localhost,port=12345,noncefile=/tmp/dbus-nonce">>, #bus_id{
+        {<<"nonce-tcp:host=localhost,port=12345,noncefile=/tmp/dbus-nonce">>, #dbus_address{
             scheme = 'nonce-tcp',
             options = [
                 {host, <<"localhost">>},
@@ -284,16 +312,16 @@ valid_addresses() ->
         }},
 
         %% launchd:
-        {<<"launchd:env=DBUS_LAUNCHD_SESSION_BUS_SOCKET">>, #bus_id{
+        {<<"launchd:env=DBUS_LAUNCHD_SESSION_BUS_SOCKET">>, #dbus_address{
             scheme = launchd,
             options = [{env, <<"DBUS_LAUNCHD_SESSION_BUS_SOCKET">>}]
         }},
 
         %% unixexec:
-        {<<"unixexec:path=/usr/bin/example">>, #bus_id{
+        {<<"unixexec:path=/usr/bin/example">>, #dbus_address{
             scheme = unixexec, options = [{path, <<"/usr/bin/example">>}]
         }},
-        {<<"unixexec:path=/usr/bin/example,argv1=foo,argv2=bar">>, #bus_id{
+        {<<"unixexec:path=/usr/bin/example,argv1=foo,argv2=bar">>, #dbus_address{
             scheme = unixexec,
             options = [
                 {path, <<"/usr/bin/example">>},
@@ -303,38 +331,38 @@ valid_addresses() ->
         }},
 
         %% autolaunch: -- including the parameterless form
-        {<<"autolaunch:">>, #bus_id{scheme = autolaunch, options = []}},
-        {<<"autolaunch:scope=*user">>, #bus_id{
+        {<<"autolaunch:">>, #dbus_address{scheme = autolaunch, options = []}},
+        {<<"autolaunch:scope=*user">>, #dbus_address{
             scheme = autolaunch, options = [{scope, <<"*user">>}]
         }},
 
         %% systemd: -- listen-only, recognised by the syntax parser anyway
-        {<<"systemd:">>, #bus_id{scheme = systemd, options = []}},
+        {<<"systemd:">>, #dbus_address{scheme = systemd, options = []}},
 
         %% guid is a generic server attribute, so it lands in its own field
         %% rather than among the transport's options
-        {<<"unix:path=/run/user/1000/bus,guid=0123456789abcdef0123456789abcdef">>, #bus_id{
+        {<<"unix:path=/run/user/1000/bus,guid=0123456789abcdef0123456789abcdef">>, #dbus_address{
             scheme = unix,
             guid = <<"0123456789abcdef0123456789abcdef">>,
             options = [{path, <<"/run/user/1000/bus">>}]
         }},
 
         %% an unknown transport must NOT be rejected: the format is extensible
-        {<<"future-transport:foo=bar,baz=quux">>, #bus_id{
+        {<<"future-transport:foo=bar,baz=quux">>, #dbus_address{
             scheme = 'future-transport',
             options = [{foo, <<"bar">>}, {baz, <<"quux">>}]
         }},
 
         %% every character of the optionally-escaped set [-0-9A-Za-z_/.*]
         %% may appear literally
-        {<<"unix:path=/a-b_c.d*e/0Z">>, #bus_id{
+        {<<"unix:path=/a-b_c.d*e/0Z">>, #dbus_address{
             scheme = unix, options = [{path, <<"/a-b_c.d*e/0Z">>}]
         }},
 
         %% only the FIRST `=' separates key from value, so a value may hold a
         %% further one -- escaped, per the rule pinned in
         %% value_with_raw_equals_test/0 below
-        {<<"unixexec:path=/usr/bin/example,argv1=a%3Db">>, #bus_id{
+        {<<"unixexec:path=/usr/bin/example,argv1=a%3Db">>, #dbus_address{
             scheme = unixexec,
             options = [
                 {path, <<"/usr/bin/example">>},
@@ -357,8 +385,8 @@ single_address_test_() ->
 two_addresses_test() ->
     ?assertEqual(
         {ok, [
-            #bus_id{scheme = unix, options = [{path, <<"/tmp/dbus">>}]},
-            #bus_id{
+            #dbus_address{scheme = unix, options = [{path, <<"/tmp/dbus">>}]},
+            #dbus_address{
                 scheme = tcp,
                 options = [
                     {host, <<"localhost">>},
@@ -389,10 +417,10 @@ every_pair_test() ->
 %% A single address is a one-element list, i.e. parse/1 never returns a
 %% bare record for the degenerate case.
 list_of_one_test() ->
-    ?assertMatch({ok, [#bus_id{}]}, parse(<<"unix:path=/run/user/1000/bus">>)).
+    ?assertMatch({ok, [#dbus_address{}]}, parse(<<"unix:path=/run/user/1000/bus">>)).
 
 join(Addrs) ->
-    iolist_to_binary(lists:join($;, Addrs)).
+    iolist_to_binary(lists:join(<<";">>, Addrs)).
 
 %%%
 %%% Percent escaping -- decoded AFTER the structural split
@@ -402,7 +430,7 @@ join(Addrs) ->
 escaped_comma_is_not_a_separator_test() ->
     ?assertEqual(
         {ok, [
-            #bus_id{
+            #dbus_address{
                 scheme = unix,
                 guid = undefined,
                 options = [{path, <<"/tmp/foo,bar">>}]
@@ -414,7 +442,7 @@ escaped_comma_is_not_a_separator_test() ->
 escaped_space_test() ->
     ?assertEqual(
         {ok, [
-            #bus_id{
+            #dbus_address{
                 scheme = unix,
                 guid = undefined,
                 options = [{path, <<"/tmp/my bus">>}]
@@ -427,7 +455,7 @@ escaped_space_test() ->
 escaped_delimiters_are_not_structural_test() ->
     ?assertEqual(
         {ok, [
-            #bus_id{
+            #dbus_address{
                 scheme = unix,
                 guid = undefined,
                 options = [{path, <<";:=%">>}]
@@ -440,7 +468,7 @@ escaped_delimiters_are_not_structural_test() ->
 escaped_semicolon_does_not_split_address_test() ->
     ?assertEqual(
         {ok, [
-            #bus_id{
+            #dbus_address{
                 scheme = unix,
                 guid = undefined,
                 options = [{path, <<"/tmp/a;b">>}]
@@ -452,7 +480,7 @@ escaped_semicolon_does_not_split_address_test() ->
 hex_digits_are_case_insensitive_test() ->
     Expected =
         {ok, [
-            #bus_id{
+            #dbus_address{
                 scheme = unix,
                 guid = undefined,
                 options = [{path, <<"/tmp/foo,bar">>}]
@@ -465,7 +493,7 @@ hex_digits_are_case_insensitive_test() ->
 escaped_utf8_value_test() ->
     ?assertEqual(
         {ok, [
-            #bus_id{
+            #dbus_address{
                 scheme = unix,
                 guid = undefined,
                 options = [{path, <<"/tmp/caf", 16#c3, 16#a9>>}]
@@ -479,7 +507,7 @@ escaped_utf8_value_test() ->
 escapes_only_in_values_test() ->
     ?assertEqual(
         {ok, [
-            #bus_id{
+            #dbus_address{
                 scheme = unix,
                 guid = undefined,
                 options = [{path, <<"/tmp/a=b">>}]

@@ -39,7 +39,7 @@ jobs:
       - name: Compile
         run: rebar3 compile
 
-      - name: Libnt code
+      - name: Lint code
         run: rebar3 lint
 
       - name: Run EUnit
