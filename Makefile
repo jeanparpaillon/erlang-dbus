@@ -1,8 +1,21 @@
-all:
+all: build
+
+build:
 	rebar3 compile
 
 deps:
 	rebar3 get-deps
+
+checks: fmt lint dialyze
+
+fmt:
+	rebar3 fmt --check
+
+lint:
+	rebar3 lint
+
+dialyze:
+	rebar3 dialyzer
 
 tests:
 	rebar3 eunit --cover
@@ -10,7 +23,9 @@ tests:
 docs:
 	rebar3 edoc
 
-dialyze:
-	rebar3 dialyzer
+clean:
+	rebar3 clean
 
-.PHONY: all deps docs tests dialyze
+.PHONY: all clean
+.PHONY: deps build checks tests docs
+.PHONY: fmt lint dialyze checks
