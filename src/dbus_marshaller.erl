@@ -28,6 +28,18 @@ Specification](https://dbus.freedesktop.org/doc/dbus-specification.html#message-
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+%% The public API always encodes from position 0 and offers no way to decode a
+%% bare value list, so the alignment and offset laws cannot be stated through
+%% it. The eunit tests below already call `marshal/3' and `unmarshal/4'
+%% directly; these exports let `test/prop_dbus_marshaller.erl' do the same.
+-export([
+    marshal/3,
+    unmarshal/4,
+    unmarshal_tuple/3,
+    pad/2,
+    padding/1
+]).
 -endif.
 
 %% api

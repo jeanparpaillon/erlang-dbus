@@ -1,35 +1,10 @@
 -module(dbus_address).
 
+-include("dbus.hrl").
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
-
-%% transports-unix-domain-sockets
--type scheme() ::
-    unix
-    %% transports-launchd
-    | launchd
-    %% transports-systemd
-    | systemd
-    %% transports-tcp-sockets
-    | tcp
-    %% transports-nonce-tcp-sockets
-    | 'nonce-tcp'
-    %% transports-exec
-    | unixexec
-    %% transports-autolaunch
-    | autolaunch.
-
--type option() :: atom().
-
--record(dbus_address, {
-    scheme :: scheme(),
-    guid :: binary() | undefined,
-    options :: [{option(), binary()}]
-}).
--opaque t() :: #dbus_address{}.
-
--export_type([t/0, scheme/0]).
 
 -export([parse/1, escape/1, unescape/1]).
 -export([scheme/1]).
@@ -43,18 +18,18 @@
 ).
 
 -doc "Returns address' scheme".
--spec scheme(t()) -> scheme().
+-spec scheme(dbus_address()) -> scheme().
 scheme(Address) ->
     Address#dbus_address.scheme.
 
 -doc """
-Parse a D-Bus address string into a list of `t()` records.
+Parse a D-Bus address string into a list of `dbus_address()` records.
 At this point, options are not validated against scheme.
 
 `guid` is the exception: being a generic server attribute rather than a
 transport parameter, it is lifted into its own field.
 """.
--spec parse(binary()) -> {ok, [t()]} | {error, term()}.
+-spec parse(binary()) -> {ok, [dbus_address()]} | {error, term()}.
 parse(Addresses) when is_binary(Addresses) ->
     %% docs/addresses.md "Parsing Order": split the structure on literal
     %% delimiters first, percent-decode the values last. Splitting a decoded
@@ -287,6 +262,12 @@ unhex(_) -> error.
 %%%     transports and unknown keys parse like any other, `port' stays a
 %%%     binary, and nothing is rejected for being listen-only. That is
 %%%     what "options are not validated against scheme" means above.
+
+scheme_test() ->
+    ?assertMatch(
+        unix,
+        scheme(#dbus_address{scheme = unix})
+    ).
 
 %%%
 %%% Valid addresses
@@ -617,4 +598,14 @@ value_with_raw_equals_test() ->
 value_with_raw_colon_test() ->
     ?assertMatch({error, _}, parse(<<"unix:path=/tmp/a:b">>)).
 
+invalid_addresses() ->
+    [
+        <<"bad:address">>
+    ].
+
+bad_address_test() ->
+    [
+        ?_assertMatch({error, {badarg, Addr}}, parse(Addr))
+     || Addr <- invalid_addresses()
+    ].
 -endif.

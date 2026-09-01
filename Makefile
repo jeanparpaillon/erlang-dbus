@@ -20,6 +20,13 @@ dialyze:
 tests:
 	rebar3 eunit --cover
 
+props:
+	rebar3 proper --cover -n 1000
+
+coverage:
+	rebar3 cover --verbose
+	xdg-open _build/test/cover/index.html
+
 docs:
 	rebar3 edoc
 
@@ -27,5 +34,5 @@ clean:
 	rebar3 clean
 
 .PHONY: all clean
-.PHONY: deps build checks tests docs
+.PHONY: deps build checks tests props docs
 .PHONY: fmt lint dialyze checks

@@ -16,12 +16,12 @@ handle D-Bus messages
 ]).
 
 -doc "Get serial number from message.".
--spec get_serial(dbus_message()) -> serial().
+-spec get_serial(dbus_message()) -> dbus_serial().
 get_serial(#dbus_message{header = #dbus_header{serial = Serial}}) ->
     Serial.
 
 -doc "Set serial number of a message.".
--spec set_serial(serial(), dbus_message()) -> dbus_message().
+-spec set_serial(dbus_serial(), dbus_message()) -> dbus_message().
 set_serial(Serial, #dbus_message{header = Header} = Message) ->
     Header2 = Header#dbus_header{serial = Serial},
     Message#dbus_message{header = Header2}.

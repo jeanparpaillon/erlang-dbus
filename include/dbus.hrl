@@ -7,6 +7,10 @@
 
 -define(DBUS_VERSION_MAJOR, 1).
 
+-define(DBUS_AUTH_EXTERNAL, <<"EXTERNAL">>).
+-define(DBUS_AUTH_DBUS_COOKIE_SHA1, <<"DBUS_COOKIE_SHA1">>).
+-define(DBUS_AUTH_ANONYMOUS, <<"ANONYMOUS">>).
+
 -define(TYPE_INVALID, 0).
 -define(TYPE_METHOD_CALL, 1).
 -define(TYPE_METHOD_RETURN, 2).
@@ -60,7 +64,7 @@
 }).
 -type dbus_variant() :: #dbus_variant{}.
 
--type serial() :: non_neg_integer().
+-type dbus_serial() :: non_neg_integer().
 
 -record(dbus_header, {
     endian = $l :: endianness(),
@@ -68,16 +72,41 @@
     flags = 0 :: integer(),
     version = ?DBUS_VERSION_MAJOR :: integer(),
     size = 0 :: integer(),
-    serial = 0 :: serial(),
+    serial = 0 :: dbus_serial(),
     fields = [] :: list()
 }).
 -type dbus_header() :: #dbus_header{}.
 
 -record(dbus_message, {
-    header :: dbus_header() | undefined,
+    header = #dbus_header{} :: dbus_header(),
     body :: binary() | undefined
 }).
 
 -type dbus_message() :: #dbus_message{}.
+
+-type scheme() ::
+    %% transports-unix-domain-sockets
+    unix
+    %% transports-launchd
+    | launchd
+    %% transports-systemd
+    | systemd
+    %% transports-tcp-sockets
+    | tcp
+    %% transports-nonce-tcp-sockets
+    | 'nonce-tcp'
+    %% transports-exec
+    | unixexec
+    %% transports-autolaunch
+    | autolaunch.
+
+-type dbus_address_option() :: atom().
+
+-record(dbus_address, {
+    scheme :: scheme(),
+    guid = undefined :: binary() | undefined,
+    options = [] :: [{dbus_address_option(), binary()}]
+}).
+-type dbus_address() :: #dbus_address{}.
 
 -endif.
