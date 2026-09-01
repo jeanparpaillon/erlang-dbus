@@ -8,7 +8,9 @@ Defines the behaviour for authentication client mechanisms.
 
 -callback name() -> binary().
 
--callback init(map()) ->
+%% Called with this mechanism's own entry of the auth context map, or
+%% `undefined' when the context has none for it.
+-callback init(term()) ->
     {ok, state()} | {error, term()}.
 
 -callback initial_response(state()) ->
@@ -112,7 +114,7 @@ handle_rejected(State) ->
         not_found ->
             {error, {no_valid_auth_mechanism, Mechanisms}};
         {Mech, OtherMechs} ->
-            case Mech:init(State#state.ctx) of
+            case Mech:init(maps:get(Mech, State#state.ctx, undefined)) of
                 {ok, MechState} ->
                     State1 = State#state{
                         mech = Mech, mech_state = MechState, supported_mechs = OtherMechs
