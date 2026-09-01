@@ -4,16 +4,12 @@ Transport behaviour for a D-Bus transport.
 """.
 
 -export_type([
-    address/0,
-    option/0,
     connection/0
 ]).
 
--type address() :: map().
--type option() :: term().
 -type connection() :: term().
 
--callback connect(Address :: address(), Options :: [option()]) ->
+-callback connect(Address :: dbus_address:t()) ->
     {ok, Connection :: connection()}
     | {error, Reason :: term()}.
 

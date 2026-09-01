@@ -5,7 +5,7 @@
 -endif.
 
 %% transports-unix-domain-sockets
--type dbus_address_scheme() ::
+-type scheme() ::
     unix
     %% transports-launchd
     | launchd
@@ -18,22 +18,21 @@
     %% transports-exec
     | unixexec
     %% transports-autolaunch
-    | autolaunch
-    %% unknown or future transport
-    | atom().
+    | autolaunch.
 
--type dbus_address_option() :: atom().
+-type option() :: atom().
 
 -record(dbus_address, {
-    scheme :: dbus_address_scheme(),
+    scheme :: scheme(),
     guid :: binary() | undefined,
-    options :: [{dbus_address_option(), binary()}]
+    options :: [{option(), binary()}]
 }).
--opaque dbus_address() :: #dbus_address{}.
+-opaque t() :: #dbus_address{}.
 
--export_type([dbus_address/0]).
+-export_type([t/0, scheme/0]).
 
 -export([parse/1, escape/1, unescape/1]).
+-export([scheme/1]).
 
 -define(IS_LITERAL(C),
     ((C >= $0 andalso C =< $9) orelse
@@ -43,14 +42,19 @@
         C =:= $/ orelse C =:= $. orelse C =:= $*)
 ).
 
+-doc "Returns address' scheme".
+-spec scheme(t()) -> scheme().
+scheme(Address) ->
+    Address#dbus_address.scheme.
+
 -doc """
-Parse a D-Bus address string into a list `dbus_id` records.
+Parse a D-Bus address string into a list of `t()` records.
 At this point, options are not validated against scheme.
 
 `guid` is the exception: being a generic server attribute rather than a
 transport parameter, it is lifted into its own field.
 """.
--spec parse(binary()) -> {ok, [dbus_address()]} | {error, term()}.
+-spec parse(binary()) -> {ok, [t()]} | {error, term()}.
 parse(Addresses) when is_binary(Addresses) ->
     %% docs/addresses.md "Parsing Order": split the structure on literal
     %% delimiters first, percent-decode the values last. Splitting a decoded
@@ -81,11 +85,11 @@ parse_address(Address) ->
             {error, {no_transport_delimiter, Address}};
         [<<>>, _] ->
             {error, {empty_transport, Address}};
-        [Transport, Params] ->
-            case is_name(Transport) of
-                false ->
-                    {error, {invalid_transport, Transport}};
-                true ->
+        [TransportBinary, Params] ->
+            case validate_transport(TransportBinary) of
+                {error, _} = E ->
+                    E;
+                {ok, Transport} ->
                     case parse_params(Params) of
                         {ok, Options} ->
                             %% Verbatim, so `nonce-tcp' stays 'nonce-tcp'.
@@ -93,7 +97,7 @@ parse_address(Address) ->
                             %% variant because the format is extensible: an
                             %% unknown transport must parse. is_name/1 has
                             %% already bounded the bytes that can get here.
-                            build(binary_to_atom(Transport, utf8), Options);
+                            build(Transport, Options);
                         {error, _} = E ->
                             E
                     end
@@ -145,17 +149,41 @@ parse_param(Param) ->
         [<<>>, _] ->
             {error, {empty_parameter_key, Param}};
         [Key, Value] ->
-            case is_name(Key) of
-                false ->
-                    {error, {invalid_parameter_key, Key}};
-                true ->
+            case validate_param(Key) of
+                {error, _} = E ->
+                    E;
+                {ok, ParamKey} ->
                     case unescape(Value) of
                         {ok, Decoded} ->
-                            {ok, {binary_to_atom(Key, utf8), Decoded}};
+                            {ok, {ParamKey, Decoded}};
                         {error, Reason} ->
-                            {error, {Key, Reason}}
+                            {error, {ParamKey, Reason}}
                     end
             end
+    end.
+
+validate_transport(Bin) ->
+    case is_name(Bin) of
+        true ->
+            try
+                {ok, binary_to_existing_atom(Bin, utf8)}
+            catch
+                error:badarg -> {error, {invalid_transport, Bin}}
+            end;
+        false ->
+            {error, {invalid_transport, Bin}}
+    end.
+
+validate_param(Bin) ->
+    case is_name(Bin) of
+        true ->
+            try
+                {ok, binary_to_existing_atom(Bin, utf8)}
+            catch
+                error:badarg -> {error, {invalid_parameter, Bin}}
+            end;
+        false ->
+            {error, {invalid_parameter, Bin}}
     end.
 
 %% Transport names and parameter keys are not escaped -- the spec escapes
