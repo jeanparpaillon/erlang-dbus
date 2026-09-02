@@ -105,7 +105,7 @@ marshal_message(#dbus_message{header = Header, body = undefined}) ->
 marshal_message(#dbus_message{header = Header, body = {Types, Content}}) ->
     try marshal_list(Types, Content) of
         {Data, Pos} ->
-            Signature = #dbus_variant{type=signature, value=marshal_signature(Types)},
+            Signature = #dbus_variant{type = signature, value = marshal_signature(Types)},
             HeaderBin = marshal_header(Header#dbus_header{
                 fields = [{?FIELD_SIGNATURE, Signature} | Header#dbus_header.fields],
                 size = Pos

@@ -3,6 +3,7 @@
 Handles connection to a D-Bus peer.
 """.
 -include("dbus.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -behaviour(gen_server).
 
@@ -29,12 +30,11 @@ Handles connection to a D-Bus peer.
 
 -record(state, {
     owner :: pid(),
-    address :: dbus_address(),
-    transport :: module(),
-    transport_state = undefined :: dbus_transport:connection() | undefined,
+    auth_ctx :: term() | undefined,
+    transport :: dbus_transport:connection() | undefined,
     uuid = <<>> :: binary(),
     serial = 1 :: dbus_serial(),
-    reader = undefined :: pid() | undefined,
+    reader :: pid() | undefined,
     acc = <<>> :: binary()
 }).
 
@@ -45,38 +45,21 @@ Handles connection to a D-Bus peer.
     %% Per-mechanism context, key is module name
     | {auth_ctx, map()}.
 
--spec start_link(dbus_address()) -> gen_server:start_ret().
+-spec start_link(dbus_address() | [dbus_address()]) -> gen_server:start_ret().
+start_link(Addresses) when is_list(Addresses) ->
+    start_link(Addresses, []);
 start_link(Address) ->
-    start_link(Address, []).
+    start_link([Address], []).
 
--spec start_link(dbus_address(), [option()]) -> gen_server:start_ret().
-start_link(Address, Options) ->
-    Ret =
-        case proplists:get_value(transport, Options, undefined) of
-            undefined ->
-                case dbus_transport:resolve(Address) of
-                    {ok, Transport} ->
-                        {ok, Transport};
-                    {error, undefined} ->
-                        {error, {invalid_transport, Address}}
-                end;
-            Transport ->
-                {ok, Transport}
-        end,
-
-    case Ret of
-        {ok, Transport1} ->
-            Owner = self(),
-            StartArgs = #{
-                owner => Owner,
-                address => Address,
-                transport => Transport1,
-                auth_ctx => proplists:get_value(auth_ctx, Options, #{})
-            },
-            gen_server:start_link(?MODULE, StartArgs, []);
-        {error, Reason} ->
-            {error, Reason}
-    end.
+-spec start_link(dbus_address() | [dbus_address()], [option()]) -> gen_server:start_ret().
+start_link(Addresses, Options) when is_list(Addresses) ->
+    Owner = self(),
+    StartArgs = #{
+        owner => Owner,
+        addresses => Addresses,
+        auth_ctx => proplists:get_value(auth_ctx, Options, #{})
+    },
+    gen_server:start_link(?MODULE, StartArgs, []).
 
 -spec stop(connection()) ->
     ok.
@@ -116,25 +99,13 @@ send(Connection, Message) ->
 %%%
 init(
     #{
-        transport := Transport,
         owner := Owner,
-        address := Address,
+        addresses := Addresses,
         auth_ctx := AuthCtx
     } = _StartArgs
 ) ->
-    case dbus_transport:connect(Transport, Address) of
-        {ok, Conn} ->
-            State = #state{
-                owner = Owner,
-                address = Address,
-                uuid = <<>>,
-                transport_state = Conn
-            },
-
-            handle_auth(State, AuthCtx);
-        {error, Reason} ->
-            {stop, Reason}
-    end.
+    State = #state{owner = Owner, auth_ctx = AuthCtx},
+    try_connect(Addresses, State).
 
 handle_call(get_uuid, _From, #state{uuid = UUID} = State) ->
     {reply, {ok, UUID}, State};
@@ -146,8 +117,7 @@ handle_call(
     {send, Message},
     _From,
     #state{
-        transport_state = TransportState,
-        transport = Transport,
+        transport = Conn,
         serial = Serial
     } = State
 ) ->
@@ -155,7 +125,7 @@ handle_call(
     State1 = incr_serial(State),
 
     Data = dbus_marshaller:marshal_message(Message1),
-    case dbus_transport:send(Transport, TransportState, Data) of
+    case dbus_transport:send(Conn, Data) of
         ok ->
             {reply, {ok, State1#state.serial}, State1};
         {error, Reason} ->
@@ -204,33 +174,34 @@ code_change(_OldVsn, State, _Extra) ->
 %%%
 %%% Private
 %%%
-handle_auth(State, AuthCtx) ->
-    T = State#state.transport,
-    TS = State#state.transport_state,
+try_connect([], _State) ->
+    {stop, no_addresses};
+try_connect([Address | Addresses], State) ->
+    case dbus_transport:connect(Address) of
+        {ok, Conn} ->
+            ?LOG_INFO("Successfully connected to ~p", [Address]),
+            handle_auth(State#state{transport = Conn});
+        {error, Reason} ->
+            ?LOG_ERROR("Failed to connect to ~p: ~p", [Address, Reason]),
+            try_connect(Addresses, State)
+    end.
 
-    ok = dbus_transport:set_mode(T, TS, line),
-
+handle_auth(#state{transport = Conn} = State) ->
     % As of spec, client must send nul byte right after connecting and before
     % authentication
-    dbus_transport:send(T, TS, <<0>>),
+    dbus_transport:send(Conn, <<0>>),
 
-    case dbus_auth_client_mech:try_auth(AuthCtx, T, TS) of
-        {ok, Resp, TS1} ->
-            handle_begin(State#state{
-                uuid = Resp,
-                transport_state = TS1
-            });
+    case dbus_auth_client_mech:try_auth(State#state.auth_ctx, Conn) of
+        {ok, Resp} ->
+            ?LOG_INFO("Authentication successful, server guid: ~p", [Resp]),
+            handle_begin(State#state{uuid = Resp});
         {error, Reason} ->
+            ?LOG_ERROR("Authentication failed: ~p", [Reason]),
             {stop, {auth_error, Reason}}
     end.
 
-handle_begin(State) ->
-    T = State#state.transport,
-    TS = State#state.transport_state,
-
-    ok = dbus_transport:set_mode(T, TS, raw),
-    Reader = start_reader(T, TS),
-
+handle_begin(#state{transport = Conn} = State) ->
+    Reader = start_reader(Conn),
     {ok, State#state{reader = Reader}}.
 
 incr_serial(#state{serial = Serial} = State) ->
@@ -239,17 +210,17 @@ incr_serial(#state{serial = Serial} = State) ->
 next_serial(16#FFFFFFFF) -> 1;
 next_serial(N) -> N + 1.
 
-start_reader(Transport, TransportState) ->
-    Conn = self(),
+start_reader(Conn) ->
+    Self = self(),
     spawn_link(fun() ->
-        reader_loop(Transport, TransportState, Conn)
+        reader_loop(Conn, Self)
     end).
 
-reader_loop(Transport, TransportState, Conn) ->
-    case dbus_transport:recv(Transport, TransportState, infinity) of
+reader_loop(Conn, Parent) ->
+    case dbus_transport:recv(Conn, infinity) of
         {ok, Data} ->
-            Conn ! {data, Data, self()},
-            reader_loop(Transport, TransportState, Conn);
+            Parent ! {data, Data, self()},
+            reader_loop(Conn, Parent);
         {error, Reason} ->
             %% Handle error
             exit({recv_error, Reason})

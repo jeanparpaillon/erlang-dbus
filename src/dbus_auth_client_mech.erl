@@ -26,23 +26,21 @@ Defines the behaviour for authentication client mechanisms.
 
 -record(state, {
     ctx :: map(),
-    transport :: module(),
-    transport_state :: term(),
+    transport :: dbus_transport:connection(),
     supported_mechs = undefined :: [binary()] | undefined,
     mech :: module() | undefined,
     mech_state :: term() | undefined,
     guid :: binary() | undefined
 }).
 
--export([try_auth/3]).
+-export([try_auth/2]).
 
--spec try_auth(map(), module(), term()) ->
-    {ok, binary(), term()} | {error, term()}.
-try_auth(Ctx, Transport, TransportState) ->
+-spec try_auth(map(), dbus_transport:connection()) ->
+    {ok, binary()} | {error, term()}.
+try_auth(Ctx, Conn) ->
     State = #state{
         ctx = Ctx,
-        transport = Transport,
-        transport_state = TransportState
+        transport = Conn
     },
 
     ok = do_send(dbus_sasl:command_auth(), State),
@@ -98,9 +96,8 @@ do_auth(waiting_for_reject, _, _State) ->
 do_auth(waiting_for_unix_fd, agree_unix_fd, State) ->
     handle_begin(State);
 do_auth(waiting_for_unix_fd, {error, _}, State) ->
-    Transport = State#state.transport,
-    TransportState = State#state.transport_state,
-    ok = dbus_transport:disable_unix_fd(Transport, TransportState),
+    Conn = State#state.transport,
+    ok = dbus_transport:disable_unix_fd(Conn),
     handle_begin(State);
 do_auth(_, {transport_error, Reason}, _State) ->
     {error, {transport_error, Reason}};
@@ -148,10 +145,9 @@ handle_auth_init(State) ->
     end.
 
 handle_ok(<<>>, State) ->
-    Transport = State#state.transport,
-    TransportState = State#state.transport_state,
+    Conn = State#state.transport,
 
-    case dbus_transport:support_unix_fd(Transport, TransportState) of
+    case dbus_transport:support_unix_fd(Conn) of
         true ->
             ok = do_send(dbus_sasl:command_negotiate_unix_fd(), State),
             do_auth(waiting_for_unix_fd, do_recv(State), State);
@@ -163,7 +159,7 @@ handle_ok(Response, State) ->
 
 handle_begin(State) ->
     ok = do_send(dbus_sasl:command_begin(), State),
-    {ok, State#state.guid, State#state.transport_state}.
+    {ok, State#state.guid}.
 
 next_mechanism([]) ->
     not_found;
@@ -181,10 +177,10 @@ lookup_mechanism(<<"ANONYMOUS">>) -> dbus_auth_anonymous;
 lookup_mechanism(_) -> undefined.
 
 do_send(Data, State) ->
-    dbus_transport:send(State#state.transport, State#state.transport_state, Data).
+    dbus_transport:send(State#state.transport, Data).
 
 do_recv(State) ->
-    case dbus_transport:recv(State#state.transport, State#state.transport_state, 1000) of
+    case dbus_transport:recv(State#state.transport, 1000) of
         {ok, Data} ->
             dbus_sasl:parse(Data);
         {error, Reason} ->
