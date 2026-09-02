@@ -15,6 +15,12 @@ themselves are one-liners on top of them. Four things live here:
 - `corrupted/1`, which damages valid bytes, since the robustness properties get
   nowhere feeding a decoder random ones.
 
+Beside them are three oracles transcribed from the specification rather than
+derived from `dbus_marshaller`: `fixed_width/1`, `alignment/1` and
+`spec_figure/0`. The duplication is the point -- a law checked against the
+implementation's own opinion of where a boundary is holds however wrong that
+opinion is.
+
 Several generators are deliberately narrower than the D-Bus specification. Every
 such narrowing carries a `BUG-n' marker naming its entry in
 `docs/marshaller-property-triage.md'; without them the properties fail on
@@ -35,13 +41,19 @@ existing defects that this suite is not chartered to fix.
     typed_value/0,
     dict_typed_value/0,
     fixed_width_typed_value/0,
+    array_typed_value/0,
+    alignment_probe/0,
     bare_variant_value/0,
     lax/2,
     canon/2,
     canon_list/2,
     message/0,
     messages/0,
+    body_size/2,
     fixed_width/1,
+    alignment/1,
+    align/2,
+    spec_figure/0,
     corrupted/1
 ]).
 
@@ -136,13 +148,13 @@ signature() ->
     ).
 
 is_marshallable(Sig) ->
-    case catch iolist_to_binary(dbus_marshaller:marshal_signature(Sig)) of
+    case catch dbus_marshaller:marshal_signature(Sig) of
         Bin when is_binary(Bin) -> byte_size(Bin) =< 255;
         _Error -> false
     end.
 
 sig_bin(Sig) ->
-    iolist_to_binary(dbus_marshaller:marshal_signature(Sig)).
+    dbus_marshaller:marshal_signature(Sig).
 
 %%%
 %%% Values
@@ -259,6 +271,115 @@ fixed_width_typed_value() ->
         ?LET(V, value(T), {T, V, integer(0, 64)})
     ).
 
+-doc """
+An array type, a value of it, and a starting position.
+
+The three element types `prop_array_length_excludes_padding' is stated over are
+drawn explicitly beside a general one: `byte' and `int64' are the extremes of
+element padding after the length word -- none and four bytes -- and a struct is
+the case where the element's alignment is stricter than anything it contains.
+""".
+array_typed_value() ->
+    ?LET(
+        SubType,
+        array_element_type(),
+        ?LET(V, value({array, SubType}), {{array, SubType}, V, integer(0, 64)})
+    ).
+
+array_element_type() ->
+    union([
+        byte,
+        int64,
+        ?LET(Ts, sub_types(4), {struct, Ts}),
+        ?SUCHTHAT(T, type(), is_array_element(T))
+    ]).
+
+-doc """
+A type, a value of it whose first encoded byte is not zero, and a starting
+position.
+
+That guarantee is what makes the alignment law statable for every type rather
+than only the fixed-width ones: the padding a marshalling emitted is then
+exactly the count of leading zero bytes in its output, and nothing has to be
+recovered from a position delta.
+
+It is met differently per type. A string-like type, an array and a dict all
+start with their length word, so a short non-empty one starts non-zero; a
+variant starts with the length byte of its signature, which is never zero; an
+integer is filtered on its least significant byte, which little-endian puts
+first; a struct is given a non-zero `byte' as its first field.
+""".
+alignment_probe() ->
+    ?LET(
+        Type,
+        probe_type(),
+        ?LET(V, probe_value(Type), {Type, V, integer(0, 64)})
+    ).
+
+probe_type() ->
+    union([
+        byte,
+        boolean,
+        int16,
+        uint16,
+        int32,
+        uint32,
+        int64,
+        uint64,
+        double,
+        string,
+        object_path,
+        signature,
+        variant,
+        {array, byte},
+        {array, uint64},
+        ?LET(Ts, sub_types(4), {struct, [byte | Ts]}),
+        {dict, byte, byte}
+    ]).
+
+probe_value(byte) ->
+    integer(1, 255);
+probe_value(boolean) ->
+    %% `false' encodes as four zero bytes, which no count of leading zeros can
+    %% tell from padding.
+    exactly(true);
+probe_value(double) ->
+    ?SUCHTHAT(V, value(double), first_byte(<<V:64/little-float>>) =/= 0);
+probe_value(Type) when
+    Type =:= int16;
+    Type =:= uint16;
+    Type =:= int32;
+    Type =:= uint32;
+    Type =:= int64;
+    Type =:= uint64
+->
+    ?SUCHTHAT(V, value(Type), V band 255 =/= 0);
+probe_value(Type) when Type =:= string; Type =:= object_path ->
+    %% The length is a `uint32'; one that is a multiple of 256 would put a zero
+    %% in its first byte.
+    ?SUCHTHAT(V, value(Type), byte_size(V) > 0 andalso byte_size(V) rem 256 =/= 0);
+probe_value(signature) ->
+    %% A signature is at least one type code long and its length is one byte.
+    value(signature);
+probe_value(variant) ->
+    value(variant);
+probe_value({array, byte}) ->
+    ?LET(N, integer(1, 32), binary(N));
+probe_value({array, uint64}) ->
+    %% n is 8 per element, so one to four elements keep it clear of 256.
+    ?LET(N, integer(1, 4), vector(N, value(uint64)));
+probe_value({struct, [byte | SubTypes]}) ->
+    ?LET(
+        {B, Vs},
+        {integer(1, 255), [value(T) || T <- SubTypes]},
+        list_to_tuple([B | Vs])
+    );
+probe_value({dict, byte, byte}) ->
+    %% One entry, so n is 2 whatever the key and the value are.
+    ?LET({K, V}, {value(byte), value(byte)}, #{K => V}).
+
+first_byte(<<B:8, _/binary>>) -> B.
+
 -doc "Byte width of a fixed-width type, padding excluded.".
 fixed_width(byte) -> 1;
 fixed_width(boolean) -> 4;
@@ -269,6 +390,41 @@ fixed_width(uint32) -> 4;
 fixed_width(int64) -> 8;
 fixed_width(uint64) -> 8;
 fixed_width(double) -> 8.
+
+-doc """
+Alignment boundary of a type, in bytes.
+
+Read off the specification's "Summary of D-Bus marshalling" table, and duplicated
+here for the reason `fixed_width/1' is: `dbus_marshaller:padding/1' is a function
+under test, so a law stated against it is checked against the implementation's
+own opinion of where the boundaries are.
+
+`{dict, K, V}' is this library's spelling of `a{kv}' -- an array of dict
+entries, not the entry itself -- so it aligns as an array, to 4. The 8-byte
+alignment the specification gives a dict entry belongs to the
+`{struct, [K, V]}' the marshaller builds from it.
+""".
+alignment(byte) -> 1;
+alignment(boolean) -> 4;
+alignment(int16) -> 2;
+alignment(uint16) -> 2;
+alignment(int32) -> 4;
+alignment(uint32) -> 4;
+alignment(int64) -> 8;
+alignment(uint64) -> 8;
+alignment(double) -> 8;
+alignment(string) -> 4;
+alignment(object_path) -> 4;
+alignment(signature) -> 1;
+alignment(variant) -> 1;
+alignment({array, _SubType}) -> 4;
+alignment({struct, _SubTypes}) -> 8;
+alignment({dict, _KeyType, _ValueType}) -> 4.
+
+-doc "The first position at or after `Pos' on a `Type' boundary.".
+align(Type, Pos) ->
+    A = alignment(Type),
+    Pos + (A - Pos rem A) rem A.
 
 -doc """
 A value marshalled as a variant *without* a `#dbus_variant{}' wrapper.
@@ -421,9 +577,10 @@ Three constraints come from the encoder rather than from the protocol:
 header field, while `unmarshal_message/1' errors on a non-empty body that has
 none, so the generator has to set it; and the decoded message differs from the
 encoded one in three fixed ways -- `size' is filled in, header field values lose
-their `#dbus_variant{}' wrapper, and the body is the decoded tuple rather than
-its bytes. That last one means `marshal_message/1' cannot consume the output of
-`unmarshal_data/1', even though `#dbus_message.body' is typed as if it could.
+their `#dbus_variant{}' wrapper, and the body is the decoded values alone rather
+than the `{Signature, Values}' pair that was encoded. That last one means
+`marshal_message/1' cannot consume the output of `unmarshal_data/1', even though
+`#dbus_message.body' is typed as if it could.
 """.
 message() ->
     ?LET(
@@ -433,8 +590,6 @@ message() ->
             {Type, Flags, Serial, Extra},
             {message_type(), integer(0, 255), integer(1, 4294967295), extra_fields()},
             begin
-                {Io, _Pos} = dbus_marshaller:marshal_list(Sig, Vs),
-                Body = iolist_to_binary(Io),
                 Fields =
                     [
                         {?FIELD_SIGNATURE, #dbus_variant{type = signature, value = sig_bin(Sig)}}
@@ -448,15 +603,35 @@ message() ->
                 },
                 Decoded = #dbus_message{
                     header = Header#dbus_header{
-                        size = byte_size(Body),
+                        size = body_size(Sig, Vs),
                         fields = [{Code, canon(variant, Var)} || {Code, Var} <- Fields]
                     },
-                    body = list_to_tuple(canon_list(Sig, Vs))
+                    body = decoded_body(Sig, Vs)
                 },
-                {#dbus_message{header = Header, body = Body}, Decoded}
+                {#dbus_message{header = Header, body = {Sig, Vs}}, Decoded}
             end
         )
     ).
+
+-doc """
+The number of bytes `marshal_message/1' writes for a body, i.e. the `size' the
+decoded header carries.
+
+`marshal_list/2' encodes from position 0, so the position it ends at is the
+length of what it emitted.
+""".
+body_size(Sig, Vs) ->
+    {_Io, Pos} = dbus_marshaller:marshal_list(Sig, Vs),
+    Pos.
+
+%% `unmarshal_body/4' returns the values without the signature that was decoded
+%% with them, and unwraps a one-value body out of its tuple.
+decoded_body(Sig, Vs) ->
+    case canon_list(Sig, Vs) of
+        [] -> undefined;
+        [One] -> One;
+        Many -> list_to_tuple(Many)
+    end.
 
 -doc "A short stream of messages, paired with what they must decode to.".
 messages() ->
@@ -489,6 +664,134 @@ extra_field(member, _, _, Member, _) ->
     {?FIELD_MEMBER, #dbus_variant{type = string, value = Member}};
 extra_field(reply_serial, _, _, _, Serial) ->
     {?FIELD_REPLY_SERIAL, #dbus_variant{type = uint32, value = Serial}}.
+
+%%%
+%%% Spec figures
+%%%
+
+-doc """
+A worked example from the specification: `{Signature, Values, Endian, Bytes}'.
+
+`Bytes' is the encoding the D-Bus authors wrote down, so it is an oracle by
+definition -- the only one in this suite that no part of `dbus_marshaller'
+contributed to. `Values' is what `marshal_list/2' is given; what unmarshalling
+gives back is `canon_list/2' of it.
+
+The two big-endian figures are the specification's own; the little-endian
+transcription beside each is the same figure with the byte order of every
+numeric field reversed, since `dbus_marshaller' only ever writes `$l' and the
+encoding direction could not be checked otherwise.
+""".
+spec_figure() ->
+    union([
+        %% Marshalling basic types: the strings `foo', `+' and `bar' in
+        %% sequence from a multiple of 8, little-endian, with two bytes of
+        %% padding before the third length word.
+        {[string, string, string], [<<"foo">>, <<"+">>, <<"bar">>], $l, <<
+            16#03,
+            16#00,
+            16#00,
+            16#00,
+            $f,
+            $o,
+            $o,
+            16#00,
+            16#01,
+            16#00,
+            16#00,
+            16#00,
+            $+,
+            16#00,
+            16#00,
+            16#00,
+            16#03,
+            16#00,
+            16#00,
+            16#00,
+            $b,
+            $a,
+            $r,
+            16#00
+        >>},
+        %% Marshalling containers: an array holding only the 64-bit integer 5,
+        %% big-endian, from a multiple of 8. Four bytes of padding between the
+        %% length word and the element, which n does not count.
+        {[{array, int64}], [[5]], $B, <<
+            16#00,
+            16#00,
+            16#00,
+            16#08,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#05
+        >>},
+        {[{array, int64}], [[5]], $l, <<
+            16#08,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#05,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00
+        >>},
+        %% Marshalling containers: a variant holding the 64-bit integer 5,
+        %% big-endian, from a multiple of 8. The variant itself needs no
+        %% padding; the value inside it needs five bytes.
+        {[variant], [#dbus_variant{type = uint64, value = 5}], $B, <<
+            16#01,
+            $t,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#05
+        >>},
+        {[variant], [#dbus_variant{type = uint64, value = 5}], $l, <<
+            16#01,
+            $t,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#05,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00,
+            16#00
+        >>}
+    ]).
 
 %%%
 %%% Corruption

@@ -79,7 +79,7 @@
 
 -record(dbus_message, {
     header = #dbus_header{} :: dbus_header(),
-    body :: binary() | undefined
+    body = undefined :: undefined | {dbus_signature(), term()}
 }).
 
 -type dbus_message() :: #dbus_message{}.

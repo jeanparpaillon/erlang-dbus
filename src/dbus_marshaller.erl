@@ -7,6 +7,7 @@ Specification](https://dbus.freedesktop.org/doc/dbus-specification.html#message-
 """.
 
 -include("dbus.hrl").
+-include("dbus_constants.hrl").
 
 -elvis([
     {elvis_style, export_used_types, #{ignore => [dbus_marshaller]}},
@@ -27,28 +28,25 @@ Specification](https://dbus.freedesktop.org/doc/dbus-specification.html#message-
 -dialyzer({no_opaque, [marshal_dict/4]}).
 
 -ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
-
-%% The public API always encodes from position 0 and offers no way to decode a
-%% bare value list, so the alignment and offset laws cannot be stated through
-%% it. The eunit tests below already call `marshal/3' and `unmarshal/4'
-%% directly; these exports let `test/prop_dbus_marshaller.erl' do the same.
+%% The public API always encodes a whole message from position 0 and offers no
+%% way to encode or decode a bare value list, so the signature, alignment and
+%% offset laws cannot be stated through it. These exports let
+%% `test/prop_dbus_marshaller.erl' and `test/dbus_marshaller_gen.erl' reach the
+%% functions those laws are about.
 -export([
     marshal/3,
+    marshal_list/2,
+    marshal_signature/1,
     unmarshal/4,
     unmarshal_tuple/3,
-    pad/2,
-    padding/1
+    unmarshal_signature/1
 ]).
 -endif.
 
 %% api
 -export([
     marshal_message/1,
-    marshal_signature/1,
-    marshal_list/2,
-    unmarshal_data/1,
-    unmarshal_signature/1
+    unmarshal_data/1
 ]).
 
 -define(HEADER_SIGNATURE, [
@@ -98,60 +96,22 @@ Encode a message.
 
 Encodes a `dbus_message:t()` into an iolist, including any padding that may be
 required. Such a marshalled message is ready to send through a socket onto D-Bus.
-
-As defined in `dbus.hrl`, a message is a header record and a body. `marshal_message/1`
-marshals the header but passes through the body portion unchanged. It follows that,
-given the result of this function is an iolist and that result is `[Header, Body]`,
-then `Body` must be a valid iolist.
-
-Note that prior to marshalling the message serial must be set, and that the message
-body is unaffected by marshalling and so should be in a final form ready for
-transmission.
 """.
--spec marshal_message(dbus_message()) -> iolist().
-marshal_message(#dbus_message{header = #dbus_header{serial = 0}} = _Msg) ->
+-spec marshal_message(dbus_message()) -> binary().
+marshal_message(#dbus_message{header = #dbus_header{serial = 0}}) ->
     error(invalid_serial);
-marshal_message(
-    #dbus_message{
-        header = #dbus_header{type = Type, flags = Flags, serial = S, fields = Fields},
-        body = <<>>
-    } = _Msg
-) ->
-    marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, 0, S, Fields]);
-marshal_message(
-    #dbus_message{
-        header = #dbus_header{type = Type, flags = Flags, serial = S, fields = Fields},
-        body = Body
-    } = _Msg
-) ->
-    [marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, iolist_size(Body), S, Fields]), Body].
-
--doc """
-Encode a signature.
-
-Raises `{bad_signature, Reason}` for the two things a type may be that the
-specification forbids on the wire: longer than 255 bytes once encoded, or
-nested deeper than 32 arrays, 32 open parentheses or 64 in total.
-`unmarshal_signature/1` rejects the same language from the other side, so a
-signature this function produces always parses back.
-""".
--spec marshal_signature(dbus_type() | dbus_signature()) -> iolist().
-marshal_signature(Type) ->
-    case signature_depth(Type, 0, 0) of
-        {error, Err} ->
-            error(Err);
-        ok ->
-            Sig = signature_bytes(Type),
-            case iolist_size(Sig) > ?SIGNATURE_MAX_LENGTH of
-                true -> error({bad_signature, too_long});
-                false -> Sig
-            end
+marshal_message(#dbus_message{header = Header, body = undefined}) ->
+    marshal_header(Header#dbus_header{size = 0});
+marshal_message(#dbus_message{header = Header, body = {Types, Content}}) ->
+    try marshal_list(Types, Content) of
+        {Data, Pos} ->
+            HeaderBin = marshal_header(Header#dbus_header{size = Pos}),
+            BodyBin = iolist_to_binary(Data),
+            <<HeaderBin/binary, BodyBin/binary>>
+    catch
+        error:_Err ->
+            error({?DBUS_ERROR_INVALID_PARAMETERS, Types})
     end.
-
--doc "Encode objects, given a signature.".
--spec marshal_list(dbus_signature(), term()) -> {iolist(), integer()}.
-marshal_list(Types, Value) ->
-    marshal_list(Types, Value, 0, []).
 
 -doc """
 Decode messages.
@@ -173,6 +133,36 @@ unmarshal_data(Data) ->
         error:Err ->
             {error, Err}
     end.
+
+%%%
+%%% Priv
+%%%
+-doc """
+Encode a signature.
+
+Raises `{bad_signature, Reason}` for the two things a type may be that the
+specification forbids on the wire: longer than 255 bytes once encoded, or
+nested deeper than 32 arrays, 32 open parentheses or 64 in total.
+`unmarshal_signature/1` rejects the same language from the other side, so a
+signature this function produces always parses back.
+""".
+-spec marshal_signature(dbus_type() | dbus_signature()) -> binary().
+marshal_signature(Type) ->
+    case signature_depth(Type, 0, 0) of
+        {error, Err} ->
+            error(Err);
+        ok ->
+            Sig = iolist_to_binary(signature_bytes(Type)),
+            case byte_size(Sig) > ?SIGNATURE_MAX_LENGTH of
+                true -> error({bad_signature, too_long});
+                false -> Sig
+            end
+    end.
+
+-doc "Encode objects, given a signature.".
+-spec marshal_list(dbus_signature(), term()) -> {iolist(), integer()}.
+marshal_list(Types, Value) ->
+    marshal_list(Types, Value, 0, []).
 
 -doc """
 Decode a signature.
@@ -203,14 +193,21 @@ unmarshal_signature(Bin) when is_binary(Bin) ->
         {error, _} = Err -> Err
     end.
 
-%%%
-%%% Priv marshalling
-%%%
-marshal_header(Header) when is_list(Header) ->
-    {Value, Pos} = marshal_list(?HEADER_SIGNATURE, Header),
+-spec marshal_header(dbus_header()) -> binary().
+marshal_header(#dbus_header{} = Header) ->
+    HeaderFields = [
+        Header#dbus_header.endian,
+        Header#dbus_header.type,
+        Header#dbus_header.flags,
+        Header#dbus_header.version,
+        Header#dbus_header.size,
+        Header#dbus_header.serial,
+        Header#dbus_header.fields
+    ],
+    {Value, Pos} = marshal_list(?HEADER_SIGNATURE, HeaderFields),
     case pad(8, Pos) of
-        0 -> Value;
-        Pad -> [Value, <<0:Pad>>]
+        0 -> iolist_to_binary(Value);
+        Pad -> iolist_to_binary([Value, <<0:Pad>>])
     end.
 
 marshal_list([], [], Pos, Res) ->

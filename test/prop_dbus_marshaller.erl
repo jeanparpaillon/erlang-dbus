@@ -10,17 +10,33 @@ The laws, in the order they are stated below:
 2. decoding a value list inverts encoding it, modulo
    `dbus_marshaller_gen:canon/2';
 3. the position an encoder returns accounts for every byte it emitted;
-4. every fixed-width value starts on its alignment boundary;
-5. encoder and decoder agree on the position they end at, at any starting
+4. a value of any type starts on the alignment boundary the specification gives
+   that type;
+5. an array's length word counts its elements and none of the padding around
+   them;
+6. the specification's own worked examples encode to, and decode from, exactly
+   the bytes it prints;
+7. encoder and decoder agree on the position they end at, at any starting
    offset -- offsets the public API cannot reach, since it always starts at 0;
-6. the permissive input clauses of `marshal/3' produce the same bytes as the
+8. the permissive input clauses of `marshal/3' produce the same bytes as the
    canonical input they accept in place of;
-7. a value marshalled as a bare variant survives the round trip even though its
+9. a value marshalled as a bare variant survives the round trip even though its
    type does not;
-8. the big-endian decode path agrees with the little-endian one.
+10. the big-endian decode path agrees with the little-endian one.
 
-3 and 4 are the reason this is not just a round-trip suite: a padding rule that
-is wrong symmetrically on both sides satisfies law 2 and fails those two.
+3 to 6 are the reason this is not just a round-trip suite: a padding rule that
+is wrong symmetrically on both sides satisfies law 2 and fails them. Laws 4 and
+5 are stated against `dbus_marshaller_gen:alignment/1', a table transcribed from
+the specification, rather than against `dbus_marshaller:padding/1', which is
+under test; law 6 is stated against bytes the D-Bus authors wrote down and is
+the only oracle here that owes nothing to the implementation.
+
+What the two of them cannot see is an entry of `padding/1' swapped for another
+value no greater than 4. `padding/1' is consulted for two things only: the
+alignment of an array's own length word, which law 4 checks at every position,
+and where that array's elements begin -- and that always follows the 4-aligned
+length word, so 1, 2 and 4 cannot be told apart there. Every entry raised to 8,
+and every 8 lowered, is caught.
 
 `?SLACK' and the trailing `uint64' guard element both work around BUG-4 in
 `docs/marshaller-property-triage.md'.
@@ -38,6 +54,8 @@ is wrong symmetrically on both sides satisfies law 2 and fails those two.
     prop_value_roundtrip/0,
     prop_position_accounts_for_bytes/0,
     prop_alignment/0,
+    prop_array_length_excludes_padding/0,
+    prop_spec_figures/0,
     prop_offset_agreement/0,
     prop_lax_input_equivalent/0,
     prop_atom_string_input/0,
@@ -50,6 +68,12 @@ is wrong symmetrically on both sides satisfies law 2 and fails those two.
 %% remain in the buffer, whether or not the struct is complete. Eight trailing
 %% bytes keep every struct clear of the end of the buffer.
 -define(SLACK, <<0:64>>).
+
+%% The nine types the specification gives a fixed width, in the order of its
+%% "Summary of D-Bus marshalling" table.
+-define(FIXED_WIDTH_TYPES, [
+    byte, boolean, int16, uint16, int32, uint32, int64, uint64, double
+]).
 
 %% The caps the specification's "Valid Signatures" section puts on the
 %% signature language, and `dbus_marshaller' with it.
@@ -66,7 +90,7 @@ prop_signature_roundtrip() ->
         Sig,
         dbus_marshaller_gen:signature(),
         begin
-            Bin = iolist_to_binary(dbus_marshaller:marshal_signature(Sig)),
+            Bin = dbus_marshaller:marshal_signature(Sig),
             {ok, Sig} =:= dbus_marshaller:unmarshal_signature(Bin)
         end
     ).
@@ -97,7 +121,7 @@ prop_signature_accepts_only_valid() ->
         Bin,
         signature_fuzz(),
         case dbus_marshaller:unmarshal_signature(Bin) of
-            {ok, Sig} -> (catch iolist_to_binary(dbus_marshaller:marshal_signature(Sig))) =:= Bin;
+            {ok, Sig} -> (catch dbus_marshaller:marshal_signature(Sig)) =:= Bin;
             {error, _} -> true;
             more -> true
         end
@@ -172,7 +196,7 @@ prop_array_nesting_depth() ->
             Bin = iolist_to_binary(lists:duplicate(N, $a) ++ "v"),
             Type = nested_array(N, variant),
             dbus_marshaller:unmarshal_signature(Bin) =:= {ok, [Type]} andalso
-                iolist_to_binary(dbus_marshaller:marshal_signature([Type])) =:= Bin
+                dbus_marshaller:marshal_signature([Type]) =:= Bin
         end
     ).
 
@@ -188,7 +212,7 @@ corrupted_signature() ->
         dbus_marshaller_gen:signature(),
         ?LET(
             Bin,
-            exactly(iolist_to_binary(dbus_marshaller:marshal_signature(Sig))),
+            exactly(dbus_marshaller:marshal_signature(Sig)),
             dbus_marshaller_gen:corrupted(Bin)
         )
     ).
@@ -240,19 +264,98 @@ prop_position_accounts_for_bytes() ->
 %%% 4. Alignment
 %%%
 
+%% `alignment_probe/0' guarantees the first byte of the value proper is not
+%% zero, which is what lets the padding be read straight off the output as its
+%% leading zero bytes -- no position arithmetic against the encoder, and so no
+%% type is out of reach the way the variable-width ones were when the law was
+%% stated as a position delta.
 prop_alignment() ->
     ?FORALL(
         {Type, Value, Pos},
-        dbus_marshaller_gen:fixed_width_typed_value(),
+        dbus_marshaller_gen:alignment_probe(),
         begin
-            {_Io, Pos1} = dbus_marshaller:marshal(Type, Value, Pos),
-            Pad = Pos1 - Pos - dbus_marshaller_gen:fixed_width(Type),
-            Pad >= 0 andalso (Pos + Pad) rem dbus_marshaller:padding(Type) =:= 0
+            {Io, _Pos1} = dbus_marshaller:marshal(Type, Value, Pos),
+            Bin = iolist_to_binary(Io),
+            Pad = dbus_marshaller_gen:align(Type, Pos) - Pos,
+            leading_zeros(Bin) =:= Pad andalso content_size_ok(Type, byte_size(Bin) - Pad)
         end
     ).
 
+leading_zeros(Bin) -> leading_zeros(Bin, 0).
+
+leading_zeros(<<0, Rest/binary>>, N) -> leading_zeros(Rest, N + 1);
+leading_zeros(_Bin, N) -> N.
+
+%% For the nine fixed-width types the size of the value proper is known from the
+%% specification too, so the law says how many bytes follow the padding as well
+%% as where they start.
+content_size_ok(Type, Size) ->
+    case lists:member(Type, ?FIXED_WIDTH_TYPES) of
+        true -> Size =:= dbus_marshaller_gen:fixed_width(Type);
+        false -> true
+    end.
+
 %%%
-%%% 5. Encoder and decoder agree on the end position
+%%% 5. An array's length word
+%%%
+
+%% "n does not include the padding after the length, or any padding after the
+%% last element" -- Marshalling containers. Both ends of that are checked here:
+%% where the elements begin is computed from the transcribed alignment table,
+%% and n is read off the wire, so an element type padded to the wrong boundary
+%% shows up as an n that does not reach the end of the encoding.
+prop_array_length_excludes_padding() ->
+    ?FORALL(
+        {{array, SubType} = Type, Value, Pos},
+        dbus_marshaller_gen:array_typed_value(),
+        aggregate(
+            with_title("array element shapes"),
+            [shape(SubType)],
+            begin
+                {Io, Pos1} = dbus_marshaller:marshal(Type, Value, Pos),
+                Bin = iolist_to_binary(Io),
+                LenPos = dbus_marshaller_gen:align(uint32, Pos),
+                First = dbus_marshaller_gen:align(SubType, LenPos + 4),
+                Offset = LenPos - Pos,
+                <<_:Offset/binary, N:32/little-unsigned, _/binary>> = Bin,
+                N =:= Pos1 - First andalso byte_size(Bin) =:= First - Pos + N
+            end
+        )
+    ).
+
+%%%
+%%% 6. The specification's worked examples
+%%%
+
+%% A fixed set of vectors, stated as a property rather than as test cases so
+%% that they run in the same suite, under the same command, as everything else
+%% here. `-n' well above the number of figures is what makes each one certain to
+%% be drawn.
+prop_spec_figures() ->
+    ?FORALL(
+        {Sig, Values, Endian, Bytes},
+        dbus_marshaller_gen:spec_figure(),
+        begin
+            Expected = list_to_tuple(dbus_marshaller_gen:canon_list(Sig, Values)),
+            decodes_as(Sig, Bytes, Endian, Expected) andalso encodes_as(Sig, Values, Endian, Bytes)
+        end
+    ).
+
+decodes_as(Sig, Bytes, Endian, Expected) ->
+    dbus_marshaller:unmarshal_tuple(Sig, Bytes, Endian) =:=
+        {ok, Expected, <<>>, byte_size(Bytes)}.
+
+%% Only the little-endian transcription of a figure can be checked in the
+%% encoding direction: `marshal_list/2' has no byte order argument and always
+%% writes `$l'.
+encodes_as(_Sig, _Values, $B, _Bytes) ->
+    true;
+encodes_as(Sig, Values, $l, Bytes) ->
+    {Io, Pos} = dbus_marshaller:marshal_list(Sig, Values),
+    {iolist_to_binary(Io), Pos} =:= {Bytes, byte_size(Bytes)}.
+
+%%%
+%%% 7. Encoder and decoder agree on the end position
 %%%
 
 prop_offset_agreement() ->
@@ -271,7 +374,7 @@ prop_offset_agreement() ->
     ).
 
 %%%
-%%% 6. Permissive inputs encode like the canonical ones
+%%% 8. Permissive inputs encode like the canonical ones
 %%%
 
 prop_lax_input_equivalent() ->
@@ -323,7 +426,7 @@ prop_legacy_dict_input() ->
     ).
 
 %%%
-%%% 7. Bare variants
+%%% 9. Bare variants
 %%%
 
 prop_bare_variant_value_roundtrip() ->
@@ -348,7 +451,7 @@ prop_bare_variant_value_roundtrip() ->
     ).
 
 %%%
-%%% 8. Endianness
+%%% 10. Endianness
 %%%
 
 prop_endian_agreement() ->

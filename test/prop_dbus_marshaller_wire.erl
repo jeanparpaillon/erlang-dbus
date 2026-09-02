@@ -11,7 +11,13 @@ a byte stream off a socket behaves:
    truncated message is `more', never an error, and never silently dropped;
 3. decoding arbitrary and corrupted input terminates and returns one of the
    three documented answers, rather than raising. `unmarshal_data/1' is fed
-   straight off the socket and the lengths it trusts are written by the peer.
+   straight off the socket and the lengths it trusts are written by the peer;
+4. a marshalled header is a multiple of 8 bytes long, so the body begins on an
+   8-byte boundary.
+
+Law 4 is the one thing here that law 1 does not already imply: `marshal_header/1'
+and `unmarshal_header_fields/2' agree with each other about the padding that ends
+the header, and a round trip is satisfied by any amount of it they agree on.
 """.
 
 -include_lib("proper/include/proper.hrl").
@@ -20,7 +26,8 @@ a byte stream off a socket behaves:
 -export([
     prop_message_roundtrip/0,
     prop_incremental_decode/0,
-    prop_never_crashes/0
+    prop_never_crashes/0,
+    prop_header_is_multiple_of_8/0
 ]).
 
 %%%
@@ -32,7 +39,7 @@ prop_message_roundtrip() ->
         {Msg, Decoded},
         dbus_marshaller_gen:message(),
         begin
-            Bin = iolist_to_binary(dbus_marshaller:marshal_message(Msg)),
+            Bin = dbus_marshaller:marshal_message(Msg),
             dbus_marshaller:unmarshal_data(Bin) =:= {ok, [Decoded], <<>>}
         end
     ).
@@ -111,3 +118,21 @@ corrupted_stream() ->
 
 marshal_all(Msgs) ->
     iolist_to_binary([dbus_marshaller:marshal_message(M) || M <- Msgs]).
+
+%%%
+%%% 4. Header length
+%%%
+
+%% "The length of the header must be a multiple of 8, allowing the body to begin
+%% on an 8-byte boundary" -- Message Format. `marshal_message/1' appends the
+%% encoded body to the header without padding between them, so what it emits
+%% beyond the body is the header.
+prop_header_is_multiple_of_8() ->
+    ?FORALL(
+        {#dbus_message{body = {Sig, Vs}} = Msg, _Decoded},
+        dbus_marshaller_gen:message(),
+        begin
+            Bin = dbus_marshaller:marshal_message(Msg),
+            (byte_size(Bin) - dbus_marshaller_gen:body_size(Sig, Vs)) rem 8 =:= 0
+        end
+    ).
