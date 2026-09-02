@@ -96,9 +96,8 @@ prop_never_crashes() ->
 fuzz() ->
     union([binary(), corrupted_stream()]).
 
-%% A valid stream with some bytes overwritten and the tail cut off at an
-%% arbitrary point -- the shapes a real peer produces when it is buggy or
-%% hostile, which random binaries almost never reach past the header check.
+%% A valid stream, corrupted: the shapes a real peer produces when it is buggy
+%% or hostile, which random binaries almost never reach past the header check.
 corrupted_stream() ->
     ?LET(
         Pairs,
@@ -106,20 +105,9 @@ corrupted_stream() ->
         ?LET(
             Bin,
             exactly(marshal_all([M || {M, _} <- Pairs])),
-            ?LET(
-                {Overwrites, Cut},
-                {
-                    list({integer(0, byte_size(Bin) - 1), integer(0, 255)}),
-                    integer(0, byte_size(Bin))
-                },
-                binary:part(lists:foldl(fun overwrite/2, Bin, Overwrites), 0, Cut)
-            )
+            dbus_marshaller_gen:corrupted(Bin)
         )
     ).
-
-overwrite({Index, Byte}, Bin) ->
-    <<Head:Index/binary, _:8, Tail/binary>> = Bin,
-    <<Head/binary, Byte:8, Tail/binary>>.
 
 marshal_all(Msgs) ->
     iolist_to_binary([dbus_marshaller:marshal_message(M) || M <- Msgs]).

@@ -4,7 +4,9 @@ Encoding laws for `dbus_marshaller'.
 
 The laws, in the order they are stated below:
 
-1. decoding a signature inverts encoding it;
+1. decoding a signature inverts encoding it, decoding accepts nothing the
+   encoder could not have produced, and decoding an arbitrary binary answers
+   rather than raises;
 2. decoding a value list inverts encoding it, modulo
    `dbus_marshaller_gen:canon/2';
 3. the position an encoder returns accounts for every byte it emitted;
@@ -29,6 +31,10 @@ is wrong symmetrically on both sides satisfies law 2 and fails those two.
 
 -export([
     prop_signature_roundtrip/0,
+    prop_signature_never_crashes/0,
+    prop_signature_accepts_only_valid/0,
+    prop_signature_rejects_invalid/0,
+    prop_array_nesting_depth/0,
     prop_value_roundtrip/0,
     prop_position_accounts_for_bytes/0,
     prop_alignment/0,
@@ -45,6 +51,12 @@ is wrong symmetrically on both sides satisfies law 2 and fails those two.
 %% bytes keep every struct clear of the end of the buffer.
 -define(SLACK, <<0:64>>).
 
+%% The caps the specification's "Valid Signatures" section puts on the
+%% signature language, and `dbus_marshaller' with it.
+-define(MAX_LENGTH, 255).
+-define(MAX_ARRAY_DEPTH, 32).
+-define(MAX_STRUCT_DEPTH, 32).
+
 %%%
 %%% 1. Signatures
 %%%
@@ -57,6 +69,128 @@ prop_signature_roundtrip() ->
             Bin = iolist_to_binary(dbus_marshaller:marshal_signature(Sig)),
             {ok, Sig} =:= dbus_marshaller:unmarshal_signature(Bin)
         end
+    ).
+
+%% `unmarshal_signature/1' is public and is also reached from the wire through
+%% `unmarshal_body/4', where the argument is a header field written by the
+%% peer. Only `unmarshal_data/1' has an outer try, so the exported function has
+%% to be total on its own.
+prop_signature_never_crashes() ->
+    ?FORALL(
+        Bin,
+        signature_fuzz(),
+        case catch dbus_marshaller:unmarshal_signature(Bin) of
+            more -> true;
+            {ok, Sig} -> is_list(Sig);
+            {error, _} -> true;
+            _Other -> false
+        end
+    ).
+
+%% The negative direction of law 1, and the reason it is stated over fuzz
+%% rather than over `signature()': feeding back what `marshal_signature/1'
+%% produced only ever states that the valid language is accepted. Re-encoding
+%% what was accepted is what excludes the `r' and `e' type codes, an unbalanced
+%% bracket and a dict entry outside an array, without listing them here.
+prop_signature_accepts_only_valid() ->
+    ?FORALL(
+        Bin,
+        signature_fuzz(),
+        case dbus_marshaller:unmarshal_signature(Bin) of
+            {ok, Sig} -> (catch iolist_to_binary(dbus_marshaller:marshal_signature(Sig))) =:= Bin;
+            {error, _} -> true;
+            more -> true
+        end
+    ).
+
+%% The shapes fuzzing is unlikely to reach, one per rule of the specification's
+%% "Valid Signatures" section. `more' is not an acceptable answer for any of
+%% them: none is a valid signature cut short.
+prop_signature_rejects_invalid() ->
+    ?FORALL(
+        Bin,
+        invalid_signature(),
+        case dbus_marshaller:unmarshal_signature(Bin) of
+            {error, {bad_signature, _}} -> true;
+            _Other -> false
+        end
+    ).
+
+invalid_signature() ->
+    union([
+        %% A byte that is no type code at all, and the two type codes reserved
+        %% for STRUCT and DICT_ENTRY outside a signature.
+        <<255>>,
+        <<0>>,
+        <<"r">>,
+        <<"e">>,
+        <<"ir">>,
+        <<"m">>,
+        %% Brackets with nothing to close, and a struct with no fields.
+        <<")">>,
+        <<"}">>,
+        <<"s)s">>,
+        <<"(s))">>,
+        <<"()">>,
+        %% A dict entry outside an array, with a container key, or with other
+        %% than two fields.
+        <<"{sv}">>,
+        <<"a{vs}">>,
+        <<"a{av}">>,
+        <<"a{s}">>,
+        <<"a{sss}">>,
+        %% Past the depth caps: 33 array codes, then 33 open parentheses.
+        ?LET(
+            N,
+            integer(?MAX_ARRAY_DEPTH + 1, ?MAX_ARRAY_DEPTH + 8),
+            iolist_to_binary(lists:duplicate(N, $a) ++ "v")
+        ),
+        ?LET(
+            N,
+            integer(?MAX_STRUCT_DEPTH + 1, ?MAX_STRUCT_DEPTH + 8),
+            iolist_to_binary([lists:duplicate(N, $(), "v", lists:duplicate(N, $))])
+        ),
+        %% Past the 255-byte cap, which is what a single length byte can hold.
+        ?LET(
+            N,
+            integer(?MAX_LENGTH + 1, ?MAX_LENGTH + 8),
+            iolist_to_binary(lists:duplicate(N, $y))
+        )
+    ]).
+
+%% An array element is one single complete type, at every depth the caps allow.
+%% `aav' is the instance of this that BUG-6 in
+%% `docs/marshaller-property-triage.md' was about: the array element type used
+%% to be the whole of the rest of the signature, so `aav' decoded to
+%% `{array, [{array, variant}]}' -- an element type that is a list. Anything
+%% deeper than the cap is `invalid_signature/0' above.
+prop_array_nesting_depth() ->
+    ?FORALL(
+        N,
+        integer(1, ?MAX_ARRAY_DEPTH),
+        begin
+            Bin = iolist_to_binary(lists:duplicate(N, $a) ++ "v"),
+            Type = nested_array(N, variant),
+            dbus_marshaller:unmarshal_signature(Bin) =:= {ok, [Type]} andalso
+                iolist_to_binary(dbus_marshaller:marshal_signature([Type])) =:= Bin
+        end
+    ).
+
+nested_array(0, Type) -> Type;
+nested_array(N, Type) -> {array, nested_array(N - 1, Type)}.
+
+signature_fuzz() ->
+    union([binary(), corrupted_signature()]).
+
+corrupted_signature() ->
+    ?LET(
+        Sig,
+        dbus_marshaller_gen:signature(),
+        ?LET(
+            Bin,
+            exactly(iolist_to_binary(dbus_marshaller:marshal_signature(Sig))),
+            dbus_marshaller_gen:corrupted(Bin)
+        )
     ).
 
 %%%

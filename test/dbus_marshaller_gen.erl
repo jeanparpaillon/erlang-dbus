@@ -3,7 +3,7 @@
 PropEr generators for the D-Bus type language.
 
 The generators are the substance of the property suite; the properties
-themselves are one-liners on top of them. Three things live here:
+themselves are one-liners on top of them. Four things live here:
 
 - generators for `dbus_type()`, `dbus_signature()` and, dependently, for a value
   of a given type;
@@ -11,7 +11,9 @@ themselves are one-liners on top of them. Three things live here:
   back. Encode and decode are not inverses on the nose -- decode is onto a
   canonical subset -- so a round-trip property is not statable without it;
 - `lax/2`, which turns a canonical value into an equivalent non-canonical one,
-  so the permissive input clauses of `marshal/3` get exercised too.
+  so the permissive input clauses of `marshal/3` get exercised too;
+- `corrupted/1`, which damages valid bytes, since the robustness properties get
+  nowhere feeding a decoder random ones.
 
 Several generators are deliberately narrower than the D-Bus specification. Every
 such narrowing carries a `BUG-n' marker naming its entry in
@@ -39,7 +41,8 @@ existing defects that this suite is not chartered to fix.
     canon_list/2,
     message/0,
     messages/0,
-    fixed_width/1
+    fixed_width/1,
+    corrupted/1
 ]).
 
 %%%
@@ -107,21 +110,14 @@ type(Size) ->
 sub_types(Size) ->
     ?LET(N, integer(1, 3), vector(N, type(Size div 2))).
 
-%% Two element types an array may not have here. Both are defects, not rules of
-%% the protocol, and both are confined to arrays -- a dict or an array nested
-%% anywhere else is generated as normal.
+%% One element type an array may not have here. It is a defect, not a rule of
+%% the protocol, and it is confined to arrays -- a dict nested anywhere else is
+%% generated as normal.
 %%
 %% BUG-5: `padding/1' has no `{dict,_,_}' clause and `pad/2' has no guard
 %% matching one, and an array is the only construct that consults the padding of
 %% its element type. An array of dicts is a function_clause in both directions.
-%%
-%% BUG-6: `unmarshal_array_signature/1' hands the whole remaining signature back
-%% to its caller when the element type is itself an array, so `aav' parses as
-%% `{array, [{array, variant}]}' -- an element type that is a list, which then
-%% reaches `padding/1'. Encoding a nested array is fine; it is reading one back
-%% off the wire that is not.
 is_array_element({dict, _, _}) -> false;
-is_array_element({array, _}) -> false;
 is_array_element(_) -> true.
 
 -doc """
@@ -129,13 +125,21 @@ A complete signature.
 
 Bounded by the specification's 255-byte limit on the encoded form, which is also
 what makes a signature marshallable: its length is written as a single byte.
+`marshal_signature/1' raises on a longer one rather than returning it, so the
+filter has to ask the encoder rather than measure its result.
 """.
 signature() ->
     ?SUCHTHAT(
         Sig,
         ?LET(N, integer(1, 4), vector(N, type())),
-        byte_size(sig_bin(Sig)) =< 255
+        is_marshallable(Sig)
     ).
+
+is_marshallable(Sig) ->
+    case catch iolist_to_binary(dbus_marshaller:marshal_signature(Sig)) of
+        Bin when is_binary(Bin) -> byte_size(Bin) =< 255;
+        _Error -> false
+    end.
 
 sig_bin(Sig) ->
     iolist_to_binary(dbus_marshaller:marshal_signature(Sig)).
@@ -485,3 +489,31 @@ extra_field(member, _, _, Member, _) ->
     {?FIELD_MEMBER, #dbus_variant{type = string, value = Member}};
 extra_field(reply_serial, _, _, _, Serial) ->
     {?FIELD_REPLY_SERIAL, #dbus_variant{type = uint32, value = Serial}}.
+
+%%%
+%%% Corruption
+%%%
+
+-doc """
+A binary with bytes overwritten and its tail cut off at an arbitrary point.
+
+The shapes a real peer produces when it is buggy or hostile, and the ones a
+`binary()' almost never reaches: random bytes are rejected by the first length
+or type code they meet, so nothing past that is ever exercised without starting
+from something valid.
+
+`Bin' must be non-empty.
+""".
+corrupted(Bin) ->
+    ?LET(
+        {Overwrites, Cut},
+        {
+            list({integer(0, byte_size(Bin) - 1), integer(0, 255)}),
+            integer(0, byte_size(Bin))
+        },
+        binary:part(lists:foldl(fun overwrite/2, Bin, Overwrites), 0, Cut)
+    ).
+
+overwrite({Index, Byte}, Bin) ->
+    <<Head:Index/binary, _:8, Tail/binary>> = Bin,
+    <<Head/binary, Byte:8, Tail/binary>>.

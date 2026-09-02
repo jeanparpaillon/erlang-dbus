@@ -55,12 +55,33 @@ Specification](https://dbus.freedesktop.org/doc/dbus-specification.html#message-
     byte, byte, byte, byte, uint32, uint32, {array, {struct, [byte, variant]}}
 ]).
 
+%% The limits the specification's "Valid Signatures" section puts on the
+%% signature language. The length is not a decorative one: a signature is
+%% marshalled with its length in a single byte, so a 256-byte signature could
+%% not be read back.
+-define(SIGNATURE_MAX_LENGTH, 255).
+-define(SIGNATURE_MAX_ARRAY_DEPTH, 32).
+-define(SIGNATURE_MAX_STRUCT_DEPTH, 32).
+-define(SIGNATURE_MAX_DEPTH, 64).
+
+-type signature_error() ::
+    too_long
+    | {too_deep, array | struct | total}
+    | {bad_type_code, byte()}
+    | {bad_dict_key, byte()}
+    | {unbalanced, byte()}
+    | {trailing, binary()}
+    | empty_struct
+    | dict_entry_outside_array
+    | {dict_entry_arity, byte()}.
+
 -type error() ::
     invalid_serial
     | {marshaling, dbus_type(), binary()}
     | {unmarshaling, dbus_type(), binary()}
     | {dbus_parse_error, term()}
     | {bad_type_code, integer()}
+    | {bad_signature, signature_error()}
     | dbus_parse_error
     | body_parse_error
     | bad_header
@@ -105,46 +126,27 @@ marshal_message(
 ) ->
     [marshal_header([$l, Type, Flags, ?DBUS_VERSION_MAJOR, iolist_size(Body), S, Fields]), Body].
 
--doc "Encode a signature.".
+-doc """
+Encode a signature.
+
+Raises `{bad_signature, Reason}` for the two things a type may be that the
+specification forbids on the wire: longer than 255 bytes once encoded, or
+nested deeper than 32 arrays, 32 open parentheses or 64 in total.
+`unmarshal_signature/1` rejects the same language from the other side, so a
+signature this function produces always parses back.
+""".
 -spec marshal_signature(dbus_type() | dbus_signature()) -> iolist().
-marshal_signature(byte) ->
-    "y";
-marshal_signature(boolean) ->
-    "b";
-marshal_signature(int16) ->
-    "n";
-marshal_signature(uint16) ->
-    "q";
-marshal_signature(int32) ->
-    "i";
-marshal_signature(uint32) ->
-    "u";
-marshal_signature(int64) ->
-    "x";
-marshal_signature(uint64) ->
-    "t";
-marshal_signature(double) ->
-    "d";
-marshal_signature(string) ->
-    "s";
-marshal_signature(object_path) ->
-    "o";
-marshal_signature(signature) ->
-    "g";
-marshal_signature({array, Type}) ->
-    [$a, marshal_signature(Type)];
-marshal_signature({struct, SubTypes}) ->
-    ["(", marshal_struct_signature(SubTypes, []), ")"];
-marshal_signature(variant) ->
-    "v";
-marshal_signature({dict, KeyType, ValueType}) ->
-    KeySig = marshal_signature(KeyType),
-    ValueSig = marshal_signature(ValueType),
-    ["a{", KeySig, ValueSig, "}"];
-marshal_signature([]) ->
-    "";
-marshal_signature([Type | R]) ->
-    [marshal_signature(Type), marshal_signature(R)].
+marshal_signature(Type) ->
+    case signature_depth(Type, 0, 0) of
+        {error, Err} ->
+            error(Err);
+        ok ->
+            Sig = signature_bytes(Type),
+            case iolist_size(Sig) > ?SIGNATURE_MAX_LENGTH of
+                true -> error({bad_signature, too_long});
+                false -> Sig
+            end
+    end.
 
 -doc "Encode objects, given a signature.".
 -spec marshal_list(dbus_signature(), term()) -> {iolist(), integer()}.
@@ -175,15 +177,30 @@ unmarshal_data(Data) ->
 -doc """
 Decode a signature.
 
-Returns `more` if no complete signature could be decoded.
+The three answers are the ones `unmarshal_data/1` gives, and for the same
+reason: the argument comes off a socket, so it is arbitrary bytes.
+
+- `{ok, dbus_signature()}`: the whole binary is a list of single complete
+  types.
+- `more`: a well-formed signature, cut short.
+- `{error, {bad_signature, Reason}}`: a shape the specification's
+  "Valid Signatures" section forbids -- a byte that is not a type code, the
+  `r` and `e` type codes that stand for STRUCT and DICT_ENTRY outside a
+  signature, an unbalanced bracket, a dict entry outside an array or with the
+  wrong number of fields, an empty struct, or a signature over 255 bytes or
+  nested past 32 arrays, 32 parentheses or 64 in total.
 """.
--spec unmarshal_signature(binary()) -> {ok, dbus_signature()} | more.
+-spec unmarshal_signature(binary()) -> {ok, dbus_signature()} | {error, error()} | more.
 unmarshal_signature(<<>>) ->
     {ok, []};
+unmarshal_signature(Bin) when is_binary(Bin), byte_size(Bin) > ?SIGNATURE_MAX_LENGTH ->
+    {error, {bad_signature, too_long}};
 unmarshal_signature(Bin) when is_binary(Bin) ->
-    case unmarshal_signature(Bin, []) of
+    case parse_types(Bin, 0, 0, []) of
         {ok, Signature, <<>>} -> {ok, Signature};
-        more -> more
+        {ok, _Signature, Rest} -> {error, {bad_signature, {trailing, Rest}}};
+        more -> more;
+        {error, _} = Err -> Err
     end.
 
 %%%
@@ -413,7 +430,87 @@ marshal_struct([SubType | R], [Value | V], Pos, Res) ->
 marshal_struct_signature([], Res) ->
     Res;
 marshal_struct_signature([SubType | R], Res) ->
-    marshal_struct_signature(R, [Res, marshal_signature(SubType)]).
+    marshal_struct_signature(R, [Res, signature_bytes(SubType)]).
+
+%% The encoding proper. `marshal_signature/1' is the checked entry point;
+%% everything below it, and every recursive call, goes through here so that the
+%% length and depth of a signature are checked once, at the top.
+signature_bytes(byte) ->
+    "y";
+signature_bytes(boolean) ->
+    "b";
+signature_bytes(int16) ->
+    "n";
+signature_bytes(uint16) ->
+    "q";
+signature_bytes(int32) ->
+    "i";
+signature_bytes(uint32) ->
+    "u";
+signature_bytes(int64) ->
+    "x";
+signature_bytes(uint64) ->
+    "t";
+signature_bytes(double) ->
+    "d";
+signature_bytes(string) ->
+    "s";
+signature_bytes(object_path) ->
+    "o";
+signature_bytes(signature) ->
+    "g";
+signature_bytes({array, Type}) ->
+    [$a, signature_bytes(Type)];
+signature_bytes({struct, SubTypes}) ->
+    ["(", marshal_struct_signature(SubTypes, []), ")"];
+signature_bytes(variant) ->
+    "v";
+signature_bytes({dict, KeyType, ValueType}) ->
+    KeySig = signature_bytes(KeyType),
+    ValueSig = signature_bytes(ValueType),
+    ["a{", KeySig, ValueSig, "}"];
+signature_bytes([]) ->
+    "";
+signature_bytes([Type | R]) ->
+    [signature_bytes(Type), signature_bytes(R)].
+
+%% The nesting limits, walked over a type term. The parser counts the same two
+%% depths as it descends and calls the same `check_depth/2', which is what
+%% makes the two directions agree on one language.
+signature_depth([], _ADepth, _PDepth) ->
+    ok;
+signature_depth([Type | R], ADepth, PDepth) ->
+    case signature_depth(Type, ADepth, PDepth) of
+        ok -> signature_depth(R, ADepth, PDepth);
+        {error, _} = Err -> Err
+    end;
+signature_depth({array, Type}, ADepth, PDepth) ->
+    signature_descend(ADepth + 1, PDepth, Type);
+signature_depth({struct, SubTypes}, ADepth, PDepth) ->
+    signature_descend(ADepth, PDepth + 1, SubTypes);
+signature_depth({dict, KeyType, ValueType}, ADepth, PDepth) ->
+    %% `a{kv}': one array code and one bracket pair.
+    signature_descend(ADepth + 1, PDepth + 1, [KeyType, ValueType]);
+signature_depth(_Basic, _ADepth, _PDepth) ->
+    ok.
+
+signature_descend(ADepth, PDepth, Sub) ->
+    case check_depth(ADepth, PDepth) of
+        ok -> signature_depth(Sub, ADepth, PDepth);
+        {error, _} = Err -> Err
+    end.
+
+check_depth(ADepth, _PDepth) when ADepth > ?SIGNATURE_MAX_ARRAY_DEPTH ->
+    {error, {bad_signature, {too_deep, array}}};
+check_depth(_ADepth, PDepth) when PDepth > ?SIGNATURE_MAX_STRUCT_DEPTH ->
+    {error, {bad_signature, {too_deep, struct}}};
+check_depth(ADepth, PDepth) when ADepth + PDepth > ?SIGNATURE_MAX_DEPTH ->
+    %% Implied by the two caps above rather than reachable past them. It is
+    %% stated because the specification states it separately: the total is the
+    %% limit that matters if the two ever move apart.
+    {error, {bad_signature, {too_deep, total}}};
+check_depth(_ADepth, _PDepth) ->
+    ok.
 
 %%%
 %%% Private unmarshaling
@@ -461,6 +558,8 @@ unmarshal_body(?TYPE_INVALID, _, _, _) ->
     {ok, undefined};
 unmarshal_body(_, SigBin, BodyBin, Endian) ->
     case unmarshal_signature(SigBin) of
+        {error, _} = Err ->
+            Err;
         {ok, Sig} ->
             case unmarshal_tuple(Sig, BodyBin, Endian) of
                 more -> more;
@@ -508,13 +607,18 @@ unmarshal_header_fields(Bin, #dbus_header{endian = Endian, size = Size} = Header
             end
     end.
 
+%% The signature of a variant, which the specification restricts to a single
+%% complete type. Only `unmarshal/4' calls this, off a signature already read
+%% from the wire, so a bad one raises and `unmarshal_data/1' turns it into
+%% `{error, _}' like any other malformed body.
 unmarshal_single_type(<<>>) ->
     empty;
 unmarshal_single_type(Bin) when is_binary(Bin) ->
-    case unmarshal_signature(Bin, []) of
-        {ok, [Type], <<>>} -> {ok, Type};
-        {ok, _, _} -> error({unmarshaling, signature, Bin});
-        more -> more
+    case parse_type(Bin, 0, 0) of
+        {ok, Type, <<>>} -> {ok, Type};
+        {ok, _Type, _Rest} -> error({unmarshaling, signature, Bin});
+        more -> more;
+        {error, Err} -> error(Err)
     end.
 
 unmarshal(_, <<>>, _, _) ->
@@ -647,75 +751,146 @@ unmarshal_int(Len, Data, Pos, Endian) ->
     Pos1 = Pos + Pad div 8 + Len,
     {ok, Value, Data1, Pos1}.
 
-unmarshal_signature(<<>>, Acc) ->
+%%%
+%%% Signature parsing
+%%%
+%%% The signature language of the specification's "Valid Signatures" section,
+%%% parsed by descent. Three properties are the point of it:
+%%%
+%%% - it is total. The bytes come from a peer, so anything the language
+%%%   forbids is `{error, _}' and a well-formed signature cut short is `more';
+%%%   neither raises.
+%%% - it accepts nothing the encoder cannot produce. That is what excludes the
+%%%   `r' and `e' type codes -- reserved for STRUCT and DICT_ENTRY inside an
+%%%   implementation, and forbidden in a signature, where the brackets are used
+%%%   instead -- along with unbalanced brackets, empty structs, dict entries
+%%%   outside an array and dict entries with a container key.
+%%% - depth is counted down the descent and checked with `check_depth/2', the
+%%%   function the encoder walks a type term with, so both directions cap
+%%%   nesting at the same place.
+%%%
+%%% `ADepth' counts array type codes, `PDepth' open parentheses and open curly
+%%% brackets.
+
+%% A list of single complete types, to the end of the input. A closing bracket
+%% reaching here has no opening one -- a container consumes its own -- and
+%% `parse_type/3' rejects it as unbalanced.
+parse_types(<<>>, _ADepth, _PDepth, Acc) ->
     {ok, lists:reverse(Acc), <<>>};
-unmarshal_signature(<<$a, ${, KeySig, Rest/bits>>, Acc) ->
-    KeyType = unmarshal_type_code(KeySig),
-    case unmarshal_signature(Rest, []) of
-        {ok, [], _} ->
-            more;
-        {ok, [ValueType], Rest2} ->
-            unmarshal_signature(Rest2, [{dict, KeyType, ValueType} | Acc]);
-        {ok, _, _} ->
-            error({unmarshaling, dict, KeySig, Rest});
-        more ->
-            more
-    end;
-unmarshal_signature(<<$a, Rest/bits>>, Acc) ->
-    case unmarshal_array_signature(Rest) of
-        {ok, Type, Rest2} ->
-            unmarshal_signature(Rest2, [{array, Type} | Acc]);
-        more ->
-            more
-    end;
-unmarshal_signature(<<$(, Rest/bits>>, Acc) ->
-    case unmarshal_signature(Rest, []) of
-        {ok, [], _} -> more;
-        {ok, Types, Rest2} -> unmarshal_signature(Rest2, [{struct, Types} | Acc]);
-        more -> more
-    end;
-unmarshal_signature(<<$), Rest/bits>>, Acc) ->
-    {ok, lists:reverse(Acc), Rest};
-unmarshal_signature(<<$}, Rest/bits>>, Acc) ->
-    {ok, Acc, Rest};
-unmarshal_signature(<<C, Rest/bits>>, Acc) ->
-    Code = unmarshal_type_code(C),
-    unmarshal_signature(Rest, [Code | Acc]).
+parse_types(Bin, ADepth, PDepth, Acc) ->
+    case parse_type(Bin, ADepth, PDepth) of
+        {ok, Type, Rest} -> parse_types(Rest, ADepth, PDepth, [Type | Acc]);
+        more -> more;
+        {error, _} = Err -> Err
+    end.
 
-unmarshal_array_signature(<<>>) ->
+%% One single complete type. The depth a container adds is charged before its
+%% contents are parsed, so a signature that is too deep is rejected as such
+%% rather than by whatever it nests.
+parse_type(<<>>, _ADepth, _PDepth) ->
     more;
-unmarshal_array_signature(<<$a, Rest/bits>>) ->
-    unmarshal_signature(<<$a, Rest/bits>>, []);
-unmarshal_array_signature(<<$(, Rest/bits>>) ->
-    case unmarshal_signature(Rest, []) of
-        {ok, [], _} ->
-            more;
-        {ok, Types, Rest2} ->
-            {ok, {struct, Types}, Rest2};
-        more ->
-            more
+parse_type(<<$a, ${, Rest/bits>>, ADepth, PDepth) ->
+    %% A dict entry is only ever an array element, so this is the one place it
+    %% can appear; `${' anywhere else is rejected below.
+    case check_depth(ADepth + 1, PDepth + 1) of
+        ok -> parse_dict(Rest, ADepth, PDepth);
+        {error, _} = Err -> Err
     end;
-unmarshal_array_signature(<<C, Rest/bits>>) ->
-    Code = unmarshal_type_code(C),
-    {ok, Code, Rest}.
+parse_type(<<$a, Rest/bits>>, ADepth, PDepth) ->
+    case check_depth(ADepth + 1, PDepth) of
+        ok -> parse_array(Rest, ADepth, PDepth);
+        {error, _} = Err -> Err
+    end;
+parse_type(<<$(, Rest/bits>>, ADepth, PDepth) ->
+    case check_depth(ADepth, PDepth + 1) of
+        ok -> parse_struct(Rest, ADepth, PDepth, []);
+        {error, _} = Err -> Err
+    end;
+parse_type(<<$), _/bits>>, _ADepth, _PDepth) ->
+    {error, {bad_signature, {unbalanced, $)}}};
+parse_type(<<$}, _/bits>>, _ADepth, _PDepth) ->
+    {error, {bad_signature, {unbalanced, $}}}};
+parse_type(<<${, _/bits>>, _ADepth, _PDepth) ->
+    {error, {bad_signature, dict_entry_outside_array}};
+parse_type(<<C, Rest/bits>>, _ADepth, _PDepth) ->
+    case type_code(C) of
+        {ok, Type} -> {ok, Type, Rest};
+        error -> {error, {bad_signature, {bad_type_code, C}}}
+    end.
 
-unmarshal_type_code($y) -> byte;
-unmarshal_type_code($b) -> boolean;
-unmarshal_type_code($n) -> int16;
-unmarshal_type_code($q) -> uint16;
-unmarshal_type_code($i) -> int32;
-unmarshal_type_code($u) -> uint32;
-unmarshal_type_code($x) -> int64;
-unmarshal_type_code($t) -> uint64;
-unmarshal_type_code($d) -> double;
-unmarshal_type_code($s) -> string;
-unmarshal_type_code($o) -> object_path;
-unmarshal_type_code($g) -> signature;
-unmarshal_type_code($r) -> struct;
-unmarshal_type_code($v) -> variant;
-unmarshal_type_code($e) -> dict_entry;
-unmarshal_type_code($a) -> array;
-unmarshal_type_code(C) -> error({bad_type_code, C}).
+%% The element type of an array: exactly one single complete type. Parsing the
+%% rest of the signature here instead is what made `aav' decode to
+%% `{array, [{array, variant}]}', an element type that is a list.
+parse_array(Bin, ADepth, PDepth) ->
+    case parse_type(Bin, ADepth + 1, PDepth) of
+        {ok, Type, Rest} -> {ok, {array, Type}, Rest};
+        more -> more;
+        {error, _} = Err -> Err
+    end.
+
+%% The body of a struct: one or more single complete types, then `)'.
+parse_struct(<<>>, _ADepth, _PDepth, _Acc) ->
+    more;
+parse_struct(<<$), _Rest/bits>>, _ADepth, _PDepth, []) ->
+    {error, {bad_signature, empty_struct}};
+parse_struct(<<$), Rest/bits>>, _ADepth, _PDepth, Acc) ->
+    {ok, {struct, lists:reverse(Acc)}, Rest};
+parse_struct(<<$}, _/bits>>, _ADepth, _PDepth, _Acc) ->
+    {error, {bad_signature, {unbalanced, $}}}};
+parse_struct(Bin, ADepth, PDepth, Acc) ->
+    case parse_type(Bin, ADepth, PDepth + 1) of
+        {ok, Type, Rest} -> parse_struct(Rest, ADepth, PDepth, [Type | Acc]);
+        more -> more;
+        {error, _} = Err -> Err
+    end.
+
+%% The body of a dict entry, `a{' already consumed: a basic key, one value
+%% type, then `}'. The key may not be a container, and there may not be a
+%% third field.
+parse_dict(<<>>, _ADepth, _PDepth) ->
+    more;
+parse_dict(<<C, Rest/bits>>, ADepth, PDepth) ->
+    case basic_type_code(C) of
+        {ok, KeyType} -> parse_dict_value(Rest, KeyType, ADepth, PDepth);
+        error -> {error, {bad_signature, {bad_dict_key, C}}}
+    end.
+
+parse_dict_value(Bin, KeyType, ADepth, PDepth) ->
+    case parse_type(Bin, ADepth + 1, PDepth + 1) of
+        {ok, ValueType, Rest} -> parse_dict_end(Rest, KeyType, ValueType);
+        more -> more;
+        {error, _} = Err -> Err
+    end.
+
+parse_dict_end(<<>>, _KeyType, _ValueType) ->
+    more;
+parse_dict_end(<<$}, Rest/bits>>, KeyType, ValueType) ->
+    {ok, {dict, KeyType, ValueType}, Rest};
+parse_dict_end(<<C, _/bits>>, _KeyType, _ValueType) ->
+    {error, {bad_signature, {dict_entry_arity, C}}}.
+
+%% The type codes that stand for a complete type on their own. `a', `(' and
+%% `{' are containers and handled above; `r' and `e' are not signature type
+%% codes at all.
+type_code($y) -> {ok, byte};
+type_code($b) -> {ok, boolean};
+type_code($n) -> {ok, int16};
+type_code($q) -> {ok, uint16};
+type_code($i) -> {ok, int32};
+type_code($u) -> {ok, uint32};
+type_code($x) -> {ok, int64};
+type_code($t) -> {ok, uint64};
+type_code($d) -> {ok, double};
+type_code($s) -> {ok, string};
+type_code($o) -> {ok, object_path};
+type_code($g) -> {ok, signature};
+type_code($v) -> {ok, variant};
+type_code(_C) -> error.
+
+%% A dict key must be basic, which among the codes above means anything but a
+%% variant.
+basic_type_code($v) -> error;
+basic_type_code(C) -> type_code(C).
 
 unmarshal_struct(SubTypes, Data, Pos, Endian) ->
     unmarshal_struct(SubTypes, Data, [], Pos, Endian).
@@ -847,362 +1022,3 @@ pad(Type, Pos) when
     struct =:= element(1, Type)
 ->
     pad(padding(Type), Pos).
-
-%%%
-%%% eunit
-%%%
--ifdef(TEST).
-marshal_list_test() ->
-    Types = [string, {array, {struct, [byte, string, variant]}}, uint32, int32],
-
-    {Bin, Pos} = marshal_list(
-        Types,
-        [<<"http://schemas.ogf.org/occi/infrastructure#compute">>, [], 1, -1]
-    ),
-    ?assertMatch(
-        {
-            <<
-                50:8/little-unsigned-unit:4,
-                "http://schemas.ogf.org/occi/infrastructure#compute",
-                0,
-                %% string + padding
-                0,
-                %% array length + padding (struct)
-                0:8/little-unsigned-unit:4,
-                0:8/little-unsigned-unit:4,
-                %% 1 (uint32)
-                1:8/little-unsigned-unit:4,
-                %% -1 (int32
-                -1:8/little-signed-unit:4
-            >>,
-            72
-        },
-        {iolist_to_binary(Bin), Pos}
-    ),
-    {Bin2, Pos2} = marshal_list(
-        Types,
-        [
-            <<"http://schemas.ogf.org/occi/infrastructure#compute">>,
-            [{1, <<"str">>, 24}],
-            1,
-            -1
-        ]
-    ),
-
-    ?assertMatch(
-        {
-            <<
-                50:8/little-unsigned-unit:4,
-                "http://schemas.ogf.org/occi/infrastructure#compute",
-                0,
-                %% string + padding
-                0,
-                %% array length + padding (struct)
-                18:8/little-unsigned-unit:4,
-                0:8/little-unsigned-unit:4,
-                %% struct<byte + padding, ...
-                1:8,
-                0:8/unit:3,
-                %% ...string...
-                3:8/little-unsigned-unit:4,
-                "str",
-                0,
-                %% ...variant...
-                1:8/little-unsigned-unit:1,
-                $q,
-                0,
-                0,
-                %% uint16> + padding
-                24:8/little-unsigned-unit:2,
-                0:8/little-unsigned-unit:2,
-                %% 1 (uint32)
-                1:8/little-unsigned-unit:4,
-                %% -1 (int32
-                -1:8/little-signed-unit:4
-            >>,
-            92
-        },
-        {iolist_to_binary(Bin2), Pos2}
-    ).
-
-marshall_byte_test_() ->
-    [
-        ?_assertMatch({<<16#ff>>, 1}, marshal(byte, 16#ff, 0)),
-        ?_assertError({marshaling, byte, 256}, marshal(byte, 256, 3))
-    ].
-
-marshall_boolean_test_() ->
-    [
-        ?_assertMatch({<<1:8/integer-little-unit:4>>, 4}, marshal(boolean, true, 0)),
-        ?_assertMatch({<<0:8/integer-little-unit:4>>, 4}, marshal(boolean, false, 0)),
-        ?_assertError({marshaling, boolean, 'else'}, marshal(boolean, 'else', 0))
-    ].
-
-marshall_int_test_() ->
-    [
-        ?_assertMatch({<<67:8/integer-little-signed-unit:2>>, 2}, marshal(int16, 67, 0)),
-        ?_assertMatch({<<-67:8/integer-little-signed-unit:2>>, 2}, marshal(int16, -67, 0)),
-        ?_assertError({marshaling, int16, 300000}, marshal(int16, 300000, 0)),
-
-        ?_assertMatch({<<67:8/integer-little-unsigned-unit:2>>, 2}, marshal(uint16, 67, 0)),
-        ?_assertError({marshaling, uint16, -67}, marshal(uint16, -67, 0)),
-
-        ?_assertMatch(
-            {<<2000000000:8/integer-little-signed-unit:4>>, 4}, marshal(int32, 2000000000, 0)
-        ),
-        ?_assertMatch(
-            {<<-2000000000:8/integer-little-signed-unit:4>>, 4}, marshal(int32, -2000000000, 0)
-        ),
-        ?_assertError({marshaling, int32, 3000000000}, marshal(int32, 3000000000, 0)),
-
-        ?_assertMatch(
-            {<<4000000:8/integer-little-unsigned-unit:4>>, 4}, marshal(uint32, 4000000, 0)
-        ),
-        ?_assertError({marshaling, uint32, -67}, marshal(uint32, -67, 0)),
-
-        ?_assertMatch(
-            {<<4000000000:8/integer-little-signed-unit:8>>, 8}, marshal(int64, 4000000000, 0)
-        ),
-
-        ?_assertMatch(
-            {<<4000000000:8/integer-little-unsigned-unit:8>>, 8}, marshal(uint64, 4000000000, 0)
-        ),
-        ?_assertError({marshaling, uint64, -400000}, marshal(uint64, -400000, 0))
-    ].
-
-marshall_float_test_() ->
-    [
-        ?_assertMatch({<<67:64/float-little-signed-unit:1>>, 8}, marshal(double, 67, 0)),
-        %% Tests alignement
-        ?_assertMatch(
-            {<<0:8/unit:6, 67:64/float-little-signed-unit:1>>, 16}, marshal(double, 67, 2)
-        )
-    ].
-
-marshall_string_test_() ->
-    [
-        ?_assertMatch(
-            {[<<7:8/integer-little-unsigned-unit:4>>, <<"an_atom">>, 0], 12},
-            marshal(string, 'an_atom', 0)
-        ),
-
-        ?_assertMatch(
-            {[<<9:8/integer-little-unsigned-unit:4>>, <<"my string">>, 0], 14},
-            marshal(string, "my string", 0)
-        ),
-        ?_assertMatch(
-            {[<<9:8/integer-little-unsigned-unit:4>>, <<"my string">>, 0], 14},
-            marshal(string, <<"my string">>, 0)
-        ),
-        ?_assertMatch(
-            {[<<0:8/unit:2, 9:8/integer-little-unsigned-unit:4>>, <<"my string">>, 0], 18},
-            marshal(string, "my string", 2)
-        )
-    ].
-
-marshall_object_path_test_() ->
-    [
-        ?_assertMatch(
-            {[<<10:8/integer-little-unsigned-unit:4>>, <<"/my/string">>, 0], 15},
-            marshal(object_path, <<"/my/string">>, 0)
-        )
-    ].
-
-marshall_signature_test_() ->
-    [
-        ?_assertMatch(
-            {[<<6:8/integer-little-unsigned-unit:1>>, <<"yasgoy">>, 0], 8},
-            marshal(signature, <<"yasgoy">>, 0)
-        )
-    ].
-
-marshall_array_test() ->
-    {Io, Pad} = marshal({array, string}, ["un", "deux", "trois"], 0),
-    ?assertMatch(
-        {
-            <<
-                30:8/integer-little-unsigned-unit:4,
-                2:8/integer-little-unsigned-unit:4,
-                "un",
-                0,
-                0:8/unit:1,
-                4:8/integer-little-unsigned-unit:4,
-                "deux",
-                0,
-                0:8/unit:3,
-                5:8/integer-little-unsigned-unit:4,
-                "trois",
-                0
-            >>,
-            34
-        },
-        {iolist_to_binary(Io), Pad}
-    ),
-
-    {Io2, Pad2} = marshal({array, string}, ["un", "deux", "trois"], 1),
-    ?assertMatch(
-        {
-            <<
-                0:8/unit:3,
-                30:8/integer-little-unsigned-unit:4,
-                2:8/integer-little-unsigned-unit:4,
-                "un",
-                0,
-                0:8/unit:1,
-                4:8/integer-little-unsigned-unit:4,
-                "deux",
-                0,
-                0:8/unit:3,
-                5:8/integer-little-unsigned-unit:4,
-                "trois",
-                0
-            >>,
-            38
-        },
-        {iolist_to_binary(Io2), Pad2}
-    ),
-
-    {Io3, Pad3} = marshal({array, uint64}, [500, 245], 0),
-    ?assertMatch(
-        {
-            <<
-                16:8/integer-little-unsigned-unit:4,
-                0:8/unit:4,
-                500:64/integer-little-unsigned-unit:1,
-                245:64/integer-little-unsigned-unit:1
-            >>,
-            24
-        },
-        {iolist_to_binary(Io3), Pad3}
-    ).
-
-unmarshal_byte_test_() ->
-    [
-        ?_assertEqual({ok, 4, <<>>, 1}, unmarshal(byte, <<4>>, 0, $l)),
-        ?_assertEqual({ok, 4, <<"xyz">>, 1}, unmarshal(byte, <<4, "xyz">>, 0, $l))
-    ].
-
-unmarshal_boolean_test_() ->
-    [
-        ?_assertEqual({ok, true, <<>>, 4}, unmarshal(boolean, <<1, 0, 0, 0>>, 0, $l)),
-        ?_assertEqual({ok, true, <<"xyz">>, 4}, unmarshal(boolean, <<1, 0, 0, 0, "xyz">>, 0, $l)),
-        ?_assertEqual({ok, false, <<>>, 4}, unmarshal(boolean, <<0, 0, 0, 0>>, 0, $l)),
-        ?_assertEqual(more, unmarshal(boolean, <<"x">>, 0, $l)),
-        ?_assertError(
-            {unmarshaling, boolean, <<2, 0, 0, 0>>}, unmarshal(boolean, <<2, 0, 0, 0>>, 0, $l)
-        )
-    ].
-
-unmarshal_endian_test_() ->
-    [
-        ?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<1, 0, 0, 0>>, 0, $l)),
-        ?_assertEqual({ok, 1, <<>>, 4}, unmarshal(uint32, <<0, 0, 0, 1>>, 0, $B)),
-        ?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<1, 0, 0, 0, "xyz">>, 0, $l)),
-        ?_assertEqual({ok, 1, <<"xyz">>, 4}, unmarshal(uint32, <<0, 0, 0, 1, "xyz">>, 0, $B))
-    ].
-
-unmarshal_dict_test() ->
-    Bin = <<
-        29:8/integer-little-unsigned-unit:4,
-        0:8/unit:4,
-        $a,
-        0:8/unit:3,
-        4:8/integer-little-unsigned-unit:4,
-        "plop",
-        0,
-        0:8/unit:3,
-        $b,
-        0:8/unit:3,
-        4:8/integer-little-unsigned-unit:4,
-        "truc",
-        0
-    >>,
-    Struct = #{$a => <<"plop">>, $b => <<"truc">>},
-    %% The same bytes read as an array of (ys) structs: a list of pairs, not a map.
-    Structs = [{$a, <<"plop">>}, {$b, <<"truc">>}],
-
-    ?assertMatch(
-        {ok, Struct, <<>>, 37},
-        unmarshal({dict, byte, string}, Bin, 0, $l)
-    ),
-
-    ?assertMatch(
-        {ok, Structs, <<>>, 37},
-        unmarshal({array, {struct, [byte, string]}}, Bin, 0, $l)
-    ),
-
-    DictVariant = <<
-        5:8/integer-little-unsigned-unit:1,
-        "a{ys}",
-        0,
-        0:8/unit:1,
-        Bin/binary
-    >>,
-    ?assertMatch(
-        {ok, Struct, <<>>, 45},
-        unmarshal(variant, DictVariant, 0, $l)
-    ),
-
-    ArrayVariant = <<
-        5:8/integer-little-unsigned-unit:1,
-        "a(ys)",
-        0,
-        0:8/unit:1,
-        Bin/binary
-    >>,
-    ?assertMatch(
-        {ok, Structs, <<>>, 45},
-        unmarshal(variant, ArrayVariant, 0, $l)
-    ).
-
-unmarshal_string_test_() ->
-    Bin = <<
-        8:8/integer-little-unsigned-unit:4,
-        "a string",
-        0
-    >>,
-    Variant = <<
-        1,
-        $s,
-        0,
-        0:8/unit:1,
-        Bin/binary
-    >>,
-    [
-        ?_assertMatch(
-            {ok, <<"a string">>, <<>>, 13},
-            unmarshal(string, Bin, 0, $l)
-        ),
-        ?_assertMatch(
-            {ok, <<"a string">>, <<>>, 17},
-            unmarshal(variant, Variant, 0, $l)
-        )
-    ].
-
-unmarshal_signature_test() ->
-    [
-        ?_assertMatch(
-            [
-                {array, {array, {array, string}}}, byte
-            ],
-            unmarshal_signature(<<"aaasy">>)
-        ),
-        ?_assertMatch(
-            [
-                byte,
-                {dict, boolean, variant},
-                string,
-                string
-            ],
-            unmarshal_signature(<<"ya{bv}ss">>)
-        ),
-        ?_assertMatch(
-            [
-                {array,
-                    {struct, [string, string, {array, string}, {dict, string, variant}, string]}},
-                string
-            ],
-            unmarshal_signature(<<"a(ssasa{sv}s)s">>)
-        )
-    ].
--endif.
