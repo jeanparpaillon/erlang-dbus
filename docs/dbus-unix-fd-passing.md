@@ -25,9 +25,9 @@ Transport capability and D-Bus negotiation are separate concerns:
 - the authentication/session layer negotiates whether that ability may be used;
 - message handling validates `UNIX_FDS` and resolves `h` indices.
 
-## Suggested transport API
+## Transport API
 
-The transport should expose FDs explicitly:
+The transport carries descriptors alongside the bytes:
 
 ```erlang
 -type fd() :: non_neg_integer().
@@ -36,44 +36,67 @@ The transport should expose FDs explicitly:
     ok | {error, term()}.
 
 -spec recv(connection(), timeout()) ->
-    {ok, binary(), [fd()]} |
-    {error, term()}.
+    {ok, Data :: binary(), [fd()]}
+    | {error, term()}.
 ```
 
-It is preferable for `send` and `recv` to be transport behaviour callbacks because Unix and TCP no longer have identical I/O semantics.
+`send/2` stays, as `send/3` with no descriptors: the NUL byte that opens a
+connection and the whole SASL conversation have none to pass, and there is no
+reason to make every caller write `[]`.
+
+### Not transport callbacks
+
+An earlier draft of this document made `send` and `recv` callbacks of the
+`m:dbus_transport` behaviour, on the grounds that "Unix and TCP no longer have
+identical I/O semantics". That is the wrong cut, and this document now says so:
+
+- The three transport modules do not own their I/O. Since the transport was
+  simplified they own `connect/1` and nothing else; `send`, `recv` and `close`
+  live once in `m:dbus_transport` and run against a `t:socket:socket/0`, which
+  is what all three return. Callbacks would put two functions back into each
+  module -- and `nonce-tcp`, which is `tcp` plus one write, would delegate both
+  to `m:dbus_transport_tcp` the way it once delegated `support_unix_fd/1`.
+- The distinction is not `unix` versus `tcp`, it is fd-capable versus not, and
+  that is already a boolean on the connection: `#transport.support_unix_fd`,
+  filled at `connect/1` from the module's `support_unix_fd/0`. Dispatch on it.
+
+So `m:dbus_transport` grows two clauses rather than the behaviour growing two
+callbacks:
 
 ```erlang
--callback send(connection(), iodata(), [fd()]) ->
-    ok | {error, term()}.
-
--callback recv(connection(), timeout()) ->
-    {ok, binary(), [fd()]} |
-    {error, term()}.
+send(#transport{sock = S, support_unix_fd = false}, Data, []) ->
+    socket:send(S, Data);
+send(#transport{support_unix_fd = false}, _Data, [_ | _]) ->
+    {error, unix_fd_not_supported};
+send(#transport{sock = S}, Data, Fds) ->
+    sendmsg(S, Data, Fds).
 ```
 
-The generic transport layer can then dispatch to the implementation:
+`recv/2` reads with `socket:recv/4` on a transport that cannot carry
+descriptors and with `socket:recvmsg/5` on one that can, and returns `[]` for
+the descriptors in the first case.
 
-```erlang
-send({T, _} = Conn, Data, Fds) ->
-    T:send(Conn, Data, Fds).
+### Capability is not agreement
 
-recv({T, _} = Conn, Timeout) ->
-    T:recv(Conn, Timeout).
-```
+`support_unix_fd` says the transport *can* carry descriptors; `AGREE_UNIX_FD`
+says the peer has agreed that it *may*. They are different facts and they live
+in different places: the capability on `#transport{}`, where authentication
+reads it to decide whether to send `NEGOTIATE_UNIX_FD` at all, and the
+agreement in `#state.agree_unix_fd` in `m:dbus_connection`, which is also the
+layer that writes and reads the `UNIX_FDS` header field.
+
+The transport is therefore not told the negotiation result. Refusing to send
+descriptors that were never negotiated, and refusing a message that arrives
+carrying descriptors when they were not, are both `m:dbus_connection`'s to
+make. This is the same boundary as the rule at the end of this document:
+the transport moves bytes and descriptors, it does not interpret them.
 
 ## TCP transport
 
-TCP cannot carry D-Bus Unix FDs:
-
-```erlang
-send({dbus_transport_tcp, S}, Data, []) ->
-    socket:send(S, Data);
-
-send({dbus_transport_tcp, _}, _Data, [_ | _]) ->
-    {error, unix_fd_not_supported}.
-```
-
-Its receive operation always returns an empty FD list.
+TCP cannot carry D-Bus Unix FDs. `support_unix_fd/0` is `false` for both
+`m:dbus_transport_tcp` and `m:dbus_transport_nonce_tcp`, so the clauses above
+send with `socket:send/2`, refuse a non-empty descriptor list outright, and
+receive with `socket:recv/4` -- returning `[]` descriptors, always.
 
 Conceptually:
 
@@ -85,15 +108,12 @@ dbus_transport_tcp
 
 ## Unix transport
 
-For ordinary data without FDs, `socket:send/2` remains sufficient. When descriptors are attached, use `socket:sendmsg/...` and a `rights` control message.
-
-Conceptually:
+`m:dbus_transport_unix` is the one module whose `support_unix_fd/0` is `true`,
+which is what selects the `sendmsg`/`recvmsg` path in `m:dbus_transport`. A
+`rights` control message is the Unix `SCM_RIGHTS` ancillary message:
 
 ```erlang
-send({dbus_transport_unix, S}, Data, []) ->
-    socket:send(S, Data);
-
-send({dbus_transport_unix, S}, Data, Fds) ->
+sendmsg(S, Data, Fds) ->
     Msg = #{
         iov => [iolist_to_binary(Data)],
         ctrl => [
@@ -107,7 +127,16 @@ send({dbus_transport_unix, S}, Data, Fds) ->
     socket:sendmsg(S, Msg).
 ```
 
-`rights` corresponds to the Unix `SCM_RIGHTS` ancillary message.
+Two things `socket:send/2` did for us and `socket:sendmsg/2` does not:
+
+- **It does not loop.** `sendmsg` answers `{ok, RestData}` or
+  `{error, {Reason, RestData}}` on a partial write, and the descriptors have
+  already gone with the first byte. The remainder must be resent *without* the
+  control message, or the peer receives them twice.
+- **The `iov` must not be empty.** `SCM_RIGHTS` with no payload byte is not
+  delivered on Linux. Every D-Bus message is at least sixteen bytes, so this
+  costs nothing to satisfy -- but it is why descriptors cannot be flushed on
+  their own.
 
 Conceptually:
 
@@ -119,71 +148,92 @@ dbus_transport_unix
 
 ## Receiving FDs
 
-Once FD passing can occur, the Unix transport should receive data with `socket:recvmsg/...` so that ancillary messages are not lost.
-
-A received message has approximately this shape:
-
-```erlang
-#{
-    iov := [...],
-    ctrl := [
-        #{
-            level := socket,
-            type := rights,
-            data := FdData
-        }
-    ]
-}
-```
-
-The transport converts the `rights` data into an Erlang list of descriptors:
+Once descriptors may arrive, the fd-capable path receives with
+`socket:recvmsg/5` so that ancillary messages are not dropped:
 
 ```erlang
-recv({dbus_transport_unix, S}, Timeout) ->
-    case socket:recvmsg(S, 0, CtrlSize, [], Timeout) of
-        {ok, #{iov := Iov, ctrl := Ctrl}} ->
-            {
-                ok,
-                iolist_to_binary(Iov),
-                decode_rights(Ctrl)
-            };
-        Error ->
-            Error
+recv(#transport{sock = S, support_unix_fd = true}, Timeout) ->
+    case socket:recvmsg(S, 0, ?CTRL_SIZE, [], Timeout) of
+        {ok, #{iov := Iov, ctrl := Ctrl, flags := Flags}} ->
+            ...
+        {error, _} = E ->
+            E
     end.
 ```
 
-Using `recvmsg` consistently for the Unix transport is preferable once ancillary data may occur. Unix sockets are byte streams: one `sendmsg` call must not be assumed to correspond to one `recvmsg` call or one complete D-Bus message. The connection/message layer must therefore accumulate both bytes and received descriptors while reconstructing D-Bus message boundaries.
+Three details that a `socket:recv/4` caller never had to think about:
+
+- **The control buffer is sized by the caller, and overflowing it loses
+  descriptors.** A too-small buffer makes the kernel truncate the ancillary
+  data and close the descriptors it dropped; the only trace is `ctrunc` in the
+  returned `flags`. Size the buffer for the per-message limit -- `libdbus`
+  allows 16 descriptors per message and `dbus-daemon` exposes the number as
+  `max_message_unix_fds` (`/usr/share/dbus-1/system.conf` shows the stock
+  value commented out at 16) -- and treat `ctrunc` as a protocol error rather
+  than a short read, because the descriptors are already gone.
+- **`ctrl` is a list.** One `recvmsg` may return several `rights` messages;
+  their descriptors concatenate, in order.
+- **Boundaries still are not message boundaries.** A Unix socket is a byte
+  stream: one `sendmsg` is not one `recvmsg` and neither is one D-Bus message.
+  What is true, and is what makes a queue sufficient, is that the kernel
+  delivers ancillary data no later than the last byte of the segment it was
+  attached to -- so descriptors arrive at or before the end of the message
+  that declares them, never after, and never reordered against it. The
+  connection layer accumulates bytes and descriptors as two queues and takes
+  `UNIX_FDS` of them off the front as each message is framed.
 
 ## Encoding `SCM_RIGHTS`
 
-OTP exposes `rights` ancillary data in its native representation rather than as a high-level `[Fd]` abstraction.
+OTP does not decode `rights` into a list of descriptors. `t:socket:cmsg_recv/0`
+types the field as `data := binary()`, with no `value` alongside it -- unlike
+`timestamp` or `ip_tos`, which OTP does decode. On the send side
+`t:socket:cmsg_send/0` takes a `native_value()`, i.e. a binary here.
 
-A small helper is therefore required:
+So the payload is an array of native C `int`s, and the codec is two lines:
 
 ```erlang
 encode_fds(Fds) ->
-    ...
+    << <<Fd:32/native-signed>> || Fd <- Fds >>.
 
-decode_fds(Data) ->
-    ...
+decode_fds(Bin) when byte_size(Bin) rem 4 =:= 0 ->
+    [Fd || <<Fd:32/native-signed>> <= Bin].
 ```
 
-The encoded values correspond to native C `int` file descriptors. This code should deliberately account for the platform's native representation rather than treating the control data as a portable network-format integer array.
-
-This is Erlang code around the `socket` API; it does not require another socket implementation.
+Native byte order, native width, signed: this is memory the kernel wrote, not
+a network-format integer array, and `-1` is a value `int` can hold. A payload
+whose size is not a multiple of four is malformed and must not be parsed into
+descriptors that were never sent.
 
 ## Resource ownership
 
-Received `SCM_RIGHTS` descriptors are new descriptors owned by the receiving process/application. They must have a clear lifecycle.
+Received `SCM_RIGHTS` descriptors are new descriptors in the emulator's file
+table. They count against `RLIMIT_NOFILE` and nothing reclaims them.
 
-In particular:
+**OTP has no `close(2)`.** `socket:open/2` adopts an existing descriptor and
+`socket:close/1` then closes it, but only for a *socket* -- and the descriptors
+D-Bus actually carries are usually not sockets: portal-style APIs hand over
+files, pipes and `memfd`s. There is no `file` or `prim_file` equivalent. So a
+pure-Erlang library cannot promise to close what it receives, and any design
+that quietly assumes it can is wrong.
 
-- validate that the number of received descriptors matches the D-Bus `UNIX_FDS` header;
-- validate every `h` index against the received FD array;
-- avoid leaking descriptors when message parsing fails;
-- define which layer becomes responsible for closing descriptors after successful delivery.
+That constrains the contract rather than defeating it:
 
-Descriptor ownership should be explicit in the higher-level D-Bus API.
+- **The owner owns them.** `m:dbus_connection` puts the descriptors in
+  `#dbus_message.fds` and hands them to the owner process with the message.
+  From that point they are the application's, to consume with whatever can
+  consume a descriptor -- `socket:open/2`, a port program, a NIF.
+- **The paths where nobody takes delivery are the library's problem**: a
+  message that fails to parse, descriptors that arrive when `AGREE_UNIX_FD` was
+  never exchanged, descriptors still queued when the connection dies. The
+  library cannot close them and must not pretend otherwise. It calls an
+  application-supplied closer if one is configured, and otherwise logs and
+  leaks -- which is at least a leak with a name attached to it.
+- **Validate the count before allocating anything to it**: `UNIX_FDS` above the
+  per-message limit is refused as a protocol error, not honoured.
+
+Index validation is a separate matter and belongs with the value, not the
+transfer: an `h` in a body is an index, and it is checked against the message's
+descriptor array when it is resolved.
 
 ## Recommended layer boundary
 
@@ -224,11 +274,15 @@ The Erlang `socket` module provides everything required for the actual Unix FD t
 
 The additional work belongs in `erlang-dbus` itself:
 
-1. make the transport API FD-aware;
-2. implement `sendmsg`/`recvmsg` in `dbus_transport_unix`;
+1. teach `m:dbus_marshaller` the `h` type code and the `UNIX_FDS` header field;
+2. make `m:dbus_transport`'s `send`/`recv` fd-aware, dispatching on
+   `#transport.support_unix_fd` rather than on a new behaviour callback;
 3. encode/decode native `SCM_RIGHTS` descriptor data;
-4. accumulate FDs correctly while framing the byte stream;
-5. validate D-Bus `UNIX_FDS` and `h` values above the transport layer;
-6. define descriptor ownership and cleanup.
+4. accumulate descriptors as a queue while framing the byte stream, and enforce
+   `AGREE_UNIX_FD` in `m:dbus_connection`;
+5. validate `UNIX_FDS` against the per-message limit, and `h` indices when they
+   are resolved;
+6. hand received descriptors to the owner, and say what happens on the paths
+   where nobody takes delivery -- OTP cannot close a non-socket descriptor.
 
 No additional native transport library is required.

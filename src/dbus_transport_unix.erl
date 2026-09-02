@@ -113,7 +113,6 @@ open(Path) ->
 connect_socket(Sock, Path) ->
     case socket:connect(Sock, #{family => local, path => Path}) of
         ok ->
-            ok = socket:setopt(Sock, {otp, meta}, #{unix_fd => true}),
             {ok, Sock};
         {error, Reason} ->
             %% A socket that failed to connect cannot be retried.
