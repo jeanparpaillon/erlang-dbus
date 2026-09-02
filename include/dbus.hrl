@@ -26,6 +26,13 @@
 -define(FIELD_DESTINATION, 6).
 -define(FIELD_SENDER, 7).
 -define(FIELD_SIGNATURE, 8).
+-define(FIELD_UNIX_FDS, 9).
+
+%% The number of file descriptors one message may carry. `libdbus' allows 16,
+%% and `dbus-daemon' publishes the number as `max_message_unix_fds' --
+%% `/usr/share/dbus-1/system.conf' carries the stock value, commented out, at
+%% 16.
+-define(MAX_UNIX_FDS, 16).
 
 -type endianness() ::
     $l
@@ -48,6 +55,7 @@
     | int64
     | uint64
     | double
+    | unix_fd
     | string
     | object_path
     | signature
@@ -79,7 +87,13 @@
 
 -record(dbus_message, {
     header = #dbus_header{} :: dbus_header(),
-    body = undefined :: undefined | {dbus_signature(), term()}
+    body = undefined :: undefined | {dbus_signature(), term()},
+    %% The file descriptors that accompany the message. A `unix_fd' value in
+    %% the body is an index into this list, not a descriptor;
+    %% `dbus_message:fd/2' resolves one. The `UNIX_FDS' header field is
+    %% synthesised from it while marshalling, so a caller sets this and never
+    %% the field.
+    fds = [] :: [non_neg_integer()]
 }).
 
 -type dbus_message() :: #dbus_message{}.

@@ -28,6 +28,8 @@ Specification](https://dbus.freedesktop.org/doc/dbus-specification.html#message-
 -dialyzer({no_opaque, [marshal_dict/4]}).
 
 -ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
 %% The public API always encodes a whole message from position 0 and offers no
 %% way to encode or decode a bare value list, so the signature, alignment and
 %% offset laws cannot be stated through it. These exports let
@@ -46,7 +48,8 @@ Specification](https://dbus.freedesktop.org/doc/dbus-specification.html#message-
 %% api
 -export([
     marshal_message/1,
-    unmarshal_data/1
+    unmarshal_data/1,
+    unmarshal_data/2
 ]).
 
 -define(HEADER_SIGNATURE, [
@@ -80,6 +83,7 @@ Specification](https://dbus.freedesktop.org/doc/dbus-specification.html#message-
     | {dbus_parse_error, term()}
     | {bad_type_code, integer()}
     | {bad_signature, signature_error()}
+    | {too_many_fds, non_neg_integer()}
     | dbus_parse_error
     | body_parse_error
     | bad_header
@@ -96,18 +100,30 @@ Encode a message.
 
 Encodes a `dbus_message:t()` into an iolist, including any padding that may be
 required. Such a marshalled message is ready to send through a socket onto D-Bus.
+
+The `SIGNATURE` and `UNIX_FDS` header fields are synthesised here, from the body
+signature and from `#dbus_message.fds`; a caller sets neither. The descriptors
+themselves stay on the record -- what is returned is bytes, and it is
+`m:dbus_connection` that hands both to the transport.
 """.
 -spec marshal_message(dbus_message()) -> binary().
 marshal_message(#dbus_message{header = #dbus_header{serial = 0}}) ->
     error(invalid_serial);
-marshal_message(#dbus_message{header = Header, body = undefined}) ->
-    marshal_header(Header#dbus_header{size = 0});
-marshal_message(#dbus_message{header = Header, body = {Types, Content}}) ->
+marshal_message(#dbus_message{fds = Fds}) when length(Fds) > ?MAX_UNIX_FDS ->
+    error({too_many_fds, length(Fds)});
+marshal_message(#dbus_message{header = Header, body = undefined, fds = Fds}) ->
+    Header2 = unix_fds_field(Header, Fds),
+    marshal_header(Header2#dbus_header{size = 0});
+marshal_message(#dbus_message{header = Header, body = {Types, Content}, fds = Fds}) ->
     try marshal_list(Types, Content) of
         {Data, Pos} ->
-            Signature = #dbus_variant{type = signature, value = marshal_signature(Types)},
-            HeaderBin = marshal_header(Header#dbus_header{
-                fields = [{?FIELD_SIGNATURE, Signature} | Header#dbus_header.fields],
+            Signature = #dbus_variant{
+                type = signature,
+                value = marshal_signature(Types)
+            },
+            Header1 = unix_fds_field(Header, Fds),
+            HeaderBin = marshal_header(Header1#dbus_header{
+                fields = [{?FIELD_SIGNATURE, Signature} | Header1#dbus_header.fields],
                 size = Pos
             }),
             BodyBin = iolist_to_binary(Data),
@@ -118,7 +134,7 @@ marshal_message(#dbus_message{header = Header, body = {Types, Content}}) ->
     end.
 
 -doc """
-Decode messages.
+Decode messages, from a stream carrying no file descriptors.
 
 Returns:
 
@@ -131,8 +147,35 @@ Returns:
     | {error, error()}
     | more.
 unmarshal_data(Data) ->
+    case unmarshal_data(Data, []) of
+        {ok, Msgs, Rest, _Fds} -> {ok, Msgs, Rest};
+        Other -> Other
+    end.
+
+-doc """
+Decode messages, taking descriptors off a queue as they are framed.
+
+`Fds` is the descriptors received so far and not yet claimed by a message, in
+arrival order; the fourth element of the answer is what is left of it. Each
+message takes the `UNIX_FDS` it declares off the front, into
+`#dbus_message.fds`.
+
+The extra answer over `unmarshal_data/1` is `more` for a message whose bytes are
+all here but whose descriptors are not: they are in flight, and the next `recv`
+completes it.
+
+A message declaring more than 16 descriptors -- the per-message limit
+`dbus-daemon` publishes as `max_message_unix_fds` -- is
+`{error, {too_many_fds, N}}`, refused on the header before anything is taken off
+the queue for it.
+""".
+-spec unmarshal_data(binary(), [non_neg_integer()]) ->
+    {ok, Msgs :: [dbus_message()], Rest :: binary(), Fds :: [non_neg_integer()]}
+    | {error, error()}
+    | more.
+unmarshal_data(Data, Fds) ->
     try
-        unmarshal_data(Data, [])
+        unmarshal_data(Data, Fds, [])
     catch
         error:Err ->
             {error, Err}
@@ -247,6 +290,12 @@ marshal(double, Value, Pos) when is_integer(Value) ->
 marshal(double, Value, Pos) when is_float(Value) ->
     Pad = pad(8, Pos),
     {<<0:Pad, Value:64/little-float>>, Pos + Pad div 8 + 8};
+%% "32-bit unsigned integer ... the index to the file descriptor in the array of
+%% file descriptors that accompany the message" -- Summary of types. It is an
+%% index and not a descriptor, which is what lets `marshal/3' stay stateless:
+%% the descriptors ride on `#dbus_message.fds'.
+marshal(unix_fd, Value, Pos) when Value >= 0 andalso Value =< 4294967295 ->
+    marshal_uint(4, Value, Pos);
 marshal(string, Value, Pos) when is_atom(Value) ->
     marshal(string, atom_to_binary(Value, utf8), Pos);
 marshal(string, Value, Pos) when is_binary(Value) ->
@@ -454,6 +503,8 @@ signature_bytes(uint64) ->
     "t";
 signature_bytes(double) ->
     "d";
+signature_bytes(unix_fd) ->
+    "h";
 signature_bytes(string) ->
     "s";
 signature_bytes(object_path) ->
@@ -516,44 +567,82 @@ check_depth(_ADepth, _PDepth) ->
 %%%
 %%% Private unmarshaling
 %%%
-unmarshal_data(<<>>, []) ->
+unmarshal_data(<<>>, _Fds, []) ->
     more;
-unmarshal_data(<<>>, Acc) ->
-    {ok, lists:reverse(Acc), <<>>};
-unmarshal_data(Data, Acc) ->
-    try unmarshal_message(Data) of
-        {ok, #dbus_message{} = Msg, Rest} ->
-            unmarshal_data(Rest, [Msg | Acc]);
+unmarshal_data(<<>>, Fds, Acc) ->
+    {ok, lists:reverse(Acc), <<>>, Fds};
+unmarshal_data(Data, Fds, Acc) ->
+    try unmarshal_message(Data, Fds) of
+        {ok, #dbus_message{} = Msg, Rest, Fds1} ->
+            unmarshal_data(Rest, Fds1, [Msg | Acc]);
         more when [] =:= Acc ->
             more;
         more ->
-            {ok, lists:reverse(Acc), Data}
+            {ok, lists:reverse(Acc), Data, Fds}
     catch
         {'EXIT', Err} ->
             error({dbus_parse_error, Err})
     end.
 
-unmarshal_message(<<>>) ->
+unmarshal_message(<<>>, _Fds) ->
     more;
-unmarshal_message(Data) when is_binary(Data) ->
+unmarshal_message(Data, Fds) when is_binary(Data) ->
     case unmarshal_header(Data) of
         more ->
             more;
         {ok, #dbus_header{endian = Endian, type = MsgType} = Header, BodyBin, Rest} ->
-            case dbus_message:find_field(?FIELD_SIGNATURE, Header) of
-                undefined ->
-                    case BodyBin of
-                        <<>> -> {ok, #dbus_message{header = Header, body = undefined}, Rest};
-                        _ -> error(body_parse_error)
-                    end;
-                Signature ->
-                    case unmarshal_body(MsgType, Signature, BodyBin, Endian) of
-                        {ok, Body} -> {ok, #dbus_message{header = Header, body = Body}, Rest};
-                        more -> more;
-                        {error, Err} -> error(Err)
-                    end
+            case take_fds(Header, Fds) of
+                more ->
+                    more;
+                {MsgFds, Fds1} ->
+                    Msg = #dbus_message{header = Header, fds = MsgFds},
+                    unmarshal_message_body(Msg, MsgType, BodyBin, Endian, Rest, Fds1)
             end
     end.
+
+unmarshal_message_body(#dbus_message{header = Header} = Msg, MsgType, BodyBin, Endian, Rest, Fds) ->
+    case dbus_message:find_field(?FIELD_SIGNATURE, Header) of
+        undefined ->
+            case BodyBin of
+                <<>> -> {ok, Msg, Rest, Fds};
+                _ -> error(body_parse_error)
+            end;
+        Signature ->
+            case unmarshal_body(MsgType, Signature, BodyBin, Endian) of
+                {ok, Body} -> {ok, Msg#dbus_message{body = Body}, Rest, Fds};
+                more -> more;
+                {error, Err} -> error(Err)
+            end
+    end.
+
+%% The descriptors a message claims, taken off the front of the queue. The
+%% count is checked against the per-message limit first, so a header claiming
+%% more descriptors than may exist is refused rather than measured against the
+%% queue.
+take_fds(Header, Fds) ->
+    case dbus_message:find_field(?FIELD_UNIX_FDS, Header) of
+        undefined ->
+            {[], Fds};
+        N when is_integer(N), N > ?MAX_UNIX_FDS ->
+            error({too_many_fds, N});
+        N when is_integer(N), N >= 0 ->
+            case length(Fds) >= N of
+                true -> lists:split(N, Fds);
+                %% Byte-complete, descriptors still in flight.
+                false -> more
+            end;
+        N ->
+            error({unmarshaling, unix_fd, N})
+    end.
+
+%% `UNIX_FDS' is synthesised from `#dbus_message.fds', the way `SIGNATURE' is
+%% synthesised from the body signature: the count is a property of the message,
+%% not something a caller states.
+unix_fds_field(Header, []) ->
+    Header;
+unix_fds_field(#dbus_header{fields = Fields} = Header, Fds) ->
+    Field = {?FIELD_UNIX_FDS, #dbus_variant{type = uint32, value = length(Fds)}},
+    Header#dbus_header{fields = [Field | Fields]}.
 
 unmarshal_body(?TYPE_INVALID, _, _, _) ->
     {ok, undefined};
@@ -659,6 +748,8 @@ unmarshal(double, Data, Pos, Endian) ->
         end,
     Pos1 = Pos + Pad div 8 + 8,
     {ok, Value, Data1, Pos1};
+unmarshal(unix_fd, Data, Pos, Endian) ->
+    unmarshal_uint(4, Data, Pos, Endian);
 unmarshal(signature, Data, Pos, Endian) ->
     unmarshal_string(byte, Data, Pos, Endian);
 unmarshal(string, Data, Pos, Endian) ->
@@ -880,6 +971,7 @@ type_code($u) -> {ok, uint32};
 type_code($x) -> {ok, int64};
 type_code($t) -> {ok, uint64};
 type_code($d) -> {ok, double};
+type_code($h) -> {ok, unix_fd};
 type_code($s) -> {ok, string};
 type_code($o) -> {ok, object_path};
 type_code($g) -> {ok, signature};
@@ -991,6 +1083,7 @@ padding(uint32) -> 4;
 padding(int64) -> 8;
 padding(uint64) -> 8;
 padding(double) -> 8;
+padding(unix_fd) -> 4;
 padding(string) -> 4;
 padding(object_path) -> 4;
 padding(signature) -> 1;
@@ -1021,3 +1114,107 @@ pad(Type, Pos) when
     struct =:= element(1, Type)
 ->
     pad(padding(Type), Pos).
+
+%%%
+%%% Tests
+%%%
+-ifdef(TEST).
+
+%%% What `h' and the `UNIX_FDS' header field owe the specification's "Summary of
+%%% types" and "Header Fields" sections:
+%%%
+%%%   * `h' is a basic fixed type, so it is a legal dict key, and on the wire it
+%%%     is a `UINT32' on a 4-byte boundary -- byte for byte a `u';
+%%%   * its value is an index into the array of descriptors that accompany the
+%%%     message, never a descriptor, so nothing here touches one;
+%%%   * `UNIX_FDS' is field 9, a `UINT32' counting those descriptors, and it is
+%%%     synthesised from `#dbus_message.fds' rather than taken from a caller;
+%%%   * a count over `?MAX_UNIX_FDS' is refused in both directions, and while
+%%%     decoding it is refused on the header, before anything is taken off the
+%%%     descriptor queue for it.
+
+h_signature_test() ->
+    ?assertEqual(<<"h">>, marshal_signature([unix_fd])),
+    ?assertEqual({ok, [unix_fd]}, unmarshal_signature(<<"h">>)).
+
+h_is_a_dict_key_test() ->
+    Type = {dict, unix_fd, string},
+    ?assertEqual(<<"a{hs}">>, marshal_signature([Type])),
+    ?assertEqual({ok, [Type]}, unmarshal_signature(<<"a{hs}">>)).
+
+h_encodes_as_uint32_test_() ->
+    [
+        {"offset " ++ integer_to_list(Pos), fun() ->
+            {Io, Pos1} = marshal(unix_fd, 3, Pos),
+            {UIo, UPos1} = marshal(uint32, 3, Pos),
+            ?assertEqual({iolist_to_binary(UIo), UPos1}, {iolist_to_binary(Io), Pos1})
+        end}
+     || Pos <- lists:seq(0, 7)
+    ].
+
+h_decodes_as_uint32_test_() ->
+    %% Three leading zeros, so the same buffer serves every offset: the padding
+    %% a 4-aligned type skips has to be zero for either decoder to match it.
+    Bin = <<0, 0, 0, 1, 2, 3, 4, 0, 0, 0, 0, 0>>,
+    [
+        {"offset " ++ integer_to_list(Pos), fun() ->
+            ?assertEqual(unmarshal(uint32, Bin, Pos, $l), unmarshal(unix_fd, Bin, Pos, $l))
+        end}
+     || Pos <- lists:seq(0, 7)
+    ].
+
+%% A message whose body is a single `h' pointing at the first descriptor.
+fd_message(Fds) ->
+    #dbus_message{
+        header = #dbus_header{type = ?TYPE_METHOD_CALL, serial = 1},
+        body = {[unix_fd], [0]},
+        fds = Fds
+    }.
+
+unix_fds_field_is_synthesised_test() ->
+    Bin = marshal_message(fd_message([3, 4])),
+    {ok, [#dbus_message{header = Header}], <<>>, []} = unmarshal_data(Bin, [3, 4]),
+    ?assertEqual(2, dbus_message:find_field(?FIELD_UNIX_FDS, Header)).
+
+unix_fds_field_on_a_bodyless_message_test() ->
+    Msg = #dbus_message{
+        header = #dbus_header{type = ?TYPE_SIGNAL, serial = 1},
+        fds = [7]
+    },
+    ?assertMatch(
+        {ok, [#dbus_message{body = undefined, fds = [7]}], <<>>, []},
+        unmarshal_data(marshal_message(Msg), [7])
+    ).
+
+no_fds_no_field_test() ->
+    Bin = marshal_message(fd_message([])),
+    {ok, [#dbus_message{header = Header, fds = []}], <<>>} = unmarshal_data(Bin),
+    ?assertEqual(undefined, dbus_message:find_field(?FIELD_UNIX_FDS, Header)).
+
+descriptors_are_taken_off_the_queue_test_() ->
+    Bin = marshal_message(fd_message([3, 4])),
+    [
+        ?_assertMatch({ok, [#dbus_message{fds = [3, 4]}], <<>>, []}, unmarshal_data(Bin, [3, 4])),
+        %% What the message does not claim is left for the next one.
+        ?_assertMatch(
+            {ok, [#dbus_message{fds = [3, 4]}], <<>>, [5]},
+            unmarshal_data(Bin, [3, 4, 5])
+        ),
+        %% All the bytes are here and one descriptor is not: still in flight.
+        ?_assertEqual(more, unmarshal_data(Bin, [3]))
+    ].
+
+too_many_fds_to_marshal_test() ->
+    Msg = fd_message(lists:seq(3, 3 + ?MAX_UNIX_FDS)),
+    ?assertError({too_many_fds, 17}, marshal_message(Msg)).
+
+too_many_fds_on_the_wire_test() ->
+    Header = #dbus_header{
+        type = ?TYPE_METHOD_CALL,
+        serial = 1,
+        fields = [{?FIELD_UNIX_FDS, #dbus_variant{type = uint32, value = ?MAX_UNIX_FDS + 1}}]
+    },
+    Bin = marshal_message(#dbus_message{header = Header}),
+    ?assertEqual({error, {too_many_fds, 17}}, unmarshal_data(Bin, [])).
+
+-endif.

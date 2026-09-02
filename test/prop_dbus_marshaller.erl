@@ -69,10 +69,10 @@ and every 8 lowered, is caught.
 %% bytes keep every struct clear of the end of the buffer.
 -define(SLACK, <<0:64>>).
 
-%% The nine types the specification gives a fixed width, in the order of its
+%% The ten types the specification gives a fixed width, in the order of its
 %% "Summary of D-Bus marshalling" table.
 -define(FIXED_WIDTH_TYPES, [
-    byte, boolean, int16, uint16, int32, uint32, int64, uint64, double
+    byte, boolean, int16, uint16, int32, uint32, int64, uint64, double, unix_fd
 ]).
 
 %% The caps the specification's "Valid Signatures" section puts on the

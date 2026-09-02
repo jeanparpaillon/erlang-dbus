@@ -74,6 +74,7 @@ basic_type() ->
         int64,
         uint64,
         double,
+        unix_fd,
         string,
         object_path,
         signature
@@ -94,7 +95,7 @@ type(0) ->
     %% that way `variant' is half of every leaf type, and since a variant's
     %% value draws a fresh full-size `type()', the recursion is supercritical --
     %% a single draw grows without bound and exhausts memory before the property
-    %% runs. Listing the basic types here makes `variant' one leaf in thirteen.
+    %% runs. Listing the basic types here makes `variant' one leaf in fourteen.
     union([
         variant,
         byte,
@@ -106,6 +107,7 @@ type(0) ->
         int64,
         uint64,
         double,
+        unix_fd,
         string,
         object_path,
         signature
@@ -190,6 +192,10 @@ value(uint64) ->
     integer(0, 18446744073709551615);
 value(double) ->
     float();
+value(unix_fd) ->
+    %% An index into the message's descriptor array, encoded as a `uint32'. No
+    %% descriptor is involved, so the whole range is generated.
+    integer(0, 4294967295);
 value(string) ->
     text();
 value(object_path) ->
@@ -268,7 +274,7 @@ emitted padding cannot be recovered from the position delta alone.
 fixed_width_typed_value() ->
     ?LET(
         T,
-        union([byte, boolean, int16, uint16, int32, uint32, int64, uint64, double]),
+        union([byte, boolean, int16, uint16, int32, uint32, int64, uint64, double, unix_fd]),
         ?LET(V, value(T), {T, V, integer(0, 64)})
     ).
 
@@ -328,6 +334,7 @@ probe_type() ->
         int64,
         uint64,
         double,
+        unix_fd,
         string,
         object_path,
         signature,
@@ -352,7 +359,8 @@ probe_value(Type) when
     Type =:= int32;
     Type =:= uint32;
     Type =:= int64;
-    Type =:= uint64
+    Type =:= uint64;
+    Type =:= unix_fd
 ->
     ?SUCHTHAT(V, value(Type), V band 255 =/= 0);
 probe_value(Type) when Type =:= string; Type =:= object_path ->
@@ -390,7 +398,8 @@ fixed_width(int32) -> 4;
 fixed_width(uint32) -> 4;
 fixed_width(int64) -> 8;
 fixed_width(uint64) -> 8;
-fixed_width(double) -> 8.
+fixed_width(double) -> 8;
+fixed_width(unix_fd) -> 4.
 
 -doc """
 Alignment boundary of a type, in bytes.
@@ -420,7 +429,8 @@ alignment(signature) -> 1;
 alignment(variant) -> 1;
 alignment({array, _SubType}) -> 4;
 alignment({struct, _SubTypes}) -> 8;
-alignment({dict, _KeyType, _ValueType}) -> 4.
+alignment({dict, _KeyType, _ValueType}) -> 4;
+alignment(unix_fd) -> 4.
 
 -doc "The first position at or after `Pos' on a `Type' boundary.".
 align(Type, Pos) ->
