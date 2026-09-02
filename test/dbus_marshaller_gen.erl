@@ -73,7 +73,27 @@ type() ->
     ?SIZED(Size, type(erlang:min(Size, 6))).
 
 type(0) ->
-    union([variant, basic_type()]);
+    %% Flattened rather than `union([variant, basic_type()])': `union/1' picks
+    %% uniformly over its list elements, so a nested union counts once. Written
+    %% that way `variant' is half of every leaf type, and since a variant's
+    %% value draws a fresh full-size `type()', the recursion is supercritical --
+    %% a single draw grows without bound and exhausts memory before the property
+    %% runs. Listing the basic types here makes `variant' one leaf in thirteen.
+    union([
+        variant,
+        byte,
+        boolean,
+        int16,
+        uint16,
+        int32,
+        uint32,
+        int64,
+        uint64,
+        double,
+        string,
+        object_path,
+        signature
+    ]);
 type(Size) ->
     ?LAZY(
         union([

@@ -1,3 +1,5 @@
+PROPS_ITER ?= 1000
+
 all: build
 
 build:
@@ -21,7 +23,7 @@ tests:
 	rebar3 eunit --cover
 
 props:
-	rebar3 proper --cover -n 1000
+	rebar3 proper --cover -n $(PROPS_ITER)
 
 coverage:
 	rebar3 cover --verbose

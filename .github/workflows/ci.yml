@@ -46,6 +46,10 @@ jobs:
         if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
         run: rebar3 eunit --cover
 
+      - name: Run PropEr
+        if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
+        run: rebar3 proper --cover -n 500
+
       - name: Creates Cobertura coverage report
         run: rebar3 covertool generate
 
