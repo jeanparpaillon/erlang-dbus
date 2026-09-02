@@ -27,12 +27,20 @@ Defines the behaviour for authentication client mechanisms.
 -record(state, {
     ctx :: map(),
     transport :: dbus_transport:connection(),
+    %% Bytes read from the transport but not yet consumed as a line.
+    buf = <<>> :: binary(),
     supported_mechs = undefined :: [binary()] | undefined,
     mech :: module() | undefined,
     mech_state :: term() | undefined,
     guid :: binary() | undefined,
     agree_unix_fd = false :: boolean()
 }).
+
+-define(RECV_TIMEOUT, 1000).
+
+%% The specification caps an authentication line at 16384 bytes, CRLF
+%% included; a longer one is not a line we are still waiting to complete.
+-define(MAX_LINE, 16384).
 
 -export([try_auth/2]).
 
@@ -45,65 +53,68 @@ try_auth(Ctx, Conn) ->
     },
 
     ok = do_send(dbus_sasl:command_auth(), State),
-    do_auth(waiting_for_reject, do_recv(State), State).
+    do_auth(waiting_for_reject, do_recv(State)).
 
 %%%
 %%% Priv
 %%%
-do_auth(waiting_for_ok, {ok, Response}, State) ->
+do_auth(waiting_for_ok, {{ok, Response}, State}) ->
     handle_ok(Response, State);
-do_auth(waiting_for_ok, {rejected, _}, State) ->
+do_auth(waiting_for_ok, {{rejected, _}, State}) ->
     handle_rejected(State);
-do_auth(waiting_for_ok, {data, _}, State) ->
+do_auth(waiting_for_ok, {{data, _}, State}) ->
     ok = do_send(dbus_sasl:command_cancel(), State),
-    do_auth(waiting_for_reject, do_recv(State), State);
-do_auth(waiting_for_ok, {error, _Msg}, State) ->
+    do_auth(waiting_for_reject, do_recv(State));
+do_auth(waiting_for_ok, {{error, _Msg}, State}) ->
     ok = do_send(dbus_sasl:command_cancel(), State),
-    do_auth(waiting_for_reject, do_recv(State), State);
-do_auth(waiting_for_data, {data, Challenge}, State) ->
+    do_auth(waiting_for_reject, do_recv(State));
+do_auth(waiting_for_data, {{data, Challenge}, State}) ->
     Mech = State#state.mech,
     MechState = State#state.mech_state,
     case Mech:challenge(Challenge, MechState) of
         {ok, Response, NewMechState} ->
             State1 = State#state{mech_state = NewMechState},
             ok = do_send(dbus_sasl:command_data(Response), State1),
-            do_auth(waiting_for_ok, do_recv(State1), State1);
+            do_auth(waiting_for_ok, do_recv(State1));
         {continue, Response, NewMechState} ->
             State1 = State#state{mech_state = NewMechState},
             ok = do_send(dbus_sasl:command_data(Response), State1),
-            do_auth(waiting_for_data, do_recv(State1), State1);
+            do_auth(waiting_for_data, do_recv(State1));
         {error, Reason} ->
             ok = do_send(dbus_sasl:command_error(Reason), State),
-            do_auth(waiting_for_ok, do_recv(State), State)
+            do_auth(waiting_for_ok, do_recv(State))
     end;
-do_auth(waiting_for_data, {rejected, _}, State) ->
+do_auth(waiting_for_data, {{rejected, _}, State}) ->
     handle_rejected(State);
-do_auth(waiting_for_data, {error, _Msg}, State) ->
+do_auth(waiting_for_data, {{error, _Msg}, State}) ->
     ok = do_send(dbus_sasl:command_cancel(), State),
-    do_auth(waiting_for_reject, do_recv(State), State);
-do_auth(waiting_for_data, {ok, Response}, State) ->
+    do_auth(waiting_for_reject, do_recv(State));
+do_auth(waiting_for_data, {{ok, Response}, State}) ->
     handle_ok(Response, State);
 do_auth(
     waiting_for_reject,
-    {rejected, Mechanisms},
-    #state{supported_mechs = undefined} = State
+    {{rejected, Mechanisms}, State = #state{supported_mechs = undefined}}
 ) ->
     handle_rejected(State#state{supported_mechs = Mechanisms});
-do_auth(waiting_for_reject, {rejected, _Mechanisms}, State) ->
+do_auth(waiting_for_reject, {{rejected, _Mechanisms}, State}) ->
     % Server is supposed sending always same supported mechanisms
     handle_rejected(State);
-do_auth(waiting_for_reject, _, _State) ->
+do_auth(waiting_for_reject, {_Ret, _State}) ->
     {error, {unexpected_response, waiting_for_reject}};
-do_auth(waiting_for_unix_fd, agree_unix_fd, State) ->
+do_auth(waiting_for_unix_fd, {agree_unix_fd, State}) ->
     handle_begin(State#state{agree_unix_fd = true});
-do_auth(waiting_for_unix_fd, {error, _}, State) ->
+do_auth(waiting_for_unix_fd, {{error, _}, State}) ->
     handle_begin(State#state{agree_unix_fd = false});
-do_auth(_, {transport_error, Reason}, _State) ->
+do_auth(_, {{transport_error, Reason}, _State}) ->
     {error, {transport_error, Reason}};
+%% Not an unknown command to be answered with ERROR: the stream is no longer
+%% framable, so there is nothing to resynchronise on.
+do_auth(_, {{protocol_error, Reason}, _State}) ->
+    {error, {protocol_error, Reason}};
 % catch all clause
-do_auth(_, _, State) ->
+do_auth(_, {_Response, State}) ->
     ok = do_send(dbus_sasl:command_error(), State),
-    do_auth(waiting_for_ok, do_recv(State), State).
+    do_auth(waiting_for_ok, do_recv(State)).
 
 handle_rejected(State) ->
     Mechanisms = State#state.supported_mechs,
@@ -130,15 +141,15 @@ handle_auth_init(State) ->
         {ok, Response, NewMechState} ->
             State1 = State#state{mech_state = NewMechState},
             ok = do_send(dbus_sasl:command_auth(MechName, Response), State1),
-            do_auth(waiting_for_ok, do_recv(State1), State1);
+            do_auth(waiting_for_ok, do_recv(State1));
         {continue, Response, NewMechState} ->
             State1 = State#state{mech_state = NewMechState},
             ok = do_send(dbus_sasl:command_auth(MechName, Response), State1),
-            do_auth(waiting_for_data, do_recv(State1), State1);
+            do_auth(waiting_for_data, do_recv(State1));
         {none, NewMechState} ->
             State1 = State#state{mech_state = NewMechState},
             ok = do_send(dbus_sasl:command_auth(MechName), State1),
-            do_auth(waiting_for_ok, do_recv(State1), State1);
+            do_auth(waiting_for_ok, do_recv(State1));
         {error, Reason} ->
             {error, Reason}
     end.
@@ -149,7 +160,7 @@ handle_ok(<<>>, State) ->
     case dbus_transport:support_unix_fd(Conn) of
         true ->
             ok = do_send(dbus_sasl:command_negotiate_unix_fd(), State),
-            do_auth(waiting_for_unix_fd, do_recv(State), State);
+            do_auth(waiting_for_unix_fd, do_recv(State));
         false ->
             handle_begin(State)
     end;
@@ -181,10 +192,34 @@ lookup_mechanism(_) -> undefined.
 do_send(Data, State) ->
     dbus_transport:send(State#state.transport, Data).
 
-do_recv(State) ->
-    case dbus_transport:recv(State#state.transport, 1000) of
-        {ok, Data} ->
-            dbus_sasl:parse(Data);
-        {error, Reason} ->
-            {transport_error, Reason}
+%% `dbus_transport:recv/2' does no framing: it hands back whatever bytes have
+%% arrived, which may be half a line, exactly one, or several at once. The
+%% authentication protocol is line-based -- every line ends with CRLF -- so
+%% the framing is ours, and what follows the line we take stays in the buffer
+%% for the next call rather than being dropped.
+do_recv(#state{buf = Buf} = State) ->
+    case take_line(Buf) of
+        {ok, Line, Rest} ->
+            {dbus_sasl:parse(Line), State#state{buf = Rest}};
+        more when byte_size(Buf) >= ?MAX_LINE ->
+            {{protocol_error, line_too_long}, State};
+        more ->
+            case dbus_transport:recv(State#state.transport, ?RECV_TIMEOUT) of
+                {ok, Data} ->
+                    do_recv(State#state{buf = <<Buf/binary, Data/binary>>});
+                {error, Reason} ->
+                    {{transport_error, Reason}, State}
+            end
+    end.
+
+%% Splits off the first line, CRLF included -- `dbus_sasl:parse/1' takes a
+%% whole line and rejects anything trailing it.
+take_line(Buf) ->
+    case binary:match(Buf, <<"\r\n">>) of
+        nomatch ->
+            more;
+        {Pos, 2} ->
+            Len = Pos + 2,
+            <<Line:Len/binary, Rest/binary>> = Buf,
+            {ok, Line, Rest}
     end.
