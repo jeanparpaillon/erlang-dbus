@@ -92,6 +92,13 @@ The status:
 * Tests for both are working!
 * Connect through TCP and UNIX socket: ok
 
+# Building
+
+`rebar3 compile` builds one NIF, `c_src/dbus_fd.c` into `priv/dbus_fd.so`, so a C
+compiler and `make` are needed here and in anything that depends on this
+application. It is `close(2)`/`dup(2)` for the file descriptors a message carries
+over a UNIX socket -- see `m:dbus_fd` for why OTP cannot close those on its own.
+
 # Issue format
 
 `submit_issue.sh` parses these files, so the header is structural, not decorative.
