@@ -11,7 +11,7 @@ Handles connection to a D-Bus peer.
     start_link/1,
     start_link/2,
     stop/1,
-    get_uuid/1,
+    get_guid/1,
     set_owner/2,
     send/2
 ]).
@@ -32,7 +32,8 @@ Handles connection to a D-Bus peer.
     owner :: pid(),
     auth_ctx :: term() | undefined,
     transport :: dbus_transport:connection() | undefined,
-    uuid = <<>> :: binary(),
+    guid = <<>> :: binary(),
+    agree_unix_fd = false :: boolean(),
     serial = 1 :: dbus_serial(),
     reader :: pid() | undefined,
     acc = <<>> :: binary()
@@ -69,10 +70,10 @@ stop(Connection) ->
 -doc """
 Returns peer GUID
 """.
--spec get_uuid(connection()) ->
+-spec get_guid(connection()) ->
     {ok, binary()}.
-get_uuid(Connection) ->
-    gen_server:call(Connection, get_uuid).
+get_guid(Connection) ->
+    gen_server:call(Connection, get_guid).
 
 -doc """
 Change connection owner. Must be called by actual owner, or returns
@@ -107,8 +108,8 @@ init(
     State = #state{owner = Owner, auth_ctx = AuthCtx},
     try_connect(Addresses, State).
 
-handle_call(get_uuid, _From, #state{uuid = UUID} = State) ->
-    {reply, {ok, UUID}, State};
+handle_call(get_guid, _From, #state{guid = Guid} = State) ->
+    {reply, {ok, Guid}, State};
 handle_call({set_owner, Owner}, {Owner, _Tag}, #state{owner = Owner} = State) ->
     {reply, ok, State#state{owner = Owner}};
 handle_call({set_owner, _Owner}, _From, State) ->
@@ -192,17 +193,25 @@ handle_auth(#state{transport = Conn} = State) ->
     dbus_transport:send(Conn, <<0>>),
 
     case dbus_auth_client_mech:try_auth(State#state.auth_ctx, Conn) of
-        {ok, Resp} ->
-            ?LOG_INFO("Authentication successful, server guid: ~p", [Resp]),
-            handle_begin(State#state{uuid = Resp});
+        {ok, Auth} ->
+            ?LOG_INFO("Authentication successful, server guid: ~p", [Auth#dbus_auth.guid]),
+            handle_begin(Auth, State);
         {error, Reason} ->
             ?LOG_ERROR("Authentication failed: ~p", [Reason]),
             {stop, {auth_error, Reason}}
     end.
 
-handle_begin(#state{transport = Conn} = State) ->
+handle_begin(
+    #dbus_auth{guid = Guid, agree_unix_fd = AgreeUnixFd},
+    #state{transport = Conn} = State
+) ->
     Reader = start_reader(Conn),
-    {ok, State#state{reader = Reader}}.
+    State1 = State#state{
+        reader = Reader,
+        guid = Guid,
+        agree_unix_fd = AgreeUnixFd
+    },
+    {ok, State1}.
 
 incr_serial(#state{serial = Serial} = State) ->
     State#state{serial = next_serial(Serial)}.

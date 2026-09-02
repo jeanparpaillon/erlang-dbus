@@ -48,8 +48,7 @@ TCP cannot carry file descriptors at all, so `support_unix_fd/1` is `false` and
 
 -export([
     connect/1,
-    support_unix_fd/1,
-    disable_unix_fd/1
+    support_unix_fd/0
 ]).
 
 %% For `m:dbus_transport_nonce_tcp', which is this connect plus a nonce write.
@@ -66,7 +65,7 @@ TCP cannot carry file descriptors at all, so `support_unix_fd/1` is `false` and
 -define(CONNECT_TIMEOUT, 5000).
 
 -spec connect(dbus_address()) ->
-    {ok, dbus_transport:socket()}
+    {ok, socket:socket()}
     | {error, term()}.
 connect(#dbus_address{scheme = <<"tcp">>} = Address) ->
     case endpoint(Address) of
@@ -105,13 +104,8 @@ connect(Host, Port, FamilyOpts) ->
         {error, _} = E -> E
     end.
 
--spec support_unix_fd(dbus_transport:connection()) -> boolean().
-support_unix_fd(_Conn) ->
-    false.
-
--spec disable_unix_fd(dbus_transport:connection()) -> ok.
-disable_unix_fd(_Conn) ->
-    ok.
+-spec support_unix_fd() -> boolean().
+support_unix_fd() -> false.
 
 %%%
 %%% Private

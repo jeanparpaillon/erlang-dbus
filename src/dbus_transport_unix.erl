@@ -45,8 +45,7 @@ authentication, the only caller of `disable_unix_fd/1`.
 
 -export([
     connect/1,
-    support_unix_fd/1,
-    disable_unix_fd/1
+    support_unix_fd/0
 ]).
 
 %% The keys that say where the socket is. Exactly one of them may appear, and
@@ -64,27 +63,9 @@ connect(#dbus_address{scheme = <<"unix">>} = Address) ->
 connect(#dbus_address{scheme = Scheme}) ->
     {error, {invalid_scheme, Scheme}}.
 
--spec support_unix_fd(dbus_transport:connection()) -> boolean().
-support_unix_fd({_, Sock}) ->
-    case socket:getopt(Sock, {otp, meta}) of
-        {ok, #{unix_fd := Supported}} -> Supported;
-        %% A socket this module did not open, or one already closed: claiming
-        %% fd passing we cannot back up is the worse failure of the two.
-        _ -> false
-    end.
-
--spec disable_unix_fd(dbus_transport:connection()) -> ok.
-disable_unix_fd({_, Sock}) ->
-    case socket:setopt(Sock, {otp, meta}, #{unix_fd => false}) of
-        ok ->
-            ok;
-        {error, Reason} ->
-            %% The callback has no way to report this, and the caller -- the
-            %% auth conversation -- has already decided to carry on without
-            %% fd passing.
-            ?LOG_WARNING("could not record unix fd refusal: ~p", [Reason]),
-            ok
-    end.
+% Not implemented yet, see docs/dbus-unix-fd-passing.md
+-spec support_unix_fd() -> boolean().
+support_unix_fd() -> false.
 
 %%%
 %%% Private
@@ -243,35 +224,6 @@ recv_from_another_process_test() ->
         _ = socket:close(Peer)
     end).
 
-unix_fd_test() ->
-    with_listener(fun(Path, Listener) ->
-        {ok, Conn} = dbus_transport:connect(addr([{path, Path}])),
-        {ok, Peer} = socket:accept(Listener, 1000),
-        ?assert(dbus_transport:support_unix_fd(Conn)),
-
-        %% The refusal lives on the connection, so it is still visible
-        %% through a handle rebuilt from it, and to another process.
-        ok = dbus_transport:disable_unix_fd(Conn),
-        ?assertNot(dbus_transport:support_unix_fd(Conn)),
-        Self = self(),
-        _ = spawn_link(fun() -> Self ! {fd, dbus_transport:support_unix_fd(Conn)} end),
-        receive
-            {fd, Supported} -> ?assertNot(Supported)
-        after 2000 -> ?assert(false)
-        end,
-
-        ok = dbus_transport:close(Conn),
-        _ = socket:close(Peer)
-    end).
-
-%% A closed connection cannot pass descriptors either.
-support_unix_fd_on_closed_socket_test() ->
-    with_listener(fun(Path, _Listener) ->
-        {ok, Conn} = dbus_transport:connect(addr([{path, Path}])),
-        ok = dbus_transport:close(Conn),
-        ?assertNot(dbus_transport:support_unix_fd(Conn))
-    end).
-
 %% The name is not a filesystem path: it connects to a listener bound to
 %% `<<0, Name/binary>>', which is the prefixing this module does.
 abstract_roundtrip_test_() ->
@@ -285,20 +237,6 @@ abstract_roundtrip_test_() ->
 
             ok = socket:send(Peer, <<"OK\r\n">>),
             ?assertEqual({ok, <<"OK\r\n">>}, dbus_transport:recv(Conn, 1000)),
-
-            ok = dbus_transport:close(Conn),
-            _ = socket:close(Peer)
-        end)
-    end).
-
-%% Passing descriptors is a property of the socket family, so it does not
-%% depend on which namespace the name lives in.
-abstract_unix_fd_test_() ->
-    on_linux(fun() ->
-        with_abstract_listener(fun(Name, Listener) ->
-            {ok, Conn} = dbus_transport:connect(addr([{abstract, Name}])),
-            {ok, Peer} = socket:accept(Listener, 1000),
-            ?assert(dbus_transport:support_unix_fd(Conn)),
 
             ok = dbus_transport:close(Conn),
             _ = socket:close(Peer)

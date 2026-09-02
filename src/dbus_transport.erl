@@ -9,25 +9,28 @@ Transport behaviour for a D-Bus transport.
 %% pair is a connection() -- the other two callbacks take that pair, since
 %% dispatching to a module needs its name.
 -type socket() :: socket:socket().
--type connection() :: {module(), socket()}.
+
+-record(transport, {
+    mod :: module(),
+    sock :: socket:socket(),
+    support_unix_fd :: boolean()
+}).
+
+-opaque connection() :: #transport{}.
 -export_type([socket/0, connection/0]).
 
 -callback connect(Address :: dbus_address()) ->
     {ok, socket()}
     | {error, Reason :: term()}.
 
--callback support_unix_fd(connection()) ->
-    boolean().
-
--callback disable_unix_fd(connection()) -> ok.
+-callback support_unix_fd() -> boolean().
 
 -export([
     connect/1,
     send/2,
     recv/2,
     close/1,
-    support_unix_fd/1,
-    disable_unix_fd/1
+    support_unix_fd/1
 ]).
 
 -spec connect(dbus_address()) ->
@@ -38,7 +41,12 @@ connect(Address) ->
         {ok, Transport} ->
             case Transport:connect(Address) of
                 {ok, Conn} ->
-                    {ok, {Transport, Conn}};
+                    T = #transport{
+                        mod = Transport,
+                        sock = Conn,
+                        support_unix_fd = Transport:support_unix_fd()
+                    },
+                    {ok, T};
                 {error, Reason} ->
                     {error, Reason}
             end;
@@ -46,10 +54,10 @@ connect(Address) ->
             {error, {invalid_transport, Address}}
     end.
 
--spec send(connection(), iodata()) ->
+-spec send(connection(), binary()) ->
     ok
     | {error, Reason :: term()}.
-send({_, S}, D) ->
+send(#transport{sock = S}, D) ->
     case socket:send(S, D) of
         ok ->
             ok;
@@ -60,25 +68,18 @@ send({_, S}, D) ->
 -spec recv(connection(), timeout()) ->
     {ok, Data :: binary()}
     | {error, closed | timeout | term()}.
-recv({_, S}, Timeout) ->
+recv(#transport{sock = S}, Timeout) ->
     socket:recv(S, 0, [], Timeout).
 
 -spec close(connection()) ->
     ok
     | {error, Reason :: term()}.
-close({_, S}) ->
+close(#transport{sock = S}) ->
     socket:close(S).
 
 -spec support_unix_fd(connection()) -> boolean().
-%% The whole connection, not just the socket: the callback takes a
-%% connection() and an adapter may keep per-connection state beside the
-%% socket -- dbus_transport_unix does.
-support_unix_fd({T, _} = Conn) ->
-    T:support_unix_fd(Conn).
-
--spec disable_unix_fd(connection()) -> ok.
-disable_unix_fd({T, _} = Conn) ->
-    T:disable_unix_fd(Conn).
+support_unix_fd(#transport{support_unix_fd = Support}) ->
+    Support.
 
 %%%
 %%% Priv

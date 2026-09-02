@@ -99,4 +99,10 @@
 }).
 -type dbus_address() :: #dbus_address{}.
 
+-record(dbus_auth, {
+    guid :: binary() | undefined,
+    agree_unix_fd = false :: boolean()
+}).
+-type dbus_auth() :: #dbus_auth{}.
+
 -endif.

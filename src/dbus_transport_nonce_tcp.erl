@@ -49,8 +49,7 @@ The transport underneath is TCP, which cannot carry file descriptors, so
 
 -export([
     connect/1,
-    support_unix_fd/1,
-    disable_unix_fd/1
+    support_unix_fd/0
 ]).
 
 %% "The nonce is a 16 byte random value": not a length the file declares.
@@ -67,13 +66,8 @@ connect(#dbus_address{scheme = <<"nonce-tcp">>} = Address) ->
 connect(#dbus_address{scheme = Scheme}) ->
     {error, {invalid_scheme, Scheme}}.
 
--spec support_unix_fd(dbus_transport:connection()) -> boolean().
-support_unix_fd(Conn) ->
-    dbus_transport_tcp:support_unix_fd(Conn).
-
--spec disable_unix_fd(dbus_transport:connection()) -> ok.
-disable_unix_fd(Conn) ->
-    dbus_transport_tcp:disable_unix_fd(Conn).
+-spec support_unix_fd() -> boolean().
+support_unix_fd() -> false.
 
 %%%
 %%% Private
