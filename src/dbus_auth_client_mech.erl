@@ -30,7 +30,8 @@ Defines the behaviour for authentication client mechanisms.
     transport_state :: term(),
     supported_mechs = undefined :: [binary()] | undefined,
     mech :: module() | undefined,
-    mech_state :: term() | undefined
+    mech_state :: term() | undefined,
+    guid :: binary() | undefined
 }).
 
 -export([try_auth/3]).
@@ -95,12 +96,12 @@ do_auth(waiting_for_reject, {rejected, _Mechanisms}, State) ->
 do_auth(waiting_for_reject, _, _State) ->
     {error, {unexpected_response, waiting_for_reject}};
 do_auth(waiting_for_unix_fd, agree_unix_fd, State) ->
-    handle_begin(State, <<>>);
+    handle_begin(State);
 do_auth(waiting_for_unix_fd, {error, _}, State) ->
     Transport = State#state.transport,
     TransportState = State#state.transport_state,
     ok = dbus_transport:disable_unix_fd(Transport, TransportState),
-    handle_begin(State, <<>>);
+    handle_begin(State);
 do_auth(_, {transport_error, Reason}, _State) ->
     {error, {transport_error, Reason}};
 % catch all clause
@@ -146,7 +147,7 @@ handle_auth_init(State) ->
             {error, Reason}
     end.
 
-handle_ok(Response, State) ->
+handle_ok(<<>>, State) ->
     Transport = State#state.transport,
     TransportState = State#state.transport_state,
 
@@ -155,12 +156,14 @@ handle_ok(Response, State) ->
             ok = do_send(dbus_sasl:command_negotiate_unix_fd(), State),
             do_auth(waiting_for_unix_fd, do_recv(State), State);
         false ->
-            handle_begin(State, Response)
-    end.
+            handle_begin(State)
+    end;
+handle_ok(Response, State) ->
+    handle_ok(<<>>, State#state{guid = Response}).
 
-handle_begin(State, Response) ->
+handle_begin(State) ->
     ok = do_send(dbus_sasl:command_begin(), State),
-    {ok, Response, State#state.transport_state}.
+    {ok, State#state.guid, State#state.transport_state}.
 
 next_mechanism([]) ->
     not_found;

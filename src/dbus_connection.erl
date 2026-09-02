@@ -35,8 +35,7 @@ Handles connection to a D-Bus peer.
     uuid = <<>> :: binary(),
     serial = 1 :: dbus_serial(),
     reader = undefined :: pid() | undefined,
-    acc = <<>> :: binary(),
-    auth_response = <<>> :: binary()
+    acc = <<>> :: binary()
 }).
 
 -type connection() :: pid().
@@ -218,7 +217,7 @@ handle_auth(State, AuthCtx) ->
     case dbus_auth_client_mech:try_auth(AuthCtx, T, TS) of
         {ok, Resp, TS1} ->
             handle_begin(State#state{
-                auth_response = Resp,
+                uuid = Resp,
                 transport_state = TS1
             });
         {error, Reason} ->
