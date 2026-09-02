@@ -4,11 +4,16 @@ Transport behaviour for a D-Bus transport.
 """.
 -include("dbus.hrl").
 
--type connection() :: {module(), socket:socket()}.
--export_type([connection/0]).
+%% What a transport module's `connect/1' hands back: the socket alone. It is
+%% `connect/1' here that pairs it with the module it came from, and only the
+%% pair is a connection() -- the other two callbacks take that pair, since
+%% dispatching to a module needs its name.
+-type socket() :: socket:socket().
+-type connection() :: {module(), socket()}.
+-export_type([socket/0, connection/0]).
 
 -callback connect(Address :: dbus_address()) ->
-    {ok, connection()}
+    {ok, socket()}
     | {error, Reason :: term()}.
 
 -callback support_unix_fd(connection()) ->
@@ -85,6 +90,7 @@ resolve(Mod) when is_atom(Mod) ->
 resolve(#dbus_address{} = Address) ->
     case dbus_address:scheme(Address) of
         <<"tcp">> -> {ok, dbus_transport_tcp};
+        <<"nonce-tcp">> -> {ok, dbus_transport_nonce_tcp};
         <<"unix">> -> {ok, dbus_transport_unix};
         _ -> {error, undefined}
     end.

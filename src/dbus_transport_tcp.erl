@@ -52,6 +52,12 @@ TCP cannot carry file descriptors at all, so `support_unix_fd/1` is `false` and
     disable_unix_fd/1
 ]).
 
+%% For `m:dbus_transport_nonce_tcp', which is this connect plus a nonce write.
+-export([
+    endpoint/1,
+    connect/3
+]).
+
 -type family_opts() :: [inet | inet6].
 
 %% `connect/1' takes no timeout and runs inside `dbus_connection:init/1', so
@@ -60,7 +66,7 @@ TCP cannot carry file descriptors at all, so `support_unix_fd/1` is `false` and
 -define(CONNECT_TIMEOUT, 5000).
 
 -spec connect(dbus_address()) ->
-    {ok, dbus_transport:connection()}
+    {ok, dbus_transport:socket()}
     | {error, term()}.
 connect(#dbus_address{scheme = <<"tcp">>} = Address) ->
     case endpoint(Address) of
@@ -90,7 +96,7 @@ endpoint(#dbus_address{options = Opts}) ->
 Connect to an already validated endpoint.
 """.
 -spec connect(inet:hostname(), inet:port_number(), family_opts()) ->
-    {ok, dbus_transport:connection()}
+    {ok, dbus_transport:socket()}
     | {error, term()}.
 connect(Host, Port, FamilyOpts) ->
     Domain = domain(FamilyOpts),

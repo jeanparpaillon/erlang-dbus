@@ -33,6 +33,7 @@ Scheme adapters, which only have to produce a connected core:
 
 - `dbus_transport_unix` - `unix:`, path or abstract
 - `dbus_transport_tcp` - `tcp:`
+- `dbus_transport_nonce_tcp` - `nonce-tcp:`, `tcp:` plus the nonce write
 
 Address resolvers, which yield another address rather than a connection:
 
@@ -74,9 +75,9 @@ See [Transport](#transport) for what belongs in which layer.
 
 ## Client only
 
-Two schemes, `unix:` and `tcp:`, and every transport here connects; none of
-them listens. That is a scope decision, not an oversight: the schemes exist so
-this library can reach a bus, and the
+Three schemes, `unix:`, `tcp:` and `nonce-tcp:`, and every transport here
+connects; none of them listens. That is a scope decision, not an oversight:
+the schemes exist so this library can reach a bus, and the
 server side of the spec — creating the socket, publishing the address, running
 authentication as the verifier — is a different program. It removes `listen/1`
 and `accept/2` from the behaviour, removes the `systemd:` scheme entirely
@@ -113,7 +114,9 @@ an ordinary stream socket. `unix:` is `{local, Path}` in domain `local` and
 `tcp:` is an `inet`/`inet6` address. Nothing else about them differs: same
 `socket:send/2`, same `socket:recv/3`, same close. A
 scheme added later stays above the same core as long as it is a socket —
-`nonce-tcp:` would be `tcp:` plus a 16-byte write inside `connect/1`.
+`nonce-tcp:` is exactly that, `tcp:` plus a 16-byte write inside `connect/1`,
+and its adapter reuses the TCP one's address rules rather than restating
+them.
 
 `unixexec:` was the one scheme that could not be a socket — it spawns a program
 and speaks to its stdin/stdout, which under BEAM is an `open_port/2` with a
@@ -134,12 +137,13 @@ close to a single function from address to sockaddr.
 |---|---|---|---|
 | `unix:` | `dbus_transport_unix` | adapter | `path`, or `abstract` as `<<0, Name/binary>>`, to the socket core with fd passing enabled |
 | `tcp:` | `dbus_transport_tcp` | adapter | `host`/`port`/`family` to the socket core, no fd passing |
+| `nonce-tcp:` | `dbus_transport_nonce_tcp` | adapter | the `tcp:` connect, then the 16 bytes of `noncefile` before anything else |
 | `launchd:` | `dbus_address_launchd` | resolver | — |
 | `autolaunch:` | `dbus_address_autolaunch` | resolver | — |
 
-Anything else stays `{error, undefined}` — `unixexec:`, `systemd:` and
-`nonce-tcp:` included, so an address carrying one fails resolution rather than
-failing late inside a `connect/1` that cannot work. `guid=` is
+Anything else stays `{error, undefined}` — `unixexec:` and `systemd:`
+included, so an address carrying one fails resolution rather than failing late
+inside a `connect/1` that cannot work. `guid=` is
 scheme-independent: it is the connection's business, checked against the
 `OK <guid>` the server sends at the end of authentication, and no transport
 should look at it.
@@ -233,6 +237,7 @@ resolve(#dbus_address{} = Address) ->
     case dbus_address:scheme(Address) of
         <<"unix">> -> {ok, dbus_transport_unix};
         <<"tcp">> -> {ok, dbus_transport_tcp};
+        <<"nonce-tcp">> -> {ok, dbus_transport_nonce_tcp};
         <<"launchd">> -> {redirect, dbus_address_launchd};
         <<"autolaunch">> -> {redirect, dbus_address_autolaunch};
         _ -> {error, undefined}
@@ -245,9 +250,11 @@ loop over a list of candidates either way. Given that loop, `redirect` costs
 nothing beyond re-entering it, and an `{error, undefined}` on an unsupported
 scheme is just the next candidate. That is also what a resolver returning
 something we do not implement comes to: `autolaunch:` reads
-`_DBUS_SESSION_BUS_ADDRESS` off the X11 root window and could in principle
-yield a `nonce-tcp:` address, but the candidate is then skipped like any other
-unsupported one rather than being a special case for the resolver to handle.
+`_DBUS_SESSION_BUS_ADDRESS` off the X11 root window and is free to yield a
+scheme of its own choosing; whatever comes back is re-entered as a candidate,
+connected by its adapter if there is one and skipped like any other
+unsupported one if there is not, rather than being a special case for the
+resolver to handle.
 
 ## Listen-only address forms
 

@@ -54,7 +54,7 @@ authentication, the only caller of `disable_unix_fd/1`.
 -define(ENDPOINT_KEYS, [path, abstract, dir, tmpdir, runtime]).
 
 -spec connect(dbus_address()) ->
-    {ok, dbus_transport:connection()}
+    {ok, dbus_transport:socket()}
     | {error, term()}.
 connect(#dbus_address{scheme = <<"unix">>} = Address) ->
     case endpoint(Address) of
