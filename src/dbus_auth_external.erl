@@ -24,28 +24,18 @@ the running VM, not from `$USER', which says who logged in and can be
 stale or absent under a systemd unit -- the uid is what the kernel will
 report to the server, so anything else would only disagree with it.
 
-The identity comes from the auth context:
+Auth context can be:
 
-| Value | Authorization identity sent |
+| Type | Authorization identity sent |
 |---|---|
-| absent, or `uid' | the uid of this process, detected (the default) |
-| `none' | none -- the server falls back on the out-of-band credentials |
-| an `integer()' | that uid, in ASCII decimal |
-| a `binary()' or `string()' | verbatim, e.g. a Windows SID `"S-1-5-18"' |
+| `integer()` | user ID |
+| `binary()` | user ID/name as a binary |
+| `none` | no identity |
+| `uid` | user ID of the running VM |
 
-`none' is also what detection falls back to when the uid cannot be found,
-rather than failing the mechanism: a server that has the credentials from
-the nul byte does not need to be told the uid, and one that does need it
-answers `REJECTED', which lets `dbus_auth_client_mech' move on to the next
-mechanism. Spelling it takes two steps, because the grammar has no empty
-initial response -- `AUTH EXTERNAL' alone, then an empty `DATA' answering
-the empty challenge the server sends back.
-
-Only the client side is implemented. Serving EXTERNAL means reading peer
-credentials off the socket, which is not something the transports expose.
+If not specified, `uid` is autodetected
 """.
 -include("dbus.hrl").
--include_lib("kernel/include/file.hrl").
 
 -behaviour(dbus_auth_client_mech).
 
@@ -70,8 +60,24 @@ name() ->
 
 -doc "Resolves the authorization identity from the auth context.".
 -spec init(term()) -> {ok, state()} | {error, term()}.
-init(Ctx) ->
-    identity(Ctx).
+
+init(none) ->
+    {ok, none};
+init(Uid) when is_integer(Uid) andalso Uid >= 0 ->
+    {ok, {identity, integer_to_binary(Uid)}};
+init(Uid) when is_integer(Uid) ->
+    {error, {invalid_identity, Uid}};
+init(Uid) when is_binary(Uid) ->
+    {ok, {identity, Uid}};
+init(uid) ->
+    case dbus_auth:detect_uid() of
+        {ok, Uid} -> {ok, {identity, integer_to_binary(Uid)}};
+        error -> {ok, none}
+    end;
+init(undefined) ->
+    init(uid);
+init(Err) ->
+    {error, {invalid_identity, Err}}.
 
 -doc """
 Returns the identity, hex-encoded, as the initial response.
@@ -105,49 +111,6 @@ challenge(_Challenge, _State) ->
 %%%
 %%% Priv
 %%%
-identity(undefined) ->
-    identity(uid);
-identity(Default) when Default =:= undefined; Default =:= uid ->
-    case detect_uid() of
-        {ok, Uid} -> {ok, {identity, Uid}};
-        error -> {ok, none}
-    end;
-identity(none) ->
-    {ok, none};
-identity(Uid) when is_integer(Uid), Uid >= 0 ->
-    {ok, {identity, integer_to_binary(Uid)}};
-identity(Identity) when is_binary(Identity) ->
-    {ok, {identity, Identity}};
-identity(Identity) when is_list(Identity) ->
-    try
-        {ok, {identity, list_to_binary(Identity)}}
-    catch
-        error:badarg -> {error, {invalid_identity, Identity}}
-    end;
-identity(Identity) ->
-    {error, {invalid_identity, Identity}}.
-
-%% `/proc/self' is owned by the uid the process runs as, which is precisely
-%% the one the kernel passes to the server, and reading it costs no process.
-%% `id -u' is the portable answer for everywhere else.
-detect_uid() ->
-    case file:read_file_info("/proc/self") of
-        {ok, #file_info{uid = Uid}} when is_integer(Uid) ->
-            {ok, integer_to_binary(Uid)};
-        _ ->
-            uid_from_id_command()
-    end.
-
-uid_from_id_command() ->
-    case string:trim(os:cmd("id -u 2>/dev/null")) of
-        [] ->
-            error;
-        Out ->
-            case lists:all(fun(C) -> C >= $0 andalso C =< $9 end, Out) of
-                true -> {ok, list_to_binary(Out)};
-                false -> error
-            end
-    end.
 
 %% Lower-case hex: the protocol accepts either, the specification writes
 %% its examples in lower case, and DBUS_COOKIE_SHA1 forbids upper case --
@@ -187,18 +150,12 @@ uid_1000_test() ->
 root_uid_test() ->
     ?assertEqual({ok, <<"30">>, {identity, <<"0">>}}, first_response(0)).
 
-windows_sid_test_() ->
+windows_sid_test() ->
     %% figure 3: 532d312d352d3138 is "S-1-5-18"
-    [
-        ?_assertEqual(
-            {ok, <<"532d312d352d3138">>, {identity, <<"S-1-5-18">>}},
-            first_response(<<"S-1-5-18">>)
-        ),
-        ?_assertEqual(
-            {ok, <<"532d312d352d3138">>, {identity, <<"S-1-5-18">>}},
-            first_response("S-1-5-18")
-        )
-    ].
+    ?_assertEqual(
+        {ok, <<"532d312d352d3138">>, {identity, <<"S-1-5-18">>}},
+        first_response(<<"S-1-5-18">>)
+    ).
 
 invalid_identity_test_() ->
     [

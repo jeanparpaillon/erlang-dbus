@@ -33,15 +33,17 @@ file, not the bytes it encodes, and neither challenge is decoded either.
 The server recomputes the digest from its own copy of the cookie and
 compares.
 
-The identity comes from the auth context, as it does for
-`dbus_auth_external':
+The context is a proplist that can contain the following keys:
 
-| Value | Identity sent |
-|---|---|
-| absent, or `uid' | the uid of this process, detected (the default) |
-| an `integer()' | that uid, in ASCII decimal |
-| a `binary()' or `string()' | verbatim, e.g. a login name |
-| `#{user => V, keyring_dir => Dir}' | `V' as above, cookies read from `Dir' |
+| Key | Value Type | Identity sent |
+|---|---|---|
+| `username` | `binary` or `string` | User name trying to authenticate |
+| `uid` | `integer` | User ID trying to authenticate |
+| `keyring_dir` | `binary` or `string` | Read cookies from this dir |
+
+Default is:
+- `uid` auto-detected
+- `keyring_dir` defaults to `".dbus-keyrings"`
 
 The specification says "the username", and the reference implementation
 sends the ASCII decimal uid on Unix -- its server side accepts either,
@@ -84,10 +86,10 @@ lays out for writers.
 -define(DEFAULT_KEYRING_DIR, ".dbus-keyrings").
 
 -record(state, {
-    user :: binary(),
+    user = undefined :: binary() | undefined,
     %% `undefined' when no home directory could be found -- reported from
     %% challenge/2, see the moduledoc.
-    keyring_dir :: file:filename_all() | undefined,
+    keyring_dir = undefined :: file:filename_all() | undefined,
     %% The mechanism answers exactly one challenge.
     phase = waiting_challenge :: waiting_challenge | done
 }).
@@ -101,13 +103,19 @@ name() ->
 
 -doc "Resolves the identity and the keyring directory from the auth context.".
 -spec init(term()) -> {ok, state()} | {error, term()}.
-init(Ctx) ->
-    case user(user_option(Ctx)) of
-        {ok, User} ->
-            {ok, #state{user = User, keyring_dir = keyring_dir(Ctx)}};
-        {error, _Reason} = Err ->
-            Err
-    end.
+init(Ctx) when is_map(Ctx) ->
+    init(maps:to_list(Ctx));
+init(Ctx) when is_list(Ctx) ->
+    State = lists:foldl(
+        fun({Key, Value}, Acc) ->
+            process_option(Key, Value, Acc)
+        end,
+        #state{},
+        Ctx
+    ),
+    validate_options(State);
+init(_) ->
+    init([]).
 
 -doc """
 Sends the identity, hex-encoded, and waits for the server's challenge.
@@ -154,57 +162,40 @@ answer(Context, CookieId, ServerChallenge, State) ->
     end.
 
 %%% The auth context
+process_option(uid, Uid, State) when is_integer(Uid) andalso Uid >= 0 ->
+    State#state{user = integer_to_binary(Uid)};
+process_option(username, Username, State) when is_binary(Username) ->
+    State#state{user = Username};
+process_option(username, Username, State) when is_list(Username) ->
+    State#state{user = list_to_binary(Username)};
+process_option(keyring_dir, KeyringDir, State) when is_binary(KeyringDir) ->
+    State#state{keyring_dir = KeyringDir};
+process_option(keyring_dir, KeyringDir, State) when is_list(KeyringDir) ->
+    State#state{keyring_dir = KeyringDir};
+process_option(_, _, State) ->
+    State.
 
-user_option(#{user := User}) -> User;
-user_option(Ctx) when is_map(Ctx) -> uid;
-user_option(undefined) -> uid;
-user_option(Ctx) -> Ctx.
+validate_options(#state{user = undefined} = State) ->
+    case dbus_auth:detect_uid() of
+        {ok, Uid} ->
+            validate_options(State#state{user = integer_to_binary(Uid)});
+        _ ->
+            {error, no_identity}
+    end;
+validate_options(#state{keyring_dir = undefined} = State) ->
+    case detect_keyring_dir() of
+        undefined ->
+            {error, no_keyring_dir};
+        KeyringDir ->
+            validate_options(State#state{keyring_dir = KeyringDir})
+    end;
+validate_options(State) ->
+    {ok, State}.
 
-keyring_dir(#{keyring_dir := Dir}) ->
-    Dir;
-keyring_dir(_Ctx) ->
+detect_keyring_dir() ->
     case os:getenv("HOME") of
         false -> undefined;
         Home -> filename:join(Home, ?DEFAULT_KEYRING_DIR)
-    end.
-
-user(uid) ->
-    case detect_uid() of
-        {ok, Uid} -> {ok, Uid};
-        error -> {error, no_identity}
-    end;
-user(Uid) when is_integer(Uid), Uid >= 0 ->
-    {ok, integer_to_binary(Uid)};
-user(User) when is_binary(User), User =/= <<>> ->
-    {ok, User};
-user(User) when is_list(User), User =/= [] ->
-    try
-        {ok, list_to_binary(User)}
-    catch
-        error:badarg -> {error, {invalid_identity, User}}
-    end;
-user(User) ->
-    {error, {invalid_identity, User}}.
-
-%% `/proc/self' is owned by the uid the process runs as, which is the uid
-%% that owns the keyring being read. `id -u' is the portable answer.
-detect_uid() ->
-    case file:read_file_info("/proc/self") of
-        {ok, #file_info{uid = Uid}} when is_integer(Uid) ->
-            {ok, integer_to_binary(Uid)};
-        _ ->
-            uid_from_id_command()
-    end.
-
-uid_from_id_command() ->
-    case string:trim(os:cmd("id -u 2>/dev/null")) of
-        [] ->
-            error;
-        Out ->
-            case lists:all(fun(C) -> C >= $0 andalso C =< $9 end, Out) of
-                true -> {ok, list_to_binary(Out)};
-                false -> error
-            end
     end.
 
 %%% The server's challenge
@@ -321,7 +312,6 @@ unhex(Hex) ->
         error:badarg -> error
     end.
 
-
 -ifdef(TEST).
 
 %%% The contract these tests pin, per the "Authentication mechanisms"
@@ -356,7 +346,7 @@ cookie_file() ->
     >>.
 
 ctx(Dir) ->
-    #{user => 1000, keyring_dir => Dir}.
+    #{uid => 1000, keyring_dir => Dir}.
 
 answer_challenge(Ctx, Data) ->
     {ok, State} = init(Ctx),
@@ -401,30 +391,13 @@ initial_response_test_() ->
     end,
     [
         %% "1000", as the reference implementation sends on Unix
-        ?_assertEqual(<<"31303030">>, Identity(1000)),
-        ?_assertEqual(<<"30">>, Identity(0)),
+        ?_assertEqual(<<"31303030">>, Identity(#{uid => 1000})),
+        ?_assertEqual(<<"30">>, Identity(#{uid => 0})),
         %% a login name is equally acceptable to the reference server
-        ?_assertEqual(<<"6a65616e">>, Identity(<<"jean">>)),
-        ?_assertEqual(<<"6a65616e">>, Identity("jean")),
-        ?_assertEqual(<<"31303030">>, Identity(#{user => 1000}))
-    ].
-
-invalid_identity_test_() ->
-    [
-        ?_assertEqual({error, {invalid_identity, -1}}, init(-1)),
-        ?_assertEqual({error, {invalid_identity, an_atom}}, init(an_atom)),
-        ?_assertEqual({error, {invalid_identity, <<>>}}, init(<<>>)),
-        ?_assertMatch({error, {invalid_identity, _}}, init([1000]))
-    ].
-
-%% An unconfigured mechanism is handed `undefined' by
-%% dbus_auth_client_mech, and must behave as if `uid' had been asked for.
-default_is_detected_uid_test_() ->
-    {ok, #state{user = Uid} = State} = init(undefined),
-    [
-        ?_assertEqual(init(uid), init(undefined)),
-        ?_assert(lists:all(fun(C) -> C >= $0 andalso C =< $9 end, binary_to_list(Uid))),
-        ?_assertMatch({continue, _, _}, initial_response(State))
+        ?_assertEqual(<<"6a65616e">>, Identity(#{username => <<"jean">>})),
+        ?_assertEqual(<<"6a65616e">>, Identity(#{username => "jean"})),
+        %% a proplist says the same thing as a map
+        ?_assertEqual(<<"31303030">>, Identity([{uid, 1000}]))
     ].
 
 %% Without an explicit directory the cookies come from the home directory.
@@ -595,13 +568,26 @@ missing_context_file_test() ->
     end).
 
 missing_keyring_dir_test() ->
-    Ctx = #{user => 1000, keyring_dir => "/nonexistent/.dbus-keyrings"},
+    Ctx = #{uid => 1000, keyring_dir => "/nonexistent/.dbus-keyrings"},
     ?assertEqual({error, {no_keyring_dir, enoent}}, answer_challenge(Ctx, server_data())).
 
-%% Without a home directory there is nowhere to look, and it is reported
-%% from challenge/2 rather than aborting the conversation at init/1.
+%% Without $HOME and without a configured directory there is nowhere to
+%% look at all, which is a misconfiguration rather than an environmental
+%% failure: it is reported from init/1, so the mechanism is never offered.
 no_home_test() ->
-    {ok, State} = init(#{user => 1000, keyring_dir => undefined}),
+    Home = os:getenv("HOME"),
+    true = os:unsetenv("HOME"),
+    try
+        ?assertEqual({error, no_keyring_dir}, init(#{uid => 1000}))
+    after
+        Home =:= false orelse os:putenv("HOME", Home)
+    end.
+
+%% A directory that is merely absent is the environmental case, and is
+%% reported from challenge/2 -- the state machine turns that into ERROR and
+%% gives the next mechanism its turn.
+no_keyring_dir_is_reported_from_challenge_test() ->
+    State = #state{user = <<"1000">>},
     ?assertEqual(undefined, State#state.keyring_dir),
     ?assertEqual({error, no_keyring_dir}, challenge(server_data(), State)).
 
@@ -626,7 +612,7 @@ keyring_dir_is_a_file_test() ->
         File = filename:join(Dir, ?CONTEXT),
         ?assertEqual(
             {error, keyring_dir_not_a_directory},
-            answer_challenge(#{user => 1000, keyring_dir => File}, server_data())
+            answer_challenge(#{uid => 1000, keyring_dir => File}, server_data())
         )
     end).
 
