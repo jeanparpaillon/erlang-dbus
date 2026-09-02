@@ -573,15 +573,17 @@ The pair is generated rather than derived because the expected body can only be
 built from the values that went in; recomputing it by decoding would make the
 property compare the decoder against itself.
 
-Three constraints come from the encoder rather than from the protocol:
-`marshal_message/1' errors on serial 0; it does not synthesise the `SIGNATURE'
-header field, while `unmarshal_message/1' errors on a non-empty body that has
-none, so the generator has to set it; and the decoded message differs from the
-encoded one in three fixed ways -- `size' is filled in, header field values lose
-their `#dbus_variant{}' wrapper, and the body is the decoded values alone rather
-than the `{Signature, Values}' pair that was encoded. That last one means
-`marshal_message/1' cannot consume the output of `unmarshal_data/1', even though
-`#dbus_message.body' is typed as if it could.
+Two constraints come from the encoder rather than from the protocol:
+`marshal_message/1' errors on serial 0; and the decoded message differs from the
+encoded one in four fixed ways -- `size' is filled in, the `SIGNATURE' field
+`marshal_message/1' synthesises from the body signature is there, first, header
+field values lose their `#dbus_variant{}' wrapper, and the body is the decoded
+values alone rather than the `{Signature, Values}' pair that was encoded. That
+last one means `marshal_message/1' cannot consume the output of
+`unmarshal_data/1', even though `#dbus_message.body' is typed as if it could.
+
+The generator must *not* set `SIGNATURE' itself: `marshal_message/1' prepends
+its own unconditionally, so a caller-supplied one is emitted twice.
 """.
 message() ->
     ?LET(
@@ -591,21 +593,21 @@ message() ->
             {Type, Flags, Serial, Extra},
             {message_type(), integer(0, 255), integer(1, 4294967295), extra_fields()},
             begin
-                Fields =
-                    [
-                        {?FIELD_SIGNATURE, #dbus_variant{type = signature, value = sig_bin(Sig)}}
-                        | Extra
-                    ],
                 Header = #dbus_header{
                     type = Type,
                     flags = Flags,
                     serial = Serial,
-                    fields = Fields
+                    fields = Extra
                 },
+                DecodedFields =
+                    [
+                        {?FIELD_SIGNATURE, sig_bin(Sig)}
+                        | [{Code, canon(variant, Var)} || {Code, Var} <- Extra]
+                    ],
                 Decoded = #dbus_message{
                     header = Header#dbus_header{
                         size = body_size(Sig, Vs),
-                        fields = [{Code, canon(variant, Var)} || {Code, Var} <- Fields]
+                        fields = DecodedFields
                     },
                     body = decoded_body(Sig, Vs)
                 },
