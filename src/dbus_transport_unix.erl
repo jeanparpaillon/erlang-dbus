@@ -7,10 +7,14 @@ nothing else. Once connected the socket is driven through `m:dbus_transport`,
 which is the same code the TCP adapter runs under -- `unix:` and `tcp:` differ
 only in the `t:socket:sockaddr/0` they build.
 
-Only `path` is connected so far. `abstract` is the same connect with a leading
-NUL in the path and is refused here rather than half-done, so that
-`dbus_connection` moves on to the next candidate address instead of getting a
-socket that talks to nothing.
+`path` and `abstract` are both connectable and differ only in the sockaddr:
+an abstract name is the same connect with a leading NUL, `<<0, Name/binary>>`,
+which puts the socket in the abstract namespace instead of the filesystem. The
+name is sent unpadded -- `socket:connect/2` derives the address length from the
+binary -- which is what a NUL-prefixed `sun_path` means on Linux and what
+`dbus-daemon` binds. Abstract sockets are a Linux extension; elsewhere the
+connect fails on the spot and `dbus_connection` moves to the next candidate,
+which is the same outcome refusing the parameter here would produce.
 
 `dir`, `tmpdir` and `runtime` tell a *server* which socket to create and which
 address to publish afterwards; there is nothing for a client to connect to, so
@@ -91,7 +95,7 @@ disable_unix_fd({_, Sock}) ->
 endpoint(#dbus_address{options = Opts}) ->
     case endpoint_keys(Opts) of
         [{path, Path}] -> {ok, Path};
-        [{abstract, _}] -> {error, {unsupported_parameter, abstract}};
+        [{abstract, Name}] -> {ok, abstract_path(Name)};
         [{Key, _}] -> listen_only(Key);
         [] -> {error, not_connectable};
         Several -> {error, {conflicting_parameters, [Key || {Key, _} <- Several]}}
@@ -113,6 +117,11 @@ endpoint_keys(Opts) ->
 listen_only(Key) ->
     ?LOG_DEBUG("ignoring listen-only unix address parameter ~ts", [Key]),
     {error, not_connectable}.
+
+%% The address carries the abstract name; the leading NUL is what makes it
+%% abstract and is not part of it.
+abstract_path(Name) ->
+    <<0, (iolist_to_binary(Name))/binary>>.
 
 open(Path) ->
     case socket:open(local, stream, default) of
@@ -145,6 +154,8 @@ connect_socket(Sock, Path) ->
 %%%     connection carries bytes both ways through `m:dbus_transport',
 %%%     including from a process other than the one that connected -- the
 %%%     reader in `dbus_connection' is not the connection process;
+%%%   * an `abstract' address does the same against a listener bound in the
+%%%     abstract namespace, which is the only thing the leading NUL changes;
 %%%   * fd passing is supported until the peer refuses it, and the refusal is
 %%%     remembered on the connection, not on the caller.
 
@@ -169,11 +180,12 @@ listen_only_test_() ->
         ]
     ].
 
-abstract_is_not_implemented_test() ->
-    ?assertEqual(
-        {error, {unsupported_parameter, abstract}},
-        connect(addr([{abstract, <<"/tmp/dbus-XYZ">>}]))
-    ).
+%% Nothing is bound under that name, and the abstract namespace has no
+%% directory to report a missing entry from -- the connect is refused.
+abstract_not_listening_test_() ->
+    on_linux(fun() ->
+        ?assertEqual({error, econnrefused}, connect(addr([{abstract, tmp_name()}])))
+    end).
 
 conflicting_parameters_test() ->
     ?assertEqual(
@@ -260,9 +272,50 @@ support_unix_fd_on_closed_socket_test() ->
         ?assertNot(dbus_transport:support_unix_fd(Conn))
     end).
 
+%% The name is not a filesystem path: it connects to a listener bound to
+%% `<<0, Name/binary>>', which is the prefixing this module does.
+abstract_roundtrip_test_() ->
+    on_linux(fun() ->
+        with_abstract_listener(fun(Name, Listener) ->
+            {ok, Conn} = dbus_transport:connect(addr([{abstract, Name}])),
+            {ok, Peer} = socket:accept(Listener, 1000),
+
+            ok = dbus_transport:send(Conn, <<0, "AUTH\r\n">>),
+            ?assertEqual({ok, <<0, "AUTH\r\n">>}, socket:recv(Peer, 7, 1000)),
+
+            ok = socket:send(Peer, <<"OK\r\n">>),
+            ?assertEqual({ok, <<"OK\r\n">>}, dbus_transport:recv(Conn, 1000)),
+
+            ok = dbus_transport:close(Conn),
+            _ = socket:close(Peer)
+        end)
+    end).
+
+%% Passing descriptors is a property of the socket family, so it does not
+%% depend on which namespace the name lives in.
+abstract_unix_fd_test_() ->
+    on_linux(fun() ->
+        with_abstract_listener(fun(Name, Listener) ->
+            {ok, Conn} = dbus_transport:connect(addr([{abstract, Name}])),
+            {ok, Peer} = socket:accept(Listener, 1000),
+            ?assert(dbus_transport:support_unix_fd(Conn)),
+
+            ok = dbus_transport:close(Conn),
+            _ = socket:close(Peer)
+        end)
+    end).
+
 %%%
 %%% Helpers
 %%%
+
+%% Abstract sockets are a Linux extension; the tests that need one say so
+%% rather than failing on a platform that cannot have them.
+on_linux(Fun) ->
+    case os:type() of
+        {unix, linux} -> [Fun];
+        _ -> []
+    end.
 
 with_listener(Fun) ->
     Path = tmp_path(),
@@ -277,10 +330,28 @@ with_listener(Fun) ->
         _ = file:delete(Path)
     end.
 
+%% Nothing to unlink afterwards: an abstract name disappears with the last
+%% socket holding it.
+with_abstract_listener(Fun) ->
+    Name = tmp_name(),
+    {ok, Listener} = socket:open(local, stream, default),
+    ok = socket:bind(Listener, #{family => local, path => <<0, Name/binary>>}),
+    ok = socket:listen(Listener),
+    try
+        Fun(Name, Listener)
+    after
+        _ = socket:close(Listener)
+    end.
+
 %% Kept short on purpose: `sun_path' is 108 bytes including the NUL, and a
 %% longer one fails as `einval' with nothing saying why.
 tmp_path() ->
     Dir = os:getenv("XDG_RUNTIME_DIR", "/tmp"),
-    Unique = integer_to_list(erlang:unique_integer([positive])),
-    iolist_to_binary(filename:join(Dir, "dbus-unix-test-" ++ Unique)).
+    iolist_to_binary(filename:join(Dir, unique("dbus-unix-test-"))).
+
+tmp_name() ->
+    list_to_binary(unique("erlang-dbus-unix-test-")).
+
+unique(Prefix) ->
+    Prefix ++ integer_to_list(erlang:unique_integer([positive])).
 -endif.
