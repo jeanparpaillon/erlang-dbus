@@ -65,12 +65,15 @@ close({_, S}) ->
     socket:close(S).
 
 -spec support_unix_fd(connection()) -> boolean().
-support_unix_fd({T, S}) ->
-    T:support_unix_fd(S).
+%% The whole connection, not just the socket: the callback takes a
+%% connection() and an adapter may keep per-connection state beside the
+%% socket -- dbus_transport_unix does.
+support_unix_fd({T, _} = Conn) ->
+    T:support_unix_fd(Conn).
 
 -spec disable_unix_fd(connection()) -> ok.
-disable_unix_fd({T, S}) ->
-    T:disable_unix_fd(S).
+disable_unix_fd({T, _} = Conn) ->
+    T:disable_unix_fd(Conn).
 
 %%%
 %%% Priv
