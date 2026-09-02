@@ -795,7 +795,9 @@ unmarshal_string(LenType, Data, Pos, Endian) ->
     case unmarshal(LenType, Data, Pos, Endian) of
         more ->
             more;
-        {ok, Length, Data1, _} when byte_size(Data1) < Length ->
+        %% `Length' counts the characters; the NUL terminator is on the wire
+        %% too, so `Length' bytes present is still a truncated string.
+        {ok, Length, Data1, _} when byte_size(Data1) =< Length ->
             more;
         {ok, Length, Data1, Pos1} ->
             <<String:Length/binary, 0, Data2/binary>> = Data1,
