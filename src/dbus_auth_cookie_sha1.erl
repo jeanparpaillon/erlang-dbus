@@ -580,7 +580,10 @@ no_home_test() ->
     try
         ?assertEqual({error, no_keyring_dir}, init(#{uid => 1000}))
     after
-        Home =:= false orelse os:putenv("HOME", Home)
+        case Home of
+            false -> ok;
+            _ -> os:putenv("HOME", Home)
+        end
     end.
 
 %% A directory that is merely absent is the environmental case, and is
