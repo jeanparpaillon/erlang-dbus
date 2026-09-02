@@ -105,7 +105,11 @@ marshal_message(#dbus_message{header = Header, body = undefined}) ->
 marshal_message(#dbus_message{header = Header, body = {Types, Content}}) ->
     try marshal_list(Types, Content) of
         {Data, Pos} ->
-            HeaderBin = marshal_header(Header#dbus_header{size = Pos}),
+            Signature = #dbus_variant{type=signature, value=marshal_signature(Types)},
+            HeaderBin = marshal_header(Header#dbus_header{
+                fields = [{?FIELD_SIGNATURE, Signature} | Header#dbus_header.fields],
+                size = Pos
+            }),
             BodyBin = iolist_to_binary(Data),
             <<HeaderBin/binary, BodyBin/binary>>
     catch
@@ -590,8 +594,6 @@ unmarshal_header2(
 unmarshal_header_fields(Bin, #dbus_header{endian = Endian, size = Size} = Header) ->
     case unmarshal({array, {struct, [byte, variant]}}, Bin, 12, Endian) of
         more ->
-            more;
-        {ok, [_, _, _, ?DBUS_VERSION_MAJOR, Size, _, _], Rest, _} when byte_size(Rest) < Size ->
             more;
         {ok, Fields, Rest, Pos} ->
             Pad = pad(8, Pos),

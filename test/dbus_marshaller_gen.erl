@@ -47,6 +47,7 @@ existing defects that this suite is not chartered to fix.
     lax/2,
     canon/2,
     canon_list/2,
+    empty_message/0,
     message/0,
     messages/0,
     body_size/2,
@@ -611,6 +612,25 @@ message() ->
                 {#dbus_message{header = Header, body = {Sig, Vs}}, Decoded}
             end
         )
+    ).
+
+-doc """
+No `SIGNATURE` field
+Empty body
+""".
+empty_message() ->
+    ?LET(
+        {Type, Flags, Serial},
+        {message_type(), integer(0, 255), integer(1, 4294967295)},
+        #dbus_message{
+            header = #dbus_header{
+                type = Type,
+                flags = Flags,
+                serial = Serial,
+                fields = []
+            },
+            body = undefined
+        }
     ).
 
 -doc """
