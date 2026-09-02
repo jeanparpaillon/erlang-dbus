@@ -67,11 +67,11 @@ parse_address(Address) ->
                 {ok, Transport} ->
                     case parse_params(Params) of
                         {ok, Options} ->
-                            %% Verbatim, so `nonce-tcp' stays 'nonce-tcp'.
-                            %% binary_to_atom/2 rather than the _existing_
-                            %% variant because the format is extensible: an
-                            %% unknown transport must parse. is_name/1 has
-                            %% already bounded the bytes that can get here.
+                            %% Verbatim, and left as a binary: this module
+                            %% only checks syntax, and the format is
+                            %% extensible, so deciding which names are
+                            %% meaningful -- and interning them -- belongs to
+                            %% whoever resolves a transport.
                             build(Transport, Options);
                         {error, _} = E ->
                             E
@@ -139,14 +139,8 @@ parse_param(Param) ->
 
 validate_transport(Bin) ->
     case is_name(Bin) of
-        true ->
-            try
-                {ok, binary_to_existing_atom(Bin, utf8)}
-            catch
-                error:badarg -> {error, {invalid_transport, Bin}}
-            end;
-        false ->
-            {error, {invalid_transport, Bin}}
+        true -> {ok, Bin};
+        false -> {error, {invalid_transport, Bin}}
     end.
 
 validate_param(Bin) ->
@@ -251,8 +245,9 @@ unhex(_) -> error.
 %%%
 %%%   * one #bus_id{} per `;'-separated address, in the order written --
 %%%     the addresses are alternatives, so order is significant;
-%%%   * `scheme' is the transport name, verbatim, as an atom (the doc's
-%%%     `nonce-tcp' therefore parses as the atom 'nonce-tcp');
+%%%   * `scheme' is the transport name, verbatim, as a binary -- this
+%%%     module checks syntax only, so nothing here says which names are
+%%%     meaningful;
 %%%   * `options' is an ordered proplist of {atom(), binary()}, one entry
 %%%     per parameter as written, values percent-decoded;
 %%%   * `guid' is lifted out of `options' into its own field -- it is a
@@ -265,8 +260,8 @@ unhex(_) -> error.
 
 scheme_test() ->
     ?assertMatch(
-        unix,
-        scheme(#dbus_address{scheme = unix})
+        <<"unix">>,
+        scheme(#dbus_address{scheme = <<"unix">>})
     ).
 
 %%%
@@ -280,29 +275,33 @@ valid_addresses() ->
     [
         %% unix: -- connectable forms
         {<<"unix:path=/run/user/1000/bus">>, #dbus_address{
-            scheme = unix, options = [{path, <<"/run/user/1000/bus">>}]
+            scheme = <<"unix">>, options = [{path, <<"/run/user/1000/bus">>}]
         }},
         {<<"unix:abstract=/tmp/dbus-XYZ">>, #dbus_address{
-            scheme = unix, options = [{abstract, <<"/tmp/dbus-XYZ">>}]
+            scheme = <<"unix">>, options = [{abstract, <<"/tmp/dbus-XYZ">>}]
         }},
 
         %% unix: -- listen-only forms, parsed but not interpreted
         {<<"unix:dir=/some/directory">>, #dbus_address{
-            scheme = unix, options = [{dir, <<"/some/directory">>}]
+            scheme = <<"unix">>, options = [{dir, <<"/some/directory">>}]
         }},
-        {<<"unix:tmpdir=/tmp">>, #dbus_address{scheme = unix, options = [{tmpdir, <<"/tmp">>}]}},
-        {<<"unix:runtime=yes">>, #dbus_address{scheme = unix, options = [{runtime, <<"yes">>}]}},
+        {<<"unix:tmpdir=/tmp">>, #dbus_address{
+            scheme = <<"unix">>, options = [{tmpdir, <<"/tmp">>}]
+        }},
+        {<<"unix:runtime=yes">>, #dbus_address{
+            scheme = <<"unix">>, options = [{runtime, <<"yes">>}]
+        }},
 
         %% tcp:
         {<<"tcp:host=127.0.0.1,port=12345">>, #dbus_address{
-            scheme = tcp,
+            scheme = <<"tcp">>,
             options = [
                 {host, <<"127.0.0.1">>},
                 {port, <<"12345">>}
             ]
         }},
         {<<"tcp:host=localhost,port=12345,family=ipv4">>, #dbus_address{
-            scheme = tcp,
+            scheme = <<"tcp">>,
             options = [
                 {host, <<"localhost">>},
                 {port, <<"12345">>},
@@ -312,7 +311,7 @@ valid_addresses() ->
 
         %% nonce-tcp:
         {<<"nonce-tcp:host=localhost,port=12345,noncefile=/tmp/dbus-nonce">>, #dbus_address{
-            scheme = 'nonce-tcp',
+            scheme = <<"nonce-tcp">>,
             options = [
                 {host, <<"localhost">>},
                 {port, <<"12345">>},
@@ -322,16 +321,16 @@ valid_addresses() ->
 
         %% launchd:
         {<<"launchd:env=DBUS_LAUNCHD_SESSION_BUS_SOCKET">>, #dbus_address{
-            scheme = launchd,
+            scheme = <<"launchd">>,
             options = [{env, <<"DBUS_LAUNCHD_SESSION_BUS_SOCKET">>}]
         }},
 
         %% unixexec:
         {<<"unixexec:path=/usr/bin/example">>, #dbus_address{
-            scheme = unixexec, options = [{path, <<"/usr/bin/example">>}]
+            scheme = <<"unixexec">>, options = [{path, <<"/usr/bin/example">>}]
         }},
         {<<"unixexec:path=/usr/bin/example,argv1=foo,argv2=bar">>, #dbus_address{
-            scheme = unixexec,
+            scheme = <<"unixexec">>,
             options = [
                 {path, <<"/usr/bin/example">>},
                 {argv1, <<"foo">>},
@@ -340,39 +339,39 @@ valid_addresses() ->
         }},
 
         %% autolaunch: -- including the parameterless form
-        {<<"autolaunch:">>, #dbus_address{scheme = autolaunch, options = []}},
+        {<<"autolaunch:">>, #dbus_address{scheme = <<"autolaunch">>, options = []}},
         {<<"autolaunch:scope=*user">>, #dbus_address{
-            scheme = autolaunch, options = [{scope, <<"*user">>}]
+            scheme = <<"autolaunch">>, options = [{scope, <<"*user">>}]
         }},
 
         %% systemd: -- listen-only, recognised by the syntax parser anyway
-        {<<"systemd:">>, #dbus_address{scheme = systemd, options = []}},
+        {<<"systemd:">>, #dbus_address{scheme = <<"systemd">>, options = []}},
 
         %% guid is a generic server attribute, so it lands in its own field
         %% rather than among the transport's options
         {<<"unix:path=/run/user/1000/bus,guid=0123456789abcdef0123456789abcdef">>, #dbus_address{
-            scheme = unix,
+            scheme = <<"unix">>,
             guid = <<"0123456789abcdef0123456789abcdef">>,
             options = [{path, <<"/run/user/1000/bus">>}]
         }},
 
         %% an unknown transport must NOT be rejected: the format is extensible
         {<<"future-transport:foo=bar,baz=quux">>, #dbus_address{
-            scheme = 'future-transport',
+            scheme = <<"future-transport">>,
             options = [{foo, <<"bar">>}, {baz, <<"quux">>}]
         }},
 
         %% every character of the optionally-escaped set [-0-9A-Za-z_/.*]
         %% may appear literally
         {<<"unix:path=/a-b_c.d*e/0Z">>, #dbus_address{
-            scheme = unix, options = [{path, <<"/a-b_c.d*e/0Z">>}]
+            scheme = <<"unix">>, options = [{path, <<"/a-b_c.d*e/0Z">>}]
         }},
 
         %% only the FIRST `=' separates key from value, so a value may hold a
         %% further one -- escaped, per the rule pinned in
         %% value_with_raw_equals_test/0 below
         {<<"unixexec:path=/usr/bin/example,argv1=a%3Db">>, #dbus_address{
-            scheme = unixexec,
+            scheme = <<"unixexec">>,
             options = [
                 {path, <<"/usr/bin/example">>},
                 {argv1, <<"a=b">>}
@@ -394,9 +393,9 @@ single_address_test_() ->
 two_addresses_test() ->
     ?assertEqual(
         {ok, [
-            #dbus_address{scheme = unix, options = [{path, <<"/tmp/dbus">>}]},
+            #dbus_address{scheme = <<"unix">>, options = [{path, <<"/tmp/dbus">>}]},
             #dbus_address{
-                scheme = tcp,
+                scheme = <<"tcp">>,
                 options = [
                     {host, <<"localhost">>},
                     {port, <<"12345">>}
@@ -440,7 +439,7 @@ escaped_comma_is_not_a_separator_test() ->
     ?assertEqual(
         {ok, [
             #dbus_address{
-                scheme = unix,
+                scheme = <<"unix">>,
                 guid = undefined,
                 options = [{path, <<"/tmp/foo,bar">>}]
             }
@@ -452,7 +451,7 @@ escaped_space_test() ->
     ?assertEqual(
         {ok, [
             #dbus_address{
-                scheme = unix,
+                scheme = <<"unix">>,
                 guid = undefined,
                 options = [{path, <<"/tmp/my bus">>}]
             }
@@ -465,7 +464,7 @@ escaped_delimiters_are_not_structural_test() ->
     ?assertEqual(
         {ok, [
             #dbus_address{
-                scheme = unix,
+                scheme = <<"unix">>,
                 guid = undefined,
                 options = [{path, <<";:=%">>}]
             }
@@ -478,7 +477,7 @@ escaped_semicolon_does_not_split_address_test() ->
     ?assertEqual(
         {ok, [
             #dbus_address{
-                scheme = unix,
+                scheme = <<"unix">>,
                 guid = undefined,
                 options = [{path, <<"/tmp/a;b">>}]
             }
@@ -490,7 +489,7 @@ hex_digits_are_case_insensitive_test() ->
     Expected =
         {ok, [
             #dbus_address{
-                scheme = unix,
+                scheme = <<"unix">>,
                 guid = undefined,
                 options = [{path, <<"/tmp/foo,bar">>}]
             }
@@ -503,7 +502,7 @@ escaped_utf8_value_test() ->
     ?assertEqual(
         {ok, [
             #dbus_address{
-                scheme = unix,
+                scheme = <<"unix">>,
                 guid = undefined,
                 options = [{path, <<"/tmp/caf", 16#c3, 16#a9>>}]
             }
@@ -517,7 +516,7 @@ escapes_only_in_values_test() ->
     ?assertEqual(
         {ok, [
             #dbus_address{
-                scheme = unix,
+                scheme = <<"unix">>,
                 guid = undefined,
                 options = [{path, <<"/tmp/a=b">>}]
             }
@@ -603,9 +602,9 @@ invalid_addresses() ->
         <<"bad:address">>
     ].
 
-bad_address_test() ->
+bad_address_test_() ->
     [
-        ?_assertMatch({error, {badarg, Addr}}, parse(Addr))
+        ?_assertMatch({error, _}, parse(Addr))
      || Addr <- invalid_addresses()
     ].
 -endif.

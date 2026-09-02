@@ -84,21 +84,11 @@
 
 -type dbus_message() :: #dbus_message{}.
 
--type scheme() ::
-    %% transports-unix-domain-sockets
-    unix
-    %% transports-launchd
-    | launchd
-    %% transports-systemd
-    | systemd
-    %% transports-tcp-sockets
-    | tcp
-    %% transports-nonce-tcp-sockets
-    | 'nonce-tcp'
-    %% transports-exec
-    | unixexec
-    %% transports-autolaunch
-    | autolaunch.
+%% The transport name, verbatim, as written in the address. Known names are
+%% `unix', `launchd', `systemd', `tcp', `nonce-tcp', `unixexec' and
+%% `autolaunch', but the format is extensible and dbus_address only checks
+%% syntax, so any name matching the literal set may appear here.
+-type scheme() :: binary().
 
 -type dbus_address_option() :: atom().
 
