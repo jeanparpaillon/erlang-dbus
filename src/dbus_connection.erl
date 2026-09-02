@@ -125,24 +125,22 @@ init(
 ) ->
     case dbus_transport:connect(Transport, Address) of
         {ok, Conn} ->
-            Reader = start_reader(Transport, Conn),
             State = #state{
                 owner = Owner,
                 address = Address,
                 uuid = <<>>,
-                transport_state = Conn,
-                reader = Reader
+                transport_state = Conn
             },
 
-            init_auth(State, AuthCtx);
-        {error, not_found} ->
-            {stop, {invalid_transport, Address}}
+            handle_auth(State, AuthCtx);
+        {error, Reason} ->
+            {stop, Reason}
     end.
 
-handle_call(get_uuid, _From, #{uuid := UUID} = State) ->
+handle_call(get_uuid, _From, #state{uuid = UUID} = State) ->
     {reply, {ok, UUID}, State};
-handle_call({set_owner, Owner}, {Owner, _Tag}, #{owner := Owner} = State) ->
-    {reply, ok, State#{owner := Owner}};
+handle_call({set_owner, Owner}, {Owner, _Tag}, #state{owner = Owner} = State) ->
+    {reply, ok, State#state{owner = Owner}};
 handle_call({set_owner, _Owner}, _From, State) ->
     {reply, {error, forbidden}, State};
 handle_call(
@@ -150,11 +148,11 @@ handle_call(
     _From,
     #state{
         transport_state = TransportState,
-        transport = Transport
-    } =
-        State
+        transport = Transport,
+        serial = Serial
+    } = State
 ) ->
-    Message1 = dbus_message:set_serial(State#state.serial, Message),
+    Message1 = dbus_message:set_serial(Serial, Message),
     State1 = incr_serial(State),
 
     Data = dbus_marshaller:marshal_message(Message1),
@@ -207,20 +205,34 @@ code_change(_OldVsn, State, _Extra) ->
 %%%
 %%% Private
 %%%
-init_auth(State, AuthCtx) ->
-    Transport = State#state.transport,
-    TransportState = State#state.transport_state,
+handle_auth(State, AuthCtx) ->
+    T = State#state.transport,
+    TS = State#state.transport_state,
+
+    ok = dbus_transport:set_mode(T, TS, line),
 
     % As of spec, client must send nul byte right after connecting and before
     % authentication
-    dbus_transport:send(Transport, TransportState, <<0>>),
+    dbus_transport:send(T, TS, <<0>>),
 
-    case dbus_auth_client_mech:try_auth(AuthCtx, Transport, TransportState) of
-        {ok, Resp, TransportState1} ->
-            {ok, State#state{auth_response = Resp, transport_state = TransportState1}};
+    case dbus_auth_client_mech:try_auth(AuthCtx, T, TS) of
+        {ok, Resp, TS1} ->
+            handle_begin(State#state{
+                auth_response = Resp,
+                transport_state = TS1
+            });
         {error, Reason} ->
             {stop, {auth_error, Reason}}
     end.
+
+handle_begin(State) ->
+    T = State#state.transport,
+    TS = State#state.transport_state,
+
+    ok = dbus_transport:set_mode(T, TS, raw),
+    Reader = start_reader(T, TS),
+
+    {ok, State#state{reader = Reader}}.
 
 incr_serial(#state{serial = Serial} = State) ->
     State#state{serial = next_serial(Serial)}.

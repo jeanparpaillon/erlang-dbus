@@ -47,8 +47,8 @@ Transport behaviour for a D-Bus transport.
 
 -spec resolve(dbus_address() | module()) ->
     {ok, module()} | {error, undefined}.
-resolve(mod) when is_atom(mod) ->
-    {ok, mod};
+resolve(Mod) when is_atom(Mod) ->
+    {ok, Mod};
 resolve(#dbus_address{} = Address) ->
     case dbus_address:scheme(Address) of
         <<"tcp">> -> {ok, dbus_transport_tcp};

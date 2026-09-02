@@ -60,17 +60,11 @@ erlang-dbus arch
 ```erlang
 -module(dbus_transport).
 
--export_type([
-    address/0,
-    option/0,
-    connection/0
-]).
+-export_type([connection/0]).
 
--type address() :: map().
--type option() :: term().
 -type connection() :: term().
 
--callback connect(Address :: address(), Options :: [option()]) ->
+-callback connect(Address :: dbus_address()) ->
     {ok, Connection :: connection()} |
     {error, Reason :: term()}.
 
@@ -78,14 +72,27 @@ erlang-dbus arch
     ok |
     {error, Reason :: term()}.
 
--callback recv(Connection :: connection(), Length :: non_neg_integer(),
-               Timeout :: timeout()) ->
+-callback recv(Connection :: connection(), Timeout :: timeout()) ->
     {ok, Data :: binary()} |
     {error, closed | timeout | term()}.
 
 -callback close(Connection :: connection()) ->
-    ok.
+    ok |
+    {error, Reason :: term()}.
+
+-callback support_unix_fd(Connection :: connection()) -> boolean().
+
+-callback disable_unix_fd(Connection :: connection()) -> ok.
+
+-callback set_mode(Connection :: connection(), raw | line) -> ok.
 ```
+
+`recv/2` is synchronous and returns no new state, so a transport keeps no
+buffer of its own: framing is the socket's job. `set_mode/2` is what switches
+it -- `line` for the authentication commands, one per `recv/2`, as
+`dbus_sasl:parse/1` requires, then `raw` for the message stream once `BEGIN`
+has been sent. `dbus_connection` drives both, and only starts its reader
+process after authentication: a passive socket allows one `recv` at a time.
 
 # Auth
 
