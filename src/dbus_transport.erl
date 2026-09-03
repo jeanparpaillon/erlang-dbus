@@ -311,27 +311,34 @@ fds_need_a_payload_test() ->
 %% More than the socket buffer takes, so the send completes in more than one
 %% write -- and the descriptor must not be attached to the second one.
 partial_write_test_() ->
-    {timeout, 60, fun() ->
-        with_fd_pair(fun(A, B) ->
-            socket_pair(fun(Near, _Far) ->
-                {ok, Fd} = socket:getopt(Near, {otp, fd}),
-                Data = binary:copy(<<"0123456789abcdef">>, 262144),
-                Size = byte_size(Data),
-                Self = self(),
-                _ = spawn_link(fun() -> Self ! {drained, drain(B, Size)} end),
+    {timeout, 60, fun() -> with_fd_pair(fun partial_write/2) end}.
 
-                ok = send(A, Data, [Fd]),
-                receive
-                    {drained, {Received, Fds}} ->
-                        ?assertEqual(Size, byte_size(Received)),
-                        ?assertEqual(1, length(Fds)),
-                        _ = [dbus_fd:close(F) || F <- Fds]
-                after 30000 ->
-                    ?assert(false)
-                end
-            end)
-        end)
-    end}.
+%% Named rather than written inline: the pair, the socket whose descriptor
+%% travels, and the reader are three nested funs deep otherwise.
+partial_write(A, B) ->
+    socket_pair(fun(Near, _Far) -> partial_write(A, B, Near) end).
+
+partial_write(A, B, Near) ->
+    {ok, Fd} = socket:getopt(Near, {otp, fd}),
+    Data = binary:copy(<<"0123456789abcdef">>, 262144),
+    Size = byte_size(Data),
+    Self = self(),
+    %% Draining as it is written: the payload is larger than the socket
+    %% buffer, so a `send/3' nobody reads never returns.
+    _ = spawn_link(fun() -> Self ! {drained, drain(B, Size)} end),
+    ok = send(A, Data, [Fd]),
+    await_drained(Size).
+
+await_drained(Size) ->
+    receive
+        {drained, {Received, Fds}} ->
+            ?assertEqual(Size, byte_size(Received)),
+            ?assertEqual(1, length(Fds)),
+            _ = [dbus_fd:close(F) || F <- Fds],
+            ok
+    after 30000 ->
+        ?assert(false)
+    end.
 
 %%%
 %%% Helpers
@@ -371,16 +378,19 @@ socket_pair(Fun) ->
         ok = socket:listen(Listener),
         ok = socket:connect(Client, #{family => local, path => Path}),
         {ok, Server} = socket:accept(Listener, 1000),
-        try
-            Fun(Client, Server)
-        after
-            _ = socket:close(Server)
-        end
+        with_socket_pair(Fun, Client, Server)
     after
         _ = socket:close(Client),
         _ = socket:close(Listener),
         %% bind/2 creates the filesystem entry; nothing removes it on close.
         _ = file:delete(Path)
+    end.
+
+with_socket_pair(Fun, Client, Server) ->
+    try
+        Fun(Client, Server)
+    after
+        _ = socket:close(Server)
     end.
 
 %% Kept short on purpose: `sun_path' is 108 bytes including the NUL, and a

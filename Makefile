@@ -19,7 +19,9 @@ lint:
 dialyze:
 	rebar3 dialyzer
 
-tests:
+tests: eunit props
+
+eunit:
 	rebar3 eunit --cover
 
 props:
@@ -37,4 +39,4 @@ clean:
 
 .PHONY: all clean
 .PHONY: deps build checks tests props docs
-.PHONY: fmt lint dialyze checks
+.PHONY: fmt lint dialyze checks eunit

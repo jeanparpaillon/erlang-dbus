@@ -41,10 +41,11 @@ Handles connection to a D-Bus peer.
 
 -type connection() :: pid().
 -type option() ::
-    %% Overrides detected transport from address, mainly for testing
-    {transport, atom()}
+    {name, atom()}
     %% Per-mechanism context, key is module name
     | {auth_ctx, map()}.
+
+-define(SERVER_OPTS_KEYS, [name]).
 
 -spec start_link(dbus_address() | [dbus_address()]) -> gen_server:start_ret().
 start_link(Addresses) when is_list(Addresses) ->
@@ -54,13 +55,14 @@ start_link(Address) ->
 
 -spec start_link(dbus_address() | [dbus_address()], [option()]) -> gen_server:start_ret().
 start_link(Addresses, Options) when is_list(Addresses) ->
+    ServerOpts = server_opts(Options),
     Owner = self(),
     StartArgs = #{
         owner => Owner,
         addresses => Addresses,
         auth_ctx => proplists:get_value(auth_ctx, Options, #{})
     },
-    gen_server:start_link(?MODULE, StartArgs, []).
+    gen_server:start_link(?MODULE, StartArgs, ServerOpts).
 
 -spec stop(connection()) ->
     ok.
@@ -238,3 +240,11 @@ reader_loop(Conn, Parent) ->
             %% Handle error
             exit({recv_error, Reason})
     end.
+
+server_opts(Props) ->
+    lists:filter(
+        fun({Key, _Value}) ->
+            lists:member(Key, ?SERVER_OPTS_KEYS)
+        end,
+        Props
+    ).
