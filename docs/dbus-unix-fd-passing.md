@@ -239,22 +239,30 @@ table. They count against `RLIMIT_NOFILE` and nothing reclaims them.
 **OTP has no `close(2)`.** `socket:open/2` adopts an existing descriptor and
 `socket:close/1` then closes it, but only for a *socket* -- and the descriptors
 D-Bus actually carries are usually not sockets: portal-style APIs hand over
-files, pipes and `memfd`s. There is no `file` or `prim_file` equivalent. So a
-pure-Erlang library cannot promise to close what it receives, and any design
-that quietly assumes it can is wrong.
+files, pipes and `memfd`s. There is no `file` or `prim_file` equivalent. That is
+why `m:dbus_fd` exists: a NIF over `close(2)` and `dup(2)`, so the library owns
+the one primitive Erlang is missing rather than asking the application to supply
+it. An earlier draft of this section proposed a configurable closer in the
+application environment; a NIF that is always there is better, because the
+discard paths below are exactly the ones nobody configures for.
 
-That constrains the contract rather than defeating it:
+That gives a contract with two halves:
 
-- **The owner owns them.** `m:dbus_connection` puts the descriptors in
-  `#dbus_message.fds` and hands them to the owner process with the message.
+- **The owner owns what it receives.** `m:dbus_connection` puts the descriptors
+  in `#dbus_message.fds` and hands them to the owner process with the message.
   From that point they are the application's, to consume with whatever can
-  consume a descriptor -- `socket:open/2`, a port program, a NIF.
-- **The paths where nobody takes delivery are the library's problem**: a
-  message that fails to parse, descriptors that arrive when `AGREE_UNIX_FD` was
-  never exchanged, descriptors still queued when the connection dies. The
-  library cannot close them and must not pretend otherwise. It calls an
-  application-supplied closer if one is configured, and otherwise logs and
-  leaks -- which is at least a leak with a name attached to it.
+  consume a descriptor -- `socket:open/2`, a port program, a NIF -- or to
+  `dbus_fd:close/1`. `dbus_fd:dup/1` is how one outlives the message it came
+  with.
+- **The paths where nobody takes delivery are the library's**: a message that
+  fails to parse, descriptors that arrive when `AGREE_UNIX_FD` was never
+  exchanged, descriptors still queued when the connection dies.
+  `m:dbus_connection` closes those with `dbus_fd:close/1` and logs the count and
+  the reason at warning -- a discard nobody can see is indistinguishable from a
+  leak.
+- **Sent descriptors stay the sender's.** `sendmsg(2)` gives the peer a copy of
+  the open file description, not the number, so `dbus_connection:send/2` leaves
+  the caller's descriptors open.
 - **Validate the count before allocating anything to it**: `UNIX_FDS` above the
   per-message limit is refused as a protocol error, not honoured.
 
