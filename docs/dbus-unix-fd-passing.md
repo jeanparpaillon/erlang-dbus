@@ -113,9 +113,9 @@ which is what selects the `sendmsg`/`recvmsg` path in `m:dbus_transport`. A
 `rights` control message is the Unix `SCM_RIGHTS` ancillary message:
 
 ```erlang
-sendmsg(S, Data, Fds) ->
+sendmsg(S, <<First:1/binary, Rest/binary>>, Fds) ->
     Msg = #{
-        iov => [iolist_to_binary(Data)],
+        iov => [First],
         ctrl => [
             #{
                 level => socket,
@@ -124,19 +124,46 @@ sendmsg(S, Data, Fds) ->
             }
         ]
     },
-    socket:sendmsg(S, Msg).
+    case socket:sendmsg(S, Msg, [], infinity) of
+        ok -> socket:send(S, Rest);
+        {error, _} = E -> E
+    end.
 ```
 
-Two things `socket:send/2` did for us and `socket:sendmsg/2` does not:
+**The descriptors go with one byte, and the payload follows as plain bytes.**
+An earlier draft of this document sent the whole payload in the `iov` and
+resent whatever `sendmsg` left over. That is not enough, and the reason is
+worth recording, because the naive version passes every small test:
 
-- **It does not loop.** `sendmsg` answers `{ok, RestData}` or
-  `{error, {Reason, RestData}}` on a partial write, and the descriptors have
-  already gone with the first byte. The remainder must be resent *without* the
-  control message, or the peer receives them twice.
+- `socket:sendmsg/4` **loops by itself** under an `infinity` timeout. The
+  `{ok, RestData}` the OTP documentation describes is what a caller sees with
+  a deadline; with `infinity` the partial write is finished inside `socket`,
+  through a continuation.
+- **That continuation carries the same control message.** The `Cont`
+  documentation says only `iov` is taken from the map, but the `SCM_RIGHTS`
+  attached to the first attempt is sent again with each further one. A 4 MiB
+  payload sent in a single `send/3` arrives with *twenty* copies of every
+  descriptor -- one per segment -- which the test in `m:dbus_transport`
+  (`partial_write_test_`) pins.
+
+One byte is written whole or not at all, so there is no remainder for a
+continuation to duplicate, and the rest of the payload is an ordinary
+`socket:send/2` that loops safely because it carries no ancillary data.
+
+Two more consequences:
+
 - **The `iov` must not be empty.** `SCM_RIGHTS` with no payload byte is not
-  delivered on Linux. Every D-Bus message is at least sixteen bytes, so this
-  costs nothing to satisfy -- but it is why descriptors cannot be flushed on
-  their own.
+  delivered on Linux. Every D-Bus message is at least sixteen bytes, so there
+  is always a byte to carry the descriptors -- but it is why they cannot be
+  flushed on their own, and why `send/3` with an empty payload and a non-empty
+  descriptor list is an error.
+- **The first byte, not the last.** The kernel delivers ancillary data no
+  later than the end of the segment it came with, so attaching it to the front
+  keeps the guarantee the receiving side already relies on: descriptors arrive
+  at or before the message that declares them, never after. What it does cost
+  is a read boundary -- the first `recv/2` after a descriptor returns that one
+  byte and the descriptors -- which is nothing new, since a transport read was
+  never a message.
 
 Conceptually:
 

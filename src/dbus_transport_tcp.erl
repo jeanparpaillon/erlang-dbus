@@ -34,7 +34,7 @@ altogether, and does not work here: peeked bytes stay in the socket, so the
 descriptor remains readable and every wait for the rest of a half-arrived line
 returns immediately, spinning.
 
-TCP cannot carry file descriptors at all, so `support_unix_fd/1` is `false` and
+TCP cannot carry file descriptors at all, so `support_unix_fd/0` is `false` and
 `NEGOTIATE_UNIX_FD` is never sent.
 """.
 -behaviour(dbus_transport).
@@ -209,17 +209,12 @@ log_bind(Opts) ->
 %%%     caller can try the next alternative;
 %%%   * `family' maps to the socket's domain, and an unknown value is an error
 %%%     rather than a silent default;
-%%%   * in `line' mode each `recv/2' returns exactly one CRLF-terminated
-%%%     line -- never two, never half of one -- which is the framing
-%%%     `dbus_sasl:parse/1' requires, and a line that never ends is cut off
-%%%     rather than buffered without limit;
-%%%   * `set_mode(Conn, raw)' switches framing without losing bytes already
-%%%     read past the end of the last line, including across the handover to
-%%%     the reader process;
-%%%   * a `recv/2' timeout leaves the connection usable, with the half-read
-%%%     line still there, and the connection is readable from a process other
-%%%     than the one that opened it -- the reader in `dbus_connection' is not
-%%%     the connection process.
+%%%   * what comes back is an ordinary connection, carrying bytes both ways
+%%%     through `m:dbus_transport';
+%%%   * TCP has no way to carry a file descriptor, so a non-empty descriptor
+%%%     list is refused before anything is written, an empty one is
+%%%     indistinguishable from `send/2', and `recv/2' answers with no
+%%%     descriptors.
 
 addr(Options) ->
     #dbus_address{scheme = <<"tcp">>, options = Options}.
@@ -297,6 +292,64 @@ bind_is_ignored_test() ->
         endpoint(addr([{host, <<"127.0.0.1">>}, {port, <<"12345">>}, {bind, <<"0.0.0.0">>}]))
     ).
 
+%%%
+%%% Against a listening socket
+%%%
+
+roundtrip_test() ->
+    with_listener(fun(Port, Listener) ->
+        {ok, Conn} = dbus_transport:connect(addr(options(Port))),
+        {ok, Peer} = socket:accept(Listener, 1000),
+
+        ok = dbus_transport:send(Conn, <<0, "AUTH\r\n">>),
+        ?assertEqual({ok, <<0, "AUTH\r\n">>}, socket:recv(Peer, 7, 1000)),
+
+        ok = socket:send(Peer, <<"OK\r\n">>),
+        ?assertEqual({ok, <<"OK\r\n">>, []}, dbus_transport:recv(Conn, 1000)),
+
+        ?assertEqual(ok, dbus_transport:close(Conn)),
+        _ = socket:close(Peer)
+    end).
+
+%% A descriptor has no way across a TCP connection: the send is refused and
+%% nothing is written, while an empty list is the plain byte path.
+unix_fd_test() ->
+    with_listener(fun(Port, Listener) ->
+        {ok, Conn} = dbus_transport:connect(addr(options(Port))),
+        {ok, Peer} = socket:accept(Listener, 1000),
+        ?assertNot(dbus_transport:support_unix_fd(Conn)),
+
+        ?assertEqual(
+            {error, unix_fd_not_supported},
+            dbus_transport:send(Conn, <<"FD">>, [0])
+        ),
+        ?assertEqual({error, timeout}, socket:recv(Peer, 0, 100)),
+
+        ok = dbus_transport:send(Conn, <<"DATA">>, []),
+        ?assertEqual({ok, <<"DATA">>}, socket:recv(Peer, 4, 1000)),
+
+        ok = dbus_transport:close(Conn),
+        _ = socket:close(Peer)
+    end).
+
+%%%
+%%% Helpers
+%%%
+
 with_host(Options) ->
     [{host, <<"127.0.0.1">>} | Options].
+
+options(Port) ->
+    [{host, <<"127.0.0.1">>}, {port, integer_to_binary(Port)}].
+
+with_listener(Fun) ->
+    {ok, Listener} = socket:open(inet, stream, tcp),
+    ok = socket:bind(Listener, #{family => inet, addr => loopback, port => 0}),
+    ok = socket:listen(Listener),
+    {ok, #{port := Port}} = socket:sockname(Listener),
+    try
+        Fun(Port, Listener)
+    after
+        _ = socket:close(Listener)
+    end.
 -endif.

@@ -227,7 +227,11 @@ start_reader(Conn) ->
 
 reader_loop(Conn, Parent) ->
     case dbus_transport:recv(Conn, infinity) of
-        {ok, Data} ->
+        %% The descriptors a message declares are taken off the front of a
+        %% queue as it is framed, which is the connection's job and not the
+        %% reader's; until that lands no transport reports itself fd-capable,
+        %% so the list is always empty.
+        {ok, Data, _Fds} ->
             Parent ! {data, Data, self()},
             reader_loop(Conn, Parent);
         {error, Reason} ->

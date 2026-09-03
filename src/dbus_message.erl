@@ -1,6 +1,6 @@
 -module(dbus_message).
 -moduledoc """
-handle D-Bus messages
+Creates, update `t:dbus_message()` structures.
 """.
 
 -include("dbus.hrl").

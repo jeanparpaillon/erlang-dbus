@@ -37,7 +37,7 @@ be dialled, and reporting it that way lets `dbus_connection` move to the next
 alternative instead of failing the whole address list.
 
 The transport underneath is TCP, which cannot carry file descriptors, so
-`support_unix_fd/1` is `false` here for the same reason it is there.
+`support_unix_fd/0` is `false` here for the same reason it is there.
 """.
 -behaviour(dbus_transport).
 
@@ -254,21 +254,35 @@ roundtrip_test() ->
             ?assertEqual({ok, <<0, "AUTH\r\n">>}, socket:recv(Peer, 7, 1000)),
 
             ok = socket:send(Peer, <<"OK\r\n">>),
-            ?assertEqual({ok, <<"OK\r\n">>}, dbus_transport:recv(Conn, 1000)),
+            ?assertEqual({ok, <<"OK\r\n">>, []}, dbus_transport:recv(Conn, 1000)),
 
             ?assertEqual(ok, dbus_transport:close(Conn)),
             _ = socket:close(Peer)
         end)
     end).
 
-%% TCP underneath, so no descriptors -- and refusing them is not an error.
+%% TCP underneath, so a descriptor has no way across: the send is refused and
+%% nothing is written, while `recv/2' still answers with a list of them.
 unix_fd_test() ->
     with_noncefile(nonce_bytes(), fun(NoncePath) ->
         with_listener(fun(Port, Listener) ->
             {ok, Conn} = dbus_transport:connect(addr(options(Port, NoncePath))),
             {ok, Peer} = socket:accept(Listener, 1000),
+            %% Out of the way, so what follows is what `send/3' wrote.
+            {ok, _Nonce} = socket:recv(Peer, ?NONCE_SIZE, 1000),
             ?assertNot(dbus_transport:support_unix_fd(Conn)),
-            ?assertEqual(ok, dbus_transport:disable_unix_fd(Conn)),
+
+            ?assertEqual(
+                {error, unix_fd_not_supported},
+                dbus_transport:send(Conn, <<"FD">>, [0])
+            ),
+            ?assertEqual({error, timeout}, socket:recv(Peer, 0, 100)),
+
+            ok = dbus_transport:send(Conn, <<"DATA">>, []),
+            ?assertEqual({ok, <<"DATA">>}, socket:recv(Peer, 4, 1000)),
+
+            ok = socket:send(Peer, <<"OK\r\n">>),
+            ?assertEqual({ok, <<"OK\r\n">>, []}, dbus_transport:recv(Conn, 1000)),
 
             ok = dbus_transport:close(Conn),
             _ = socket:close(Peer)

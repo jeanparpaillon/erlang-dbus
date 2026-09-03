@@ -25,14 +25,13 @@ Unlike `m:dbus_transport_tcp` this module needs no connect timeout: an
 `AF_UNIX` connect either finds a listener with room in its backlog or fails on
 the spot, so there is no equivalent of a SYN going unanswered.
 
-Passing file descriptors is possible here and only here, so `support_unix_fd/1`
-starts out `true`. The flag it returns has to survive `disable_unix_fd/1` and
-be readable from the reader process, which is not the process that
-authenticated, so it lives in the socket's own `{otp, meta}` slot rather than
-in a caller's state or a process dictionary. This module owns that slot for
-sockets it opened. Writing it requires being the socket's controlling process,
-which the connecting process is -- and it is also the one that runs
-authentication, the only caller of `disable_unix_fd/1`.
+Passing file descriptors is possible here and only here, which is what
+`support_unix_fd/0` answers for: it is a property of the scheme, not of a
+connection, and `m:dbus_transport` reads it once at `connect/1` to decide
+between `socket:send/2` and `socket:sendmsg/4`. It still returns `false` --
+the `sendmsg`/`recvmsg` path exists but nothing negotiates `AGREE_UNIX_FD`
+yet, and a client that carried descriptors the peer never agreed to would be
+speaking a protocol of its own.
 """.
 -behaviour(dbus_transport).
 
@@ -136,8 +135,9 @@ connect_socket(Sock, Path) ->
 %%%     reader in `dbus_connection' is not the connection process;
 %%%   * an `abstract' address does the same against a listener bound in the
 %%%     abstract namespace, which is the only thing the leading NUL changes;
-%%%   * fd passing is supported until the peer refuses it, and the refusal is
-%%%     remembered on the connection, not on the caller.
+%%%   * `support_unix_fd/0` is a property of the scheme, read once at
+%%%     `connect/1`; it is still `false`, so a connection made here refuses
+%%%     descriptors like any other.
 
 addr(Options) ->
     #dbus_address{scheme = <<"unix">>, options = Options}.
@@ -198,9 +198,26 @@ roundtrip_test() ->
         ?assertEqual({ok, <<0, "AUTH\r\n">>}, socket:recv(Peer, 7, 1000)),
 
         ok = socket:send(Peer, <<"OK\r\n">>),
-        ?assertEqual({ok, <<"OK\r\n">>}, dbus_transport:recv(Conn, 1000)),
+        ?assertEqual({ok, <<"OK\r\n">>, []}, dbus_transport:recv(Conn, 1000)),
 
         ?assertEqual(ok, dbus_transport:close(Conn)),
+        _ = socket:close(Peer)
+    end).
+
+%% Until the negotiation lands the scheme reports itself unable to carry
+%% descriptors, and a connection made here refuses them before writing
+%% anything -- the number in the list is never looked at.
+unix_fd_test() ->
+    with_listener(fun(Path, Listener) ->
+        {ok, Conn} = dbus_transport:connect(addr([{path, Path}])),
+        {ok, Peer} = socket:accept(Listener, 1000),
+        ?assertNot(dbus_transport:support_unix_fd(Conn)),
+        ?assertEqual(
+            {error, unix_fd_not_supported},
+            dbus_transport:send(Conn, <<"FD">>, [0])
+        ),
+
+        ok = dbus_transport:close(Conn),
         _ = socket:close(Peer)
     end).
 
@@ -215,7 +232,7 @@ recv_from_another_process_test() ->
 
         ok = socket:send(Peer, <<"DATA">>),
         receive
-            {recvd, Result} -> ?assertEqual({ok, <<"DATA">>}, Result)
+            {recvd, Result} -> ?assertEqual({ok, <<"DATA">>, []}, Result)
         after 2000 -> ?assert(false)
         end,
 
@@ -235,7 +252,7 @@ abstract_roundtrip_test_() ->
             ?assertEqual({ok, <<0, "AUTH\r\n">>}, socket:recv(Peer, 7, 1000)),
 
             ok = socket:send(Peer, <<"OK\r\n">>),
-            ?assertEqual({ok, <<"OK\r\n">>}, dbus_transport:recv(Conn, 1000)),
+            ?assertEqual({ok, <<"OK\r\n">>, []}, dbus_transport:recv(Conn, 1000)),
 
             ok = dbus_transport:close(Conn),
             _ = socket:close(Peer)

@@ -205,7 +205,9 @@ do_recv(#state{buf = Buf} = State) ->
             {{protocol_error, line_too_long}, State};
         more ->
             case dbus_transport:recv(State#state.transport, ?RECV_TIMEOUT) of
-                {ok, Data} ->
+                %% No descriptors here: authentication is a line protocol, and
+                %% the server has not even been asked to allow them yet.
+                {ok, Data, _Fds} ->
                     do_recv(State#state{buf = <<Buf/binary, Data/binary>>});
                 {error, Reason} ->
                     {{transport_error, Reason}, State}
