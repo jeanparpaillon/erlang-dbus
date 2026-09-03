@@ -28,10 +28,14 @@ the spot, so there is no equivalent of a SYN going unanswered.
 Passing file descriptors is possible here and only here, which is what
 `support_unix_fd/0` answers for: it is a property of the scheme, not of a
 connection, and `m:dbus_transport` reads it once at `connect/1` to decide
-between `socket:send/2` and `socket:sendmsg/4`. It still returns `false` --
-the `sendmsg`/`recvmsg` path exists but nothing negotiates `AGREE_UNIX_FD`
-yet, and a client that carried descriptors the peer never agreed to would be
-speaking a protocol of its own.
+between `socket:send/2` and `socket:sendmsg/4`. It returns `true`: the
+`sendmsg`/`recvmsg` path is in place, and so is the `NEGOTIATE_UNIX_FD`
+`m:dbus_auth_client_mech` sends on the strength of this answer.
+
+Capability is not agreement, so `true` here is not permission to send a
+descriptor. It says the socket can carry one; `AGREE_UNIX_FD` says the peer
+allows it, and that answer lives on the connection in `m:dbus_connection`,
+which is also the layer that writes `UNIX_FDS`.
 """.
 -behaviour(dbus_transport).
 
@@ -62,9 +66,8 @@ connect(#dbus_address{scheme = <<"unix">>} = Address) ->
 connect(#dbus_address{scheme = Scheme}) ->
     {error, {invalid_scheme, Scheme}}.
 
-% Not implemented yet, see docs/dbus-unix-fd-passing.md
 -spec support_unix_fd() -> boolean().
-support_unix_fd() -> false.
+support_unix_fd() -> true.
 
 %%%
 %%% Private
@@ -136,8 +139,8 @@ connect_socket(Sock, Path) ->
 %%%   * an `abstract' address does the same against a listener bound in the
 %%%     abstract namespace, which is the only thing the leading NUL changes;
 %%%   * `support_unix_fd/0` is a property of the scheme, read once at
-%%%     `connect/1`; it is still `false`, so a connection made here refuses
-%%%     descriptors like any other.
+%%%     `connect/1`; it is `true`, so a connection made here takes the
+%%%     `sendmsg'/`recvmsg' path and carries descriptors.
 
 addr(Options) ->
     #dbus_address{scheme = <<"unix">>, options = Options}.
@@ -204,22 +207,35 @@ roundtrip_test() ->
         _ = socket:close(Peer)
     end).
 
-%% Until the negotiation lands the scheme reports itself unable to carry
-%% descriptors, and a connection made here refuses them before writing
-%% anything -- the number in the list is never looked at.
+%% The scheme reports itself able to carry descriptors, and a connection made
+%% here delivers one: the number that arrives is a different descriptor in
+%% this OS process naming the same open file.
 unix_fd_test() ->
     with_listener(fun(Path, Listener) ->
         {ok, Conn} = dbus_transport:connect(addr([{path, Path}])),
         {ok, Peer} = socket:accept(Listener, 1000),
-        ?assertNot(dbus_transport:support_unix_fd(Conn)),
-        ?assertEqual(
-            {error, unix_fd_not_supported},
-            dbus_transport:send(Conn, <<"FD">>, [0])
-        ),
+        ?assert(dbus_transport:support_unix_fd(Conn)),
+
+        {ok, Fd} = socket:getopt(Listener, {otp, fd}),
+        ok = dbus_transport:send(Conn, <<"FD">>, [Fd]),
+        %% A control buffer big enough for the `rights' message: too small a
+        %% one does not shorten the read, the kernel drops the descriptors.
+        {ok, Msg} = socket:recvmsg(Peer, 0, 1024, [], 1000),
+        ?assertMatch(#{ctrl := [#{level := socket, type := rights} | _]}, Msg),
+        close_rights(Msg),
 
         ok = dbus_transport:close(Conn),
         _ = socket:close(Peer)
     end).
+
+%% Whatever arrived is open in this OS process and nothing else will close it.
+close_rights(#{ctrl := Ctrl}) ->
+    Fds = [
+        Fd
+     || #{level := socket, type := rights, data := Bin} <- Ctrl,
+        <<Fd:32/native-signed>> <= Bin
+    ],
+    lists:foreach(fun dbus_fd:close/1, Fds).
 
 %% `dbus_connection' hands the connection to a reader process it spawns, so a
 %% connection that only works in the process that opened it is broken.

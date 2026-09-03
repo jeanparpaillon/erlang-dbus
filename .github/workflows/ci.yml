@@ -50,6 +50,13 @@ jobs:
         if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
         run: rebar3 proper --cover -n 500
 
+      # `dbus-run-session' gives the suite the session bus its `unix' group
+      # needs; without one the group skips and the flip of
+      # `dbus_transport_unix:support_unix_fd/0' goes unguarded.
+      - name: Run Common Test
+        if: "${{ matrix.otp == env.TEST_OTP_VERSION }}"
+        run: dbus-run-session -- rebar3 ct
+
       - name: Creates Cobertura coverage report
         run: rebar3 covertool generate
 

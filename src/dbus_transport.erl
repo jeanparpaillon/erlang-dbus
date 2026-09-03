@@ -356,8 +356,9 @@ drain(Conn, Size, Received, Fds) ->
     drain(Conn, Size, <<Received/binary, Data/binary>>, Fds ++ More).
 
 %% `support_unix_fd' is set here rather than taken from
-%% `dbus_transport_unix:support_unix_fd/0', which stays `false' until the
-%% negotiation lands: what is under test is the fd-capable path, not the flag.
+%% `dbus_transport_unix:support_unix_fd/0': what is under test is the
+%% fd-capable path, not the flag, and these sockets never went through
+%% `connect/1'.
 with_fd_pair(Fun) ->
     socket_pair(fun(Client, Server) ->
         Fun(fd_conn(Client), fd_conn(Server))

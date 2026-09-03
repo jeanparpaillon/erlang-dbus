@@ -307,17 +307,26 @@ The Erlang `socket` module provides everything required for the actual Unix FD t
 - ancillary/control messages;
 - `SCM_RIGHTS` through control messages of type `rights`.
 
-The additional work belongs in `erlang-dbus` itself:
+No additional native transport library is required. What this document once
+listed as work to be done in `erlang-dbus` itself is done, and the sections
+above now describe the code rather than a plan:
 
-1. teach `m:dbus_marshaller` the `h` type code and the `UNIX_FDS` header field;
-2. make `m:dbus_transport`'s `send`/`recv` fd-aware, dispatching on
+1. `m:dbus_marshaller` knows the `h` type code and synthesises the `UNIX_FDS`
+   header field from `#dbus_message.fds`;
+2. `m:dbus_transport`'s `send/3` and `recv/2` are fd-aware, dispatching on
    `#transport.support_unix_fd` rather than on a new behaviour callback;
-3. encode/decode native `SCM_RIGHTS` descriptor data;
-4. accumulate descriptors as a queue while framing the byte stream, and enforce
-   `AGREE_UNIX_FD` in `m:dbus_connection`;
-5. validate `UNIX_FDS` against the per-message limit, and `h` indices when they
-   are resolved;
-6. hand received descriptors to the owner, and say what happens on the paths
-   where nobody takes delivery -- OTP cannot close a non-socket descriptor.
+3. native `SCM_RIGHTS` descriptor data is encoded and decoded there;
+4. `m:dbus_connection` accumulates descriptors as a queue while framing the
+   byte stream, and enforces `AGREE_UNIX_FD` both ways;
+5. `UNIX_FDS` is validated against the per-message limit, and `h` indices are
+   validated by `dbus_message:fd/2` when they are resolved;
+6. received descriptors are handed to the owner, and the paths where nobody
+   takes delivery close them through the `m:dbus_fd` NIF -- OTP cannot close a
+   non-socket descriptor.
 
-No additional native transport library is required.
+`dbus_transport_unix:support_unix_fd/0` therefore returns `true`, which is what
+makes `m:dbus_auth_client_mech` send `NEGOTIATE_UNIX_FD`. The end-to-end
+evidence is `test/dbus_unix_fd_SUITE.erl`: a descriptor sent through a real
+`dbus-daemon` and echoed back names the same open file, and the same suite over
+`tcp:` shows a connection that authenticates normally with
+`agree_unix_fd = false`.
