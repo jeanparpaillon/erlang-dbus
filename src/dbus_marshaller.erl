@@ -114,7 +114,7 @@ marshal_message(#dbus_message{fds = Fds}) when length(Fds) > ?MAX_UNIX_FDS ->
 marshal_message(#dbus_message{header = Header, body = undefined, fds = Fds}) ->
     Header2 = unix_fds_field(Header, Fds),
     marshal_header(Header2#dbus_header{size = 0});
-marshal_message(#dbus_message{header = Header, body = {Types, Content}, fds = Fds}) ->
+marshal_message(#dbus_message{header = Header, body_sig = Types, body = Content, fds = Fds}) ->
     try marshal_list(Types, Content) of
         {Data, Pos} ->
             Signature = #dbus_variant{

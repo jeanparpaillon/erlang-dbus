@@ -13,12 +13,38 @@ Creates, update `t:dbus_message()` structures.
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-type method_opt() ::
+    {interface, binary()}
+    | {destination, binary()}
+    | no_reply_expected
+    | no_auto_start.
+
+-type casted() ::
+    dbus_method_call:t()
+    | dbus_method_return:t()
+    | dbus_signal:t().
+
+-export_type([method_opt/0, casted/0]).
+
 -export([
+    cast/1,
     get_serial/1,
     set_serial/2,
+    get_type/1,
+    get_body/1,
     find_field/2,
+    find_field/3,
     fd/2
 ]).
+
+-doc "Cast message into proper struct".
+-spec cast(dbus_message()) -> casted().
+cast(Message) ->
+    case get_type(Message) of
+        method_call -> dbus_method_call:from_message(Message);
+        method_return -> dbus_method_return:from_message(Message);
+        signal -> dbus_signal:from_message(Message)
+    end.
 
 -doc "Get serial number from message.".
 -spec get_serial(dbus_message()) -> dbus_serial().
@@ -31,6 +57,16 @@ set_serial(Serial, #dbus_message{header = Header} = Message) ->
     Header2 = Header#dbus_header{serial = Serial},
     Message#dbus_message{header = Header2}.
 
+-doc "Returns message type".
+-spec get_type(dbus_message()) -> dbus_message_type().
+get_type(#dbus_message{header = #dbus_header{type = Type}}) ->
+    type_name(Type).
+
+-doc "Returns message body".
+-spec get_body(dbus_message()) -> term().
+get_body(#dbus_message{body = Body}) ->
+    Body.
+
 -doc """
 Find a specific field of a message, or of a message header.
 
@@ -38,14 +74,17 @@ The header form is what the marshaller needs: while unmarshaling, the header is
 decoded before the body, so there is no message to look the signature field up in
 yet.
 
-Returns `undefined` if not found.
+Returns `Default` if not found.
 """.
--spec find_field(Code :: integer(), dbus_message() | dbus_header()) ->
-    term() | undefined.
-find_field(Code, #dbus_message{header = Header}) ->
-    find_field(Code, Header);
-find_field(Code, #dbus_header{fields = Fields}) ->
-    proplists:get_value(Code, Fields, undefined).
+-spec find_field(Code :: integer(), dbus_message() | dbus_header(), Default) ->
+    Default.
+find_field(Code, #dbus_message{header = Header}, Default) ->
+    find_field(Code, Header, Default);
+find_field(Code, #dbus_header{fields = Fields}, Default) ->
+    proplists:get_value(Code, Fields, Default).
+
+find_field(Code, MessageOrHeader) ->
+    find_field(Code, MessageOrHeader, undefined).
 
 -doc """
 Resolve a `unix_fd` value against the descriptors a message carries.
@@ -65,6 +104,15 @@ fd(Index, #dbus_message{fds = Fds}) when is_integer(Index), Index >= 0, Index < 
     {ok, lists:nth(Index + 1, Fds)};
 fd(Index, #dbus_message{}) ->
     {error, {bad_fd_index, Index}}.
+
+%%%
+%%% Priv
+%%%
+type_name(?TYPE_INVALID) -> invalid;
+type_name(?TYPE_METHOD_CALL) -> method_call;
+type_name(?TYPE_METHOD_RETURN) -> method_return;
+type_name(?TYPE_ERROR) -> error;
+type_name(?TYPE_SIGNAL) -> signal.
 
 %%%
 %%% Tests

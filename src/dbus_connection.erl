@@ -35,7 +35,7 @@ to `send/2` are still open here when it returns.
     start_link/2,
     stop/1,
     get_guid/1,
-    set_owner/2,
+    subscribe/1,
     send/2
 ]).
 -export([
@@ -47,12 +47,9 @@ to `send/2` are still open here when it returns.
     code_change/3
 ]).
 
--export_type([
-    connection/0
-]).
-
 -record(state, {
-    owner :: pid(),
+    pg :: pid() | undefined,
+    pg_scope :: atom(),
     auth_ctx :: term() | undefined,
     transport :: dbus_transport:connection() | undefined,
     guid = <<>> :: binary(),
@@ -63,11 +60,19 @@ to `send/2` are still open here when it returns.
     fds = [] :: [dbus_fd:fd()]
 }).
 
+-define(DEFAULT_PG_SCOPE, dbus).
+
 -type connection() :: pid().
--type option() ::
+-opaque option() ::
     {name, atom()}
+    | {scope, atom()}
     %% Per-mechanism context, key is module name
     | {auth_ctx, map()}.
+
+-export_type([
+    connection/0,
+    option/0
+]).
 
 -define(SERVER_OPTS_KEYS, [name]).
 
@@ -80,11 +85,10 @@ start_link(Address) ->
 -spec start_link(dbus_address() | [dbus_address()], [option()]) -> gen_server:start_ret().
 start_link(Addresses, Options) when is_list(Addresses) ->
     ServerOpts = server_opts(Options),
-    Owner = self(),
     StartArgs = #{
-        owner => Owner,
         addresses => Addresses,
-        auth_ctx => proplists:get_value(auth_ctx, Options, #{})
+        auth_ctx => proplists:get_value(auth_ctx, Options, #{}),
+        pg_scope => proplists:get_value(scope, Options, ?DEFAULT_PG_SCOPE)
     },
     gen_server:start_link(?MODULE, StartArgs, ServerOpts).
 
@@ -102,14 +106,11 @@ get_guid(Connection) ->
     gen_server:call(Connection, get_guid).
 
 -doc """
-Change connection owner. Must be called by actual owner, or returns
-`{error, forbidden}`
+Subscribe to connection messages
 """.
--spec set_owner(connection(), pid()) ->
-    ok
-    | {error, forbidden}.
-set_owner(Connection, Owner) ->
-    gen_server:call(Connection, {set_owner, Owner}).
+-spec subscribe(connection()) -> ok.
+subscribe(Connection) ->
+    gen_server:cast(Connection, {subscribe, self()}).
 
 -doc """
 Send given message to the D-Bus peer.
@@ -130,20 +131,17 @@ send(Connection, Message) ->
 %%%
 init(
     #{
-        owner := Owner,
         addresses := Addresses,
-        auth_ctx := AuthCtx
+        auth_ctx := AuthCtx,
+        pg_scope := PgScope
     } = _StartArgs
 ) ->
-    State = #state{owner = Owner, auth_ctx = AuthCtx},
+    {ok, Pg} = pg:start_link(PgScope),
+    State = #state{pg = Pg, pg_scope = PgScope, auth_ctx = AuthCtx},
     try_connect(Addresses, State).
 
 handle_call(get_guid, _From, #state{guid = Guid} = State) ->
     {reply, {ok, Guid}, State};
-handle_call({set_owner, Owner}, {Owner, _Tag}, #state{owner = Owner} = State) ->
-    {reply, ok, State#state{owner = Owner}};
-handle_call({set_owner, _Owner}, _From, State) ->
-    {reply, {error, forbidden}, State};
 %% Refused before a serial is allocated: nothing was written, so nothing was
 %% spent. The transport answers `unix_fd_not_supported' for a socket that
 %% cannot carry a descriptor at all; this is the other half -- one it could
@@ -154,27 +152,30 @@ handle_call(
     #state{agree_unix_fd = false} = State
 ) ->
     {reply, {error, unix_fd_not_negotiated}, State};
-handle_call(
-    {send, Message},
-    _From,
-    #state{
-        transport = Conn,
-        serial = Serial
-    } = State
-) ->
-    Message1 = dbus_message:set_serial(Serial, Message),
-    State1 = incr_serial(State),
+handle_call({send, Message}, _From, #state{transport = Conn} = State) ->
+    {Message1, State1} =
+        case dbus_message:get_serial(Message) of
+            0 ->
+                {
+                    dbus_message:set_serial(State#state.serial, Message), incr_serial(State)
+                };
+            _Serial ->
+                {Message, State}
+        end,
 
     Data = dbus_marshaller:marshal_message(Message1),
     case dbus_transport:send(Conn, Data, Message1#dbus_message.fds) of
         ok ->
-            {reply, {ok, Serial}, State1};
+            {reply, {ok, dbus_message:get_serial(Message1)}, State1};
         {error, Reason} ->
             {reply, {error, Reason}, State1}
     end;
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
+handle_cast({subscribe, Subscriber}, State) ->
+    pg:join(State#state.pg_scope, self(), Subscriber),
+    {noreply, State};
 handle_cast(_Request, State) ->
     {noreply, State}.
 
@@ -195,12 +196,7 @@ handle_info(
     Queue1 = Queue ++ Fds,
     case dbus_marshaller:unmarshal_data(Bin, Queue1) of
         {ok, Messages, Rest, Queue2} ->
-            lists:foreach(
-                fun(Msg) ->
-                    State#state.owner ! {dbus, Msg}
-                end,
-                Messages
-            ),
+            dispatch_messages(Messages, State),
             {noreply, State#state{acc = Rest, fds = Queue2}};
         %% Either the bytes are short or the descriptors are: both are in
         %% flight and the next `recv' completes the message.
@@ -213,10 +209,10 @@ handle_info(
             {stop, {unmarshal_error, Reason}, State#state{fds = []}}
     end;
 handle_info(
-    {'DOWN', _Ref, process, Owner, _Reason},
-    #state{owner = Owner} = State
+    {'DOWN', _Ref, process, Pg, _Reason},
+    #state{pg = Pg} = State
 ) ->
-    {stop, owner_down, State};
+    {stop, pg_down, State};
 handle_info({'EXIT', Reader, Reason}, #state{reader = Reader} = State) ->
     {stop, {reader_exit, Reason}, State};
 handle_info(_Info, State) ->
@@ -269,6 +265,19 @@ handle_begin(
         agree_unix_fd = AgreeUnixFd
     },
     {ok, State1}.
+
+dispatch_messages(Messages, State) ->
+    lists:foreach(
+        fun(Pid) ->
+            lists:foreach(
+                fun(Message) ->
+                    Pid ! {dbus, self(), Message}
+                end,
+                Messages
+            )
+        end,
+        pg:get_members(State#state.pg_scope, self())
+    ).
 
 %% What the owner never received, closed here. `m:dbus_fd' is a NIF because
 %% OTP has no `close(2)': `socket:close/1' closes a socket, and what D-Bus
@@ -347,7 +356,7 @@ fd_message(Fds) ->
 %% The owner and the reader are both the test process: what the connection
 %% sends the owner lands in the test's own mailbox.
 negotiated_state() ->
-    #state{owner = self(), reader = self(), agree_unix_fd = true}.
+    #state{reader = self(), agree_unix_fd = true}.
 
 data(Data, Fds) ->
     {data, Data, Fds, self()}.
@@ -439,7 +448,7 @@ terminate_closes_the_queue(Fds) ->
 %% is what asserts: a send that got as far as `dbus_transport:send/3' would
 %% fail on the record.
 sending_descriptors_unnegotiated_test() ->
-    State = #state{owner = self(), agree_unix_fd = false, serial = 1},
+    State = #state{agree_unix_fd = false, serial = 1},
     ?assertEqual(
         {reply, {error, unix_fd_not_negotiated}, State},
         handle_call({send, fd_message([3])}, {self(), tag}, State)

@@ -28,6 +28,9 @@
 -define(FIELD_SIGNATURE, 8).
 -define(FIELD_UNIX_FDS, 9).
 
+-define(NO_REPLY_EXPECTED, 1).
+-define(NO_AUTO_START, 2).
+
 %% The number of file descriptors one message may carry. `libdbus' allows 16,
 %% and `dbus-daemon' publishes the number as `max_message_unix_fds' --
 %% `/usr/share/dbus-1/system.conf' carries the stock value, commented out, at
@@ -38,12 +41,19 @@
     $l
     | $B.
 
--type dbus_message_type() ::
+-type dbus_message_type_code() ::
     ?TYPE_INVALID
     | ?TYPE_METHOD_CALL
     | ?TYPE_METHOD_RETURN
     | ?TYPE_ERROR
     | ?TYPE_SIGNAL.
+
+-type dbus_message_type() ::
+    invalid
+    | method_call
+    | method_return
+    | error
+    | signal.
 
 -type dbus_type() ::
     byte
@@ -64,6 +74,8 @@
     | variant
     | {dict, dbus_type(), dbus_type()}
     | empty.
+
+-type dbus_arg_index() :: non_neg_integer().
 -type dbus_signature() :: [dbus_type()].
 
 -record(dbus_variant, {
@@ -74,9 +86,22 @@
 
 -type dbus_serial() :: non_neg_integer().
 
+-type dbus_match_rule() ::
+    {type, dbus_message_type()}
+    | {sender, binary()}
+    | {interface, binary()}
+    | {member, binary()}
+    | {path, binary()}
+    | {path_namespace, binary()}
+    | {destination, binary()}
+    | {arg, {dbus_arg_index(), binary()}}
+    | {arg_path, {dbus_arg_index(), binary()}}
+    | {arg0_namespace, binary()}
+    | {eavesdrop, boolean()}.
+
 -record(dbus_header, {
     endian = $l :: endianness(),
-    type = ?TYPE_INVALID :: dbus_message_type(),
+    type = ?TYPE_INVALID :: dbus_message_type_code(),
     flags = 0 :: integer(),
     version = ?DBUS_VERSION_MAJOR :: integer(),
     size = 0 :: integer(),
@@ -87,7 +112,8 @@
 
 -record(dbus_message, {
     header = #dbus_header{} :: dbus_header(),
-    body = undefined :: undefined | {dbus_signature(), term()},
+    body_sig = undefined :: undefined | dbus_signature(),
+    body = undefined :: undefined | term(),
     %% The file descriptors that accompany the message. A `unix_fd' value in
     %% the body is an index into this list, not a descriptor;
     %% `dbus_message:fd/2' resolves one. The `UNIX_FDS' header field is
