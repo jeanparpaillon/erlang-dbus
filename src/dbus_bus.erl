@@ -24,6 +24,10 @@ dbus_bus is the first class application : proxies bus interfaces
 -define(MEMBER_NAME_ACQUIRED, <<"NameAcquired">>).
 -define(MEMBER_REQUEST_NAME, <<"RequestName">>).
 
+-define(DBUS_NAME_FLAG_ALLOW_REPLACEMENT, 1).
+-define(DBUS_NAME_FLAG_REPLACE_EXISTING, 2).
+-define(DBUS_NAME_FLAG_DO_NOT_QUEUE, 4).
+
 -type request_name_opt() ::
     allow_replacement
     | replace_existing
@@ -86,8 +90,9 @@ handle_dbus(Message, State) ->
     Member = dbus_message:find_field(?FIELD_MEMBER, Message),
     do_handle(Interface, Member, Message, State).
 
-handle_call({request_name, Name, _Opts}, _From, State) ->
-    Args = {[string, uint32], [Name, 0]},
+handle_call({request_name, Name, Opts}, _From, State) ->
+    Flags = process_request_name_opts(Opts, 0),
+    Args = {[string, uint32], [Name, Flags]},
     Request = dbus_method_call:build(
         ?MEMBER_REQUEST_NAME,
         ?PATH,
@@ -113,3 +118,14 @@ do_handle(?INTERFACE, ?MEMBER_NAME_ACQUIRED, Message, State) ->
 do_handle(_Interface, _Member, Message, State) ->
     ?LOG_INFO("Received message ~p", [Message]),
     {noreply, State}.
+
+process_request_name_opts([], Flag) ->
+    Flag;
+process_request_name_opts([allow_replacement | Rest], Flag) ->
+    process_request_name_opts(Rest, Flag bor ?DBUS_NAME_FLAG_ALLOW_REPLACEMENT);
+process_request_name_opts([replace_existing | Rest], Flag) ->
+    process_request_name_opts(Rest, Flag bor ?DBUS_NAME_FLAG_REPLACE_EXISTING);
+process_request_name_opts([do_not_queue | Rest], Flag) ->
+    process_request_name_opts(Rest, Flag bor ?DBUS_NAME_FLAG_DO_NOT_QUEUE);
+process_request_name_opts([_ | Rest], Flag) ->
+    process_request_name_opts(Rest, Flag).
