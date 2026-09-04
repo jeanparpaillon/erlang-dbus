@@ -12,6 +12,7 @@ Connection to a D-Bus bus is the main application entry point for interacting wi
     start_link/1,
     start_link/2,
     get_conn/1,
+    get_proxy/1,
     stop/1
 ]).
 
@@ -29,40 +30,46 @@ start_link(Address) ->
 
 -spec start_link(address(), [dbus_connection:option()]) -> gen_server:start_ret().
 start_link(Address, ConnOpts) ->
-    SupName = sup_name(Address),
-    ConnName = conn_name(Address),
-    ProxyName = proxy_name(Address),
+    SupRef = sup_ref(Address),
+    ConnRef = conn_ref(Address),
+    ProxyRef = proxy_ref(Address),
     case dbus_address:parse(resolve_address(Address)) of
         {ok, Addresses} ->
             Args = #{
                 addresses => Addresses,
-                conn_name => ConnName,
-                proxy_name => ProxyName,
+                conn_ref => ConnRef,
+                proxy_ref => ProxyRef,
                 conn_opts => ConnOpts
             },
-            supervisor:start_link({local, SupName}, ?MODULE, Args);
+            supervisor:start_link({local, SupRef}, ?MODULE, Args);
         {error, Reason} ->
             {error, Reason}
     end.
 
--spec get_conn(address()) -> atom().
+-spec get_conn(address()) -> gen_server:server_ref().
 get_conn(Address) ->
-    conn_name(Address).
+    conn_ref(Address).
 
--spec stop(atom()) -> ok.
-stop(Bus) ->
-    supervisor:stop(Bus).
+-spec get_proxy(address()) -> gen_server:server_ref().
+get_proxy(Address) ->
+    proxy_ref(Address).
+
+-spec stop(address()) -> ok.
+stop(Address) ->
+    supervisor:stop(sup_ref(Address)).
 
 %%%
 %%% gen_server callbacks
 %%%
 init(#{
-    conn_name := ConnName,
-    proxy_name := ProxyName,
+    conn_ref := ConnRef,
+    proxy_ref := ProxyRef,
     addresses := Addresses,
     conn_opts := ConnOpts
 }) ->
-    ConnOpts1 = [{name, ConnName} | ConnOpts],
+    %% Registration takes the `{local, Name}' form; the refs themselves are
+    %% plain names, because that is what `gen_server:call/2' accepts.
+    ConnOpts1 = [{server_ref, {local, ConnRef}} | ConnOpts],
     Children = [
         #{
             id => dbus_connection,
@@ -70,10 +77,12 @@ init(#{
         },
         #{
             id => dbus_bus,
-            start => {dbus_bus, start_link, [ConnName, ProxyName]}
+            start => {dbus_bus, start_link, [ConnRef, {local, ProxyRef}]}
         }
     ],
-    SupFlags = #{strategy => one_for_one},
+    % Use a rest_for_one strategy so that if the connection process crashes,
+    % the bus proxy process is also restarted.
+    SupFlags = #{strategy => rest_for_one},
     {ok, {SupFlags, Children}}.
 
 %%%
@@ -87,13 +96,13 @@ base_name(system) -> <<"dbus_system">>;
 base_name(session) -> <<"dbus_session">>;
 base_name(Address) when is_binary(Address) -> Address.
 
-sup_name(Address) ->
+sup_ref(Address) ->
     derive_name(Address, <<"_sup">>).
 
-proxy_name(Address) ->
+proxy_ref(Address) ->
     derive_name(Address, <<"_proxy">>).
 
-conn_name(Address) ->
+conn_ref(Address) ->
     derive_name(Address, <<"_conn">>).
 
 resolve_address(system) ->

@@ -11,9 +11,14 @@ This module defines a proxy to a D-Bus object
 -callback handle_dbus(dbus_message(), State) ->
     {reply, dbus_message(), State}
     | {noreply, State}.
+-callback handle_call(term(), gen_server:from(), State) ->
+    {reply, term(), State}
+    | {noreply, State}
+    | {stop, term(), State}.
 
 -export([
     start_link/4,
+    call/2,
     stop/1
 ]).
 
@@ -26,7 +31,7 @@ This module defines a proxy to a D-Bus object
     code_change/3
 ]).
 
--type server_option() :: {server_name, gen_server:server_name()}.
+-type server_option() :: {server_ref, gen_server:server_ref()}.
 
 -record(state, {
     conn :: dbus_connection:connection(),
@@ -34,7 +39,7 @@ This module defines a proxy to a D-Bus object
     cb_state = undefined :: term() | undefined
 }).
 
--type proxy() :: pid().
+-type proxy() :: gen_server:server_ref().
 -export_type([proxy/0]).
 
 -doc """
@@ -44,12 +49,16 @@ Start proxy
     gen_server:start_ret().
 start_link(CbMod, CbArgs, Conn, Opts) ->
     Args = [CbMod, CbArgs, Conn],
-    case server_name(Opts) of
+    case proplists:get_value(server_ref, Opts) of
         undefined ->
             gen_server:start_link(?MODULE, Args, []);
-        Name ->
-            gen_server:start_link(Name, ?MODULE, Args, [])
+        Ref ->
+            gen_server:start_link(Ref, ?MODULE, Args, [])
     end.
+
+-spec call(proxy(), term()) -> term().
+call(Proxy, Request) ->
+    gen_server:call(Proxy, {proxy, Request}).
 
 -spec stop(proxy()) -> ok.
 stop(Proxy) ->
@@ -58,7 +67,8 @@ stop(Proxy) ->
 %%%
 %%% gen_server callbacks
 %%%
-init([CbMod, CbArgs, Conn]) ->
+init([CbMod, CbArgs, ConnRef]) ->
+    Conn = resolve(ConnRef),
     ok = dbus_connection:subscribe(Conn),
     case CbMod:init(Conn, CbArgs) of
         {ok, CbState} ->
@@ -67,6 +77,17 @@ init([CbMod, CbArgs, Conn]) ->
             {stop, {callback_init, Reason}}
     end.
 
+handle_call({proxy, Request}, From, State) ->
+    CbMod = State#state.cb_mod,
+    CbState = State#state.cb_state,
+    case CbMod:handle_call(Request, From, CbState) of
+        {reply, Reply, CbState1} ->
+            {reply, Reply, State#state{cb_state = CbState1}};
+        {noreply, CbState1} ->
+            {noreply, State#state{cb_state = CbState1}};
+        {stop, Reason, CbState1} ->
+            {stop, Reason, State#state{cb_state = CbState1}}
+    end;
 handle_call(_Call, _From, State) ->
     {reply, ok, State}.
 
@@ -87,8 +108,16 @@ code_change(_OldVsn, State, _Extra) ->
 %%%
 %%% Priv
 %%%
-server_name(Props) ->
-    proplists:get_value(server_name, Props, undefined).
+%%%
+resolve(Conn) when is_pid(Conn) ->
+    Conn;
+resolve({local, Name}) when is_atom(Name) ->
+    resolve(Name);
+resolve(Name) when is_atom(Name) ->
+    case whereis(Name) of
+        undefined -> exit({noproc, Name});
+        Pid -> Pid
+    end.
 
 handle_callback(signal, Signal, State) ->
     CbMod = State#state.cb_mod,

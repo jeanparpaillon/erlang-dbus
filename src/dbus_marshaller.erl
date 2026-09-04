@@ -1167,7 +1167,8 @@ h_decodes_as_uint32_test_() ->
 fd_message(Fds) ->
     #dbus_message{
         header = #dbus_header{type = ?TYPE_METHOD_CALL, serial = 1},
-        body = {[unix_fd], [0]},
+        body_sig = [unix_fd],
+        body = [0],
         fds = Fds
     }.
 

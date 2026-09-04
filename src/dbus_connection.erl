@@ -63,9 +63,9 @@ to `send/2` are still open here when it returns.
 
 -define(DEFAULT_PG_SCOPE, dbus).
 
--type connection() :: pid().
+-type connection() :: gen_server:server_ref().
 -opaque option() ::
-    {name, atom()}
+    {server_ref, gen_server:server_ref()}
     | {scope, atom()}
     %% Per-mechanism context, key is module name
     | {auth_ctx, map()}.
@@ -88,11 +88,11 @@ start_link(Addresses, Options) when is_list(Addresses) ->
         auth_ctx => proplists:get_value(auth_ctx, Options, #{}),
         pg_scope => proplists:get_value(scope, Options, ?DEFAULT_PG_SCOPE)
     },
-    case proplists:get_value(name, Options) of
+    case proplists:get_value(server_ref, Options) of
         undefined ->
             gen_server:start_link(?MODULE, StartArgs, []);
-        Name ->
-            gen_server:start_link({local, Name}, ?MODULE, StartArgs, [])
+        Ref ->
+            gen_server:start_link(Ref, ?MODULE, StartArgs, [])
     end.
 
 -spec stop(connection()) ->
@@ -387,14 +387,29 @@ reader_loop(Conn, Parent) ->
 fd_message(Fds) ->
     #dbus_message{
         header = #dbus_header{type = ?TYPE_METHOD_CALL, serial = 1},
-        body = {[unix_fd], [0]},
+        body_sig = [unix_fd],
+        body = [0],
         fds = Fds
     }.
 
 %% The owner and the reader are both the test process: what the connection
-%% sends the owner lands in the test's own mailbox.
+%% sends the owner lands in the test's own mailbox. `publish_message/2' goes
+%% through `pg', so the scope has to exist and the test has to be a member of
+%% the group the connection publishes to -- which, `handle_info/2' being called
+%% straight from the test, is the test process itself.
 negotiated_state() ->
-    #state{reader = self(), agree_unix_fd = true}.
+    Scope = test_pg_scope(),
+    ok = pg:join(Scope, self(), self()),
+    #state{reader = self(), pg_scope = Scope, agree_unix_fd = true}.
+
+%% A scope of its own per test: eunit runs each in a fresh process, and a
+%% linked scope dies with it, so a shared name would race the next start.
+test_pg_scope() ->
+    Scope = list_to_atom(
+        "dbus_connection_test_pg_" ++ integer_to_list(erlang:unique_integer([positive]))
+    ),
+    {ok, _} = pg:start_link(Scope),
+    Scope.
 
 data(Data, Fds) ->
     {data, Data, Fds, self()}.
@@ -497,7 +512,7 @@ sending_descriptors_unnegotiated_test() ->
 %%%
 delivered() ->
     receive
-        {dbus, Msg} -> [Msg | delivered()]
+        {dbus, _Conn, _Type, Msg} -> [Msg | delivered()]
     after 0 -> []
     end.
 
