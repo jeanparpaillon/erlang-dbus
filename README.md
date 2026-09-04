@@ -10,73 +10,14 @@ The erlang platform needs an erlang native implementation.
 [![codecov](https://codecov.io/gh/jeanparpaillon/erlang-dbus/branch/next/graph/badge.svg?token=mLKxwRF4GV)](https://codecov.io/gh/jeanparpaillon/erlang-dbus)
 [![Hex.pm](https://img.shields.io/hexpm/v/dbus.svg)](https://hex.pm/packages/dbus)
 
-# Usage as Client
-
-This example is making a dbus call to the `org.freedesktop.DBus` system service (under linux) and a list of registered services.
+# Example
 
 ```erlang
-  {ok, Bus} = dbus_bus_reg:get_bus(session),
-  {ok, Service} = dbus_bus:get_service(Bus, 'org.freedesktop.DBus'),
-  {ok, RemoteObject} = dbus_remote_service:get_object(Service, '/org/freedesktop/DBus'),
-  {ok, Iface} = dbus_proxy:interface(RemoteObject, 'org.freedesktop.DBus'),
-  {ok, Names} = dbus_proxy:call(Iface, 'ListNames', []),
-  io:format("ListNames: ~p~n", [lists:sort(Names)]),
-  ok = dbus_remote_service:release_object(Service, RemoteObject),
-  ok = dbus_bus:release_service(Bus, Service),
+Bus = system,  % or `session` or any valid D-Bus address string
+dbus:start_link(Bus),
+BusProxy = dbus:get_proxy(Bus),
+dbus_bus:request_name(BusProxy, <<"com.example">>).
 ```
-
-# Usage as Service
-
-In the demo folder there is a bigger example, but is a minimal service callback module:
-
-```erlang
--module(my_service).
--include_lib("dbus/include/dbus.hrl").
--behaviour(gen_dbus).
-
--export([
-%% api
-  start_link/2,
-  handle_info/2,
-
-%% dbus object callbacks
-  'HelloWorld'/1,
-  'HelloWorld'/3,
-
-%% gen_dbus callbacks
-  init/1
-]).
-
--record(state, {}).
-
-start_link() ->
-  gen_dbus:start_link({local, ?MODULE}, ?MODULE, [], []).
-
-init([Service, Path]) ->
-  State = #state{},
-  Methods = ['HelloWorld'],
-  {ok, {"com.example.MyService", '/SomeObject', [
-    {interface, 'com.example.MyInterface'},
-    {methods, Methods},
-    {signals, []}
-    ]}, State}.
-
-'HelloWorld'(dbus_info) ->
-  [{interface, 'com.example.MyInterface'},
-    {signature, [string], [{array, string}]}].
-
-'HelloWorld'([HelloMessage], From, State) ->
-  {reply, ["Hello from Erlang"], State}.
-
-handle_info(Info, State) ->
-  error_logger:warning_msg("Unhandled info: ~p~n", [Info]),
-  {noreply, State}.
-
-```
-
-When the `dbus` application is running you can start this service with `my_module:start_link().` or add it to your supervision tree.
-
-*Caveat* at the moment the service creation does not open a dbus connection and as a result the service will not be visible until you create the first dbus connection e.g. via `dbus_bus_reg:get_bus(session).`
 
 # Unix file descriptor passing
 
