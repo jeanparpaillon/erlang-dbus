@@ -40,8 +40,7 @@ Specification](https://dbus.freedesktop.org/doc/dbus-specification.html#message-
     marshal_list/2,
     marshal_signature/1,
     unmarshal/4,
-    unmarshal_tuple/3,
-    unmarshal_signature/1
+    unmarshal_tuple/3
 ]).
 -endif.
 
@@ -49,7 +48,8 @@ Specification](https://dbus.freedesktop.org/doc/dbus-specification.html#message-
 -export([
     marshal_message/1,
     unmarshal_data/1,
-    unmarshal_data/2
+    unmarshal_data/2,
+    unmarshal_signature/1
 ]).
 
 -define(HEADER_SIGNATURE, [

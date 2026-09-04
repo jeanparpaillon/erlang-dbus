@@ -13,36 +13,26 @@ Defines a method call struct
 -export_type([method_opt/0]).
 
 -export([
-    build/5,
-    from_message/1,
-    to_message/1,
+    build/2,
+    build/3,
+    build/4,
     no_reply_expected/1
 ]).
 
--record(dbus_method_call, {
-    method_name = undefined :: binary() | undefined,
-    object_path = undefined :: binary() | undefined,
-    interface = undefined :: binary() | undefined,
-    destination = undefined :: binary() | undefined,
-    signature = undefined :: dbus_signature() | undefined,
-    body = undefined :: term() | undefined,
-    no_reply_expected = false :: boolean(),
-    no_auto_start = false :: boolean()
-}).
--opaque t() :: #dbus_method_call{}.
+-spec build(
+    MethodName :: binary(),
+    ObjectPath :: binary()
+) -> dbus_message().
+build(MethodName, ObjectPath) ->
+    build(MethodName, ObjectPath, [], []).
 
--export_type([t/0]).
-
--spec from_message(dbus_message()) -> t().
-from_message(Message) ->
-    #dbus_method_call{
-        method_name = dbus_message:find_field(?FIELD_MEMBER, Message),
-        object_path = dbus_message:find_field(?FIELD_PATH, Message),
-        interface = dbus_message:find_field(?FIELD_INTERFACE, Message),
-        destination = dbus_message:find_field(?FIELD_DESTINATION, Message),
-        signature = dbus_message:find_field(?FIELD_SIGNATURE, Message),
-        body = dbus_message:get_body(Message)
-    }.
+-spec build(
+    MethodName :: binary(),
+    ObjectPath :: binary(),
+    Options :: [method_opt()]
+) -> dbus_message().
+build(MethodName, ObjectPath, Options) ->
+    build(MethodName, ObjectPath, {[], []}, Options).
 
 -doc """
 Build a message of type METHOD_CALL.
@@ -50,40 +40,16 @@ Build a message of type METHOD_CALL.
 -spec build(
     MethodName :: binary(),
     ObjectPath :: binary(),
-    Signature :: dbus_signature(),
-    InArgs :: term(),
+    InArgs :: {dbus_signature(), term()} | [],
     Options :: [method_opt()]
-) -> {ok, t()}.
-build(MethodName, ObjectPath, Signature, InArgs, Options) ->
+) -> dbus_message().
+build(MethodName, ObjectPath, [], Options) ->
+    build(MethodName, ObjectPath, {[], []}, Options);
+build(MethodName, ObjectPath, {Signature, InArgs}, Options) ->
     NoReplyExpected = proplists:get_value(no_reply_expected, Options, false),
     NoAutoStart = proplists:get_value(no_auto_start, Options, false),
-    Call = #dbus_method_call{
-        method_name = MethodName,
-        object_path = ObjectPath,
-        interface = proplists:get_value(interface, Options, undefined),
-        destination = proplists:get_value(destination, Options, undefined),
-        signature = Signature,
-        body = InArgs,
-        no_reply_expected = NoReplyExpected,
-        no_auto_start = NoAutoStart
-    },
-    {ok, Call}.
-
--spec no_reply_expected(t()) -> boolean().
-no_reply_expected(Call) ->
-    Call#dbus_method_call.no_reply_expected.
-
--spec to_message(t()) -> dbus_message().
-to_message(#dbus_method_call{
-    method_name = MethodName,
-    object_path = ObjectPath,
-    interface = Interface,
-    destination = Destination,
-    signature = Signature,
-    body = InArgs,
-    no_reply_expected = NoReplyExpected,
-    no_auto_start = NoAutoStart
-}) ->
+    Interface = proplists:get_value(interface, Options, undefined),
+    Destination = proplists:get_value(destination, Options, undefined),
     Fields = [
         {?FIELD_PATH, #dbus_variant{type = object_path, value = ObjectPath}},
         {?FIELD_MEMBER, #dbus_variant{type = string, value = MethodName}}
@@ -111,7 +77,11 @@ to_message(#dbus_method_call{
         flags = process_flags(Flags),
         fields = Fields2
     },
-    #dbus_message{header = Header, body = {Signature, InArgs}}.
+    #dbus_message{header = Header, body_sig = Signature, body = InArgs}.
+
+-spec no_reply_expected(dbus_message()) -> boolean().
+no_reply_expected(#dbus_message{header = #dbus_header{flags = Flags}}) ->
+    (Flags band ?NO_REPLY_EXPECTED) =/= 0.
 
 %%%
 %%% Priv

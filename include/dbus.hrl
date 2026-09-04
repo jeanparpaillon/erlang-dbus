@@ -28,8 +28,13 @@
 -define(FIELD_SIGNATURE, 8).
 -define(FIELD_UNIX_FDS, 9).
 
+%% The header flags a METHOD_CALL may carry. `ALLOW_INTERACTIVE_AUTHORIZATION'
+%% is the one added after 1.0 (specification 0.30, `dbus-daemon' 1.10): a
+%% caller sets it to say it can wait while the peer's policy asks the user,
+%% and a peer that does not know the flag ignores it.
 -define(NO_REPLY_EXPECTED, 1).
 -define(NO_AUTO_START, 2).
+-define(ALLOW_INTERACTIVE_AUTHORIZATION, 4).
 
 %% The number of file descriptors one message may carry. `libdbus' allows 16,
 %% and `dbus-daemon' publishes the number as `max_message_unix_fds' --
@@ -54,6 +59,8 @@
     | method_return
     | error
     | signal.
+
+-type dbus_header_field() :: {integer(), term()}.
 
 -type dbus_type() ::
     byte
@@ -106,7 +113,7 @@
     version = ?DBUS_VERSION_MAJOR :: integer(),
     size = 0 :: integer(),
     serial = 0 :: dbus_serial(),
-    fields = [] :: list()
+    fields = [] :: [dbus_header_field()]
 }).
 -type dbus_header() :: #dbus_header{}.
 

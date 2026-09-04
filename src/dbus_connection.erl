@@ -50,6 +50,7 @@ to `send/2` are still open here when it returns.
 -record(state, {
     pg :: pid() | undefined,
     pg_scope :: atom(),
+    callers :: ets:table(),
     auth_ctx :: term() | undefined,
     transport :: dbus_transport:connection() | undefined,
     guid = <<>> :: binary(),
@@ -74,8 +75,6 @@ to `send/2` are still open here when it returns.
     option/0
 ]).
 
--define(SERVER_OPTS_KEYS, [name]).
-
 -spec start_link(dbus_address() | [dbus_address()]) -> gen_server:start_ret().
 start_link(Addresses) when is_list(Addresses) ->
     start_link(Addresses, []);
@@ -84,13 +83,17 @@ start_link(Address) ->
 
 -spec start_link(dbus_address() | [dbus_address()], [option()]) -> gen_server:start_ret().
 start_link(Addresses, Options) when is_list(Addresses) ->
-    ServerOpts = server_opts(Options),
     StartArgs = #{
         addresses => Addresses,
         auth_ctx => proplists:get_value(auth_ctx, Options, #{}),
         pg_scope => proplists:get_value(scope, Options, ?DEFAULT_PG_SCOPE)
     },
-    gen_server:start_link(?MODULE, StartArgs, ServerOpts).
+    case proplists:get_value(name, Options) of
+        undefined ->
+            gen_server:start_link(?MODULE, StartArgs, []);
+        Name ->
+            gen_server:start_link({local, Name}, ?MODULE, StartArgs, [])
+    end.
 
 -spec stop(connection()) ->
     ok.
@@ -107,6 +110,9 @@ get_guid(Connection) ->
 
 -doc """
 Subscribe to connection messages
+
+Messages are sent to subscribers as:
+`{dbus, Conn, Type, Message}`
 """.
 -spec subscribe(connection()) -> ok.
 subscribe(Connection) ->
@@ -122,9 +128,10 @@ Returns message serial, allocated by connection.
 and nothing is written; the descriptors stay open and stay the caller's.
 """.
 -spec send(connection(), dbus_message()) ->
-    {ok, dbus_serial()} | {error, term()}.
+    ok | {error, term()}.
 send(Connection, Message) ->
-    gen_server:call(Connection, {send, Message}).
+    Type = dbus_message:get_type(Message),
+    gen_server:call(Connection, {send, Type, Message}).
 
 %%%
 %%% Callbacks implementation
@@ -136,8 +143,10 @@ init(
         pg_scope := PgScope
     } = _StartArgs
 ) ->
+    process_flag(trap_exit, true),
     {ok, Pg} = pg:start_link(PgScope),
-    State = #state{pg = Pg, pg_scope = PgScope, auth_ctx = AuthCtx},
+    Callers = ets:new(?MODULE, [set, private]),
+    State = #state{pg = Pg, pg_scope = PgScope, auth_ctx = AuthCtx, callers = Callers},
     try_connect(Addresses, State).
 
 handle_call(get_guid, _From, #state{guid = Guid} = State) ->
@@ -147,28 +156,32 @@ handle_call(get_guid, _From, #state{guid = Guid} = State) ->
 %% cannot carry a descriptor at all; this is the other half -- one it could
 %% carry, that the peer never agreed to.
 handle_call(
-    {send, #dbus_message{fds = [_ | _]}},
+    {send, method_call, #dbus_message{fds = [_ | _]}},
     _From,
     #state{agree_unix_fd = false} = State
 ) ->
     {reply, {error, unix_fd_not_negotiated}, State};
-handle_call({send, Message}, _From, #state{transport = Conn} = State) ->
-    {Message1, State1} =
-        case dbus_message:get_serial(Message) of
-            0 ->
-                {
-                    dbus_message:set_serial(State#state.serial, Message), incr_serial(State)
-                };
-            _Serial ->
-                {Message, State}
-        end,
-
+handle_call({send, method_call, Message}, From, #state{transport = Conn} = State) ->
+    Message1 = dbus_message:set_serial(State#state.serial, Message),
+    State1 = incr_serial(State),
     Data = dbus_marshaller:marshal_message(Message1),
     case dbus_transport:send(Conn, Data, Message1#dbus_message.fds) of
         ok ->
-            {reply, {ok, dbus_message:get_serial(Message1)}, State1};
+            true = ets:insert(
+                State#state.callers,
+                {dbus_message:get_serial(Message1), From}
+            ),
+            {reply, ok, State1};
         {error, Reason} ->
             {reply, {error, Reason}, State1}
+    end;
+handle_call({send, signal, Message}, _From, #state{transport = Conn} = State) ->
+    Data = dbus_marshaller:marshal_message(Message),
+    case dbus_transport:send(Conn, Data) of
+        ok ->
+            {reply, ok, State};
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
     end;
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
@@ -208,13 +221,10 @@ handle_info(
             discard_fds(Queue1, {unmarshal_error, Reason}),
             {stop, {unmarshal_error, Reason}, State#state{fds = []}}
     end;
-handle_info(
-    {'DOWN', _Ref, process, Pg, _Reason},
-    #state{pg = Pg} = State
-) ->
-    {stop, pg_down, State};
 handle_info({'EXIT', Reader, Reason}, #state{reader = Reader} = State) ->
     {stop, {reader_exit, Reason}, State};
+handle_info({'EXIT', Pg, Reason}, #state{pg = Pg} = State) ->
+    {stop, {pg_exit, Reason}, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -268,13 +278,49 @@ handle_begin(
 
 dispatch_messages(Messages, State) ->
     lists:foreach(
+        fun(Message) when is_record(Message, dbus_message) ->
+            case dbus_message:get_type(Message) of
+                method_return ->
+                    dispatch_return(method_return, Message, State);
+                error ->
+                    dispatch_return(error, Message, State);
+                _ ->
+                    publish_message(Message, State)
+            end
+        end,
+        Messages
+    ).
+
+%% A reply names the call it answers in `REPLY_SERIAL'. Its own serial counts
+%% the peer's messages, not ours: the two agree only on the very first message
+%% either side sends, and `dbus-daemon' has already spent one on `NameAcquired'
+%% by the time the second call goes out.
+dispatch_return(Type, Message, State) ->
+    case dbus_message:find_field(?FIELD_REPLY_SERIAL, Message) of
+        undefined ->
+            ?LOG_WARNING("Received ~p carrying no reply serial: ~p", [Type, Message]),
+            State;
+        Serial ->
+            dispatch_return(Type, Message, Serial, State)
+    end.
+
+dispatch_return(Type, Message, Serial, #state{callers = Callers} = State) ->
+    case ets:lookup(Callers, Serial) of
+        [{Serial, {Pid, _Tag}}] ->
+            Pid ! {dbus, self(), Type, Message},
+            ets:delete(Callers, Serial),
+            State;
+        [] ->
+            % It is valid to receive an error for which we have no record of a
+            % caller
+            publish_message(Message, State)
+    end.
+
+publish_message(Message, State) ->
+    lists:foreach(
         fun(Pid) ->
-            lists:foreach(
-                fun(Message) ->
-                    Pid ! {dbus, self(), Message}
-                end,
-                Messages
-            )
+            Type = dbus_message:get_type(Message),
+            Pid ! {dbus, self(), Type, Message}
         end,
         pg:get_members(State#state.pg_scope, self())
     ).
@@ -321,14 +367,6 @@ reader_loop(Conn, Parent) ->
             %% Handle error
             exit({recv_error, Reason})
     end.
-
-server_opts(Props) ->
-    lists:filter(
-        fun({Key, _Value}) ->
-            lists:member(Key, ?SERVER_OPTS_KEYS)
-        end,
-        Props
-    ).
 
 %%%
 %%% Tests
@@ -451,7 +489,7 @@ sending_descriptors_unnegotiated_test() ->
     State = #state{agree_unix_fd = false, serial = 1},
     ?assertEqual(
         {reply, {error, unix_fd_not_negotiated}, State},
-        handle_call({send, fd_message([3])}, {self(), tag}, State)
+        handle_call({send, method_call, fd_message([3])}, {self(), tag}, State)
     ).
 
 %%%

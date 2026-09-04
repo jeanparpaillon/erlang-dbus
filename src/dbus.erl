@@ -11,6 +11,7 @@ Connection to a D-Bus bus is the main application entry point for interacting wi
 -export([
     start_link/1,
     start_link/2,
+    get_conn/1,
     stop/1
 ]).
 
@@ -44,7 +45,11 @@ start_link(Address, ConnOpts) ->
             {error, Reason}
     end.
 
--spec stop(pid()) -> ok.
+-spec get_conn(address()) -> atom().
+get_conn(Address) ->
+    conn_name(Address).
+
+-spec stop(atom()) -> ok.
 stop(Bus) ->
     supervisor:stop(Bus).
 
@@ -58,15 +63,14 @@ init(#{
     conn_opts := ConnOpts
 }) ->
     ConnOpts1 = [{name, ConnName} | ConnOpts],
-    ProxyOpts = [{name, ProxyName}],
     Children = [
         #{
             id => dbus_connection,
             start => {dbus_connection, start_link, [Addresses, ConnOpts1]}
         },
         #{
-            id => dbus_proxy,
-            start => {dbus_proxy, start_link, [ConnName, ProxyOpts]}
+            id => dbus_bus,
+            start => {dbus_bus, start_link, [ConnName, ProxyName]}
         }
     ],
     SupFlags = #{strategy => one_for_one},

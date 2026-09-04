@@ -1,6 +1,6 @@
 -module(dbus_message).
 -moduledoc """
-Creates, update `t:dbus_message()` structures.
+Helpers for accessing low-level message structures.
 """.
 
 -include("dbus.hrl").
@@ -19,15 +19,9 @@ Creates, update `t:dbus_message()` structures.
     | no_reply_expected
     | no_auto_start.
 
--type casted() ::
-    dbus_method_call:t()
-    | dbus_method_return:t()
-    | dbus_signal:t().
-
--export_type([method_opt/0, casted/0]).
+-export_type([method_opt/0]).
 
 -export([
-    cast/1,
     get_serial/1,
     set_serial/2,
     get_type/1,
@@ -36,15 +30,6 @@ Creates, update `t:dbus_message()` structures.
     find_field/3,
     fd/2
 ]).
-
--doc "Cast message into proper struct".
--spec cast(dbus_message()) -> casted().
-cast(Message) ->
-    case get_type(Message) of
-        method_call -> dbus_method_call:from_message(Message);
-        method_return -> dbus_method_return:from_message(Message);
-        signal -> dbus_signal:from_message(Message)
-    end.
 
 -doc "Get serial number from message.".
 -spec get_serial(dbus_message()) -> dbus_serial().
