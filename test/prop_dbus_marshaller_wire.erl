@@ -129,7 +129,7 @@ marshal_all(Msgs) ->
 %% beyond the body is the header.
 prop_header_is_multiple_of_8() ->
     ?FORALL(
-        {#dbus_message{body = {Sig, Vs}} = Msg, _Decoded},
+        {#dbus_message{body_sig = Sig, body = Vs} = Msg, _Decoded},
         dbus_marshaller_gen:message(),
         begin
             Bin = dbus_marshaller:marshal_message(Msg),

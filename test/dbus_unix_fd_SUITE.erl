@@ -261,7 +261,7 @@ method_call(Destination, Path, Interface, Member) ->
 %% descriptor, so it is 0 whatever number the caller is passing.
 fd_call(Destination, Index) ->
     Call = method_call(Destination, ?ECHO_PATH, ?ECHO_IFACE, ?ECHO_MEMBER),
-    Call#dbus_message{body = {[unix_fd], [Index]}}.
+    Call#dbus_message{body_sig = [unix_fd], body = [Index]}.
 
 fd_return(Destination, ReplySerial) ->
     #dbus_message{
@@ -272,7 +272,8 @@ fd_return(Destination, ReplySerial) ->
                 {?FIELD_DESTINATION, #dbus_variant{type = string, value = Destination}}
             ]
         },
-        body = {[unix_fd], [0]}
+        body_sig = [unix_fd],
+        body = [0]
     }.
 
 %%%

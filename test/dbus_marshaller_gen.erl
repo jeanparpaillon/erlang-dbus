@@ -587,10 +587,11 @@ Two constraints come from the encoder rather than from the protocol:
 `marshal_message/1' errors on serial 0; and the decoded message differs from the
 encoded one in four fixed ways -- `size' is filled in, the `SIGNATURE' field
 `marshal_message/1' synthesises from the body signature is there, first, header
-field values lose their `#dbus_variant{}' wrapper, and the body is the decoded
-values alone rather than the `{Signature, Values}' pair that was encoded. That
-last one means `marshal_message/1' cannot consume the output of
-`unmarshal_data/1', even though `#dbus_message.body' is typed as if it could.
+field values lose their `#dbus_variant{}' wrapper, and the body is a single
+value or a tuple of them rather than the value list that was encoded, with
+`body_sig' left `undefined' -- the signature that went in is only readable back
+off the `SIGNATURE' header field. Those last two mean `marshal_message/1' cannot
+consume the output of `unmarshal_data/1'.
 
 The generator must *not* set `SIGNATURE' itself: `marshal_message/1' prepends
 its own unconditionally, so a caller-supplied one is emitted twice.
@@ -621,7 +622,7 @@ message() ->
                     },
                     body = decoded_body(Sig, Vs)
                 },
-                {#dbus_message{header = Header, body = {Sig, Vs}}, Decoded}
+                {#dbus_message{header = Header, body_sig = Sig, body = Vs}, Decoded}
             end
         )
     ).
