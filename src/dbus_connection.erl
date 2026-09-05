@@ -48,8 +48,6 @@ to `send/2` are still open here when it returns.
 ]).
 
 -record(state, {
-    pg :: pid() | undefined,
-    pg_scope :: atom(),
     callers :: ets:table(),
     auth_ctx :: term() | undefined,
     transport :: dbus_transport:connection() | undefined,
@@ -58,10 +56,9 @@ to `send/2` are still open here when it returns.
     serial = 1 :: dbus_serial(),
     reader :: pid() | undefined,
     acc = <<>> :: binary(),
-    fds = [] :: [dbus_fd:fd()]
+    fds = [] :: [dbus_fd:fd()],
+    pubsub :: pid()
 }).
-
--define(DEFAULT_PG_SCOPE, dbus).
 
 -type connection() :: gen_server:server_ref().
 -opaque option() ::
@@ -85,8 +82,7 @@ start_link(Address) ->
 start_link(Addresses, Options) when is_list(Addresses) ->
     StartArgs = #{
         addresses => Addresses,
-        auth_ctx => proplists:get_value(auth_ctx, Options, #{}),
-        pg_scope => proplists:get_value(scope, Options, ?DEFAULT_PG_SCOPE)
+        auth_ctx => proplists:get_value(auth_ctx, Options, #{})
     },
     case proplists:get_value(server_ref, Options) of
         undefined ->
@@ -121,7 +117,9 @@ subscribe(Connection) ->
 -doc """
 Send given message to the D-Bus peer.
 
-Returns message serial, allocated by connection.
+The serial is allocated here, whatever the message type: calls, replies and
+signals all count against the same sequence. A reply to a method call is
+delivered to the process that sent it, as `{dbus, Conn, Type, Message}`.
 
 `#dbus_message.fds` travel with it. On a connection that did not negotiate
 `AGREE_UNIX_FD` a message carrying descriptors is `{error, unix_fd_not_negotiated}`
@@ -139,14 +137,13 @@ send(Connection, Message) ->
 init(
     #{
         addresses := Addresses,
-        auth_ctx := AuthCtx,
-        pg_scope := PgScope
+        auth_ctx := AuthCtx
     } = _StartArgs
 ) ->
     process_flag(trap_exit, true),
-    {ok, Pg} = pg:start_link(PgScope),
     Callers = ets:new(?MODULE, [set, private]),
-    State = #state{pg = Pg, pg_scope = PgScope, auth_ctx = AuthCtx, callers = Callers},
+    {ok, PubSub} = dbus_pubsub:start_link(),
+    State = #state{auth_ctx = AuthCtx, callers = Callers, pubsub = PubSub},
     try_connect(Addresses, State).
 
 handle_call(get_guid, _From, #state{guid = Guid} = State) ->
@@ -156,38 +153,30 @@ handle_call(get_guid, _From, #state{guid = Guid} = State) ->
 %% cannot carry a descriptor at all; this is the other half -- one it could
 %% carry, that the peer never agreed to.
 handle_call(
-    {send, method_call, #dbus_message{fds = [_ | _]}},
+    {send, _Type, #dbus_message{fds = [_ | _]}},
     _From,
     #state{agree_unix_fd = false} = State
 ) ->
     {reply, {error, unix_fd_not_negotiated}, State};
-handle_call({send, method_call, Message}, From, #state{transport = Conn} = State) ->
+%% Every outgoing message is serialled here, replies and signals included: the
+%% serial counts *our* messages and a zero one does not marshal, so it is not
+%% the caller's to set. What a reply answers is `REPLY_SERIAL', a field the
+%% caller does fill in, and this leaves it alone.
+handle_call({send, Type, Message}, From, #state{transport = Conn} = State) ->
     Message1 = dbus_message:set_serial(State#state.serial, Message),
     State1 = incr_serial(State),
     Data = dbus_marshaller:marshal_message(Message1),
     case dbus_transport:send(Conn, Data, Message1#dbus_message.fds) of
         ok ->
-            true = ets:insert(
-                State#state.callers,
-                {dbus_message:get_serial(Message1), From}
-            ),
-            {reply, ok, State1};
+            {reply, ok, expect_reply(Type, Message1, From, State1)};
         {error, Reason} ->
             {reply, {error, Reason}, State1}
-    end;
-handle_call({send, signal, Message}, _From, #state{transport = Conn} = State) ->
-    Data = dbus_marshaller:marshal_message(Message),
-    case dbus_transport:send(Conn, Data) of
-        ok ->
-            {reply, ok, State};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
     end;
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 handle_cast({subscribe, Subscriber}, State) ->
-    pg:join(State#state.pg_scope, self(), Subscriber),
+    dbus_pubsub:subscribe(self(), Subscriber),
     {noreply, State};
 handle_cast(_Request, State) ->
     {noreply, State}.
@@ -223,8 +212,8 @@ handle_info(
     end;
 handle_info({'EXIT', Reader, Reason}, #state{reader = Reader} = State) ->
     {stop, {reader_exit, Reason}, State};
-handle_info({'EXIT', Pg, Reason}, #state{pg = Pg} = State) ->
-    {stop, {pg_exit, Reason}, State};
+handle_info({'EXIT', PubSub, Reason}, #state{pubsub = PubSub} = State) ->
+    {stop, {pubsub_exit, Reason}, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -238,6 +227,21 @@ code_change(_OldVsn, State, _Extra) ->
 %%%
 %%% Private
 %%%
+
+%% Only a method call is answered, and only one that asked to be: the entry is
+%% what routes the reply back to this caller, and an entry nothing will ever
+%% match is a leak for as long as the connection lives.
+expect_reply(method_call, Message, From, #state{callers = Callers} = State) ->
+    case dbus_method_call:no_reply_expected(Message) of
+        true ->
+            State;
+        false ->
+            true = ets:insert(Callers, {dbus_message:get_serial(Message), From}),
+            State
+    end;
+expect_reply(_Type, _Message, _From, State) ->
+    State.
+
 try_connect([], _State) ->
     {stop, no_addresses};
 try_connect([Address | Addresses], State) ->
@@ -285,16 +289,12 @@ dispatch_messages(Messages, State) ->
                 error ->
                     dispatch_return(error, Message, State);
                 _ ->
-                    publish_message(Message, State)
+                    publish_message(Message)
             end
         end,
         Messages
     ).
 
-%% A reply names the call it answers in `REPLY_SERIAL'. Its own serial counts
-%% the peer's messages, not ours: the two agree only on the very first message
-%% either side sends, and `dbus-daemon' has already spent one on `NameAcquired'
-%% by the time the second call goes out.
 dispatch_return(Type, Message, State) ->
     case dbus_message:find_field(?FIELD_REPLY_SERIAL, Message) of
         undefined ->
@@ -311,18 +311,13 @@ dispatch_return(Type, Message, Serial, #state{callers = Callers} = State) ->
             ets:delete(Callers, Serial),
             State;
         [] ->
-            % It is valid to receive an error for which we have no record of a
-            % caller
-            publish_message(Message, State)
+            publish_message(Message)
     end.
 
-publish_message(Message, State) ->
-    lists:foreach(
-        fun(Pid) ->
-            Type = dbus_message:get_type(Message),
-            Pid ! {dbus, self(), Type, Message}
-        end,
-        pg:get_members(State#state.pg_scope, self())
+publish_message(Message) ->
+    dbus_pubsub:publish(
+        self(),
+        {dbus, self(), dbus_message:get_type(Message), Message}
     ).
 
 %% What the owner never received, closed here. `m:dbus_fd' is a NIF because
@@ -382,6 +377,31 @@ reader_loop(Conn, Parent) ->
 %%%     the front, so several messages in one `recv' each get their own;
 %%%   * every path where nobody takes delivery closes the descriptors.
 
+%% `dbus_pubsub' is a `pg' scope a connection starts on demand in `init/1',
+%% not something the application brings up, and every test here reaches it --
+%% through `publish_message/2' on the way out, or through `negotiated_state/0'
+%% subscribing on the way in -- so the group starts the scope itself.
+framing_test_() ->
+    {setup, fun start_pubsub/0, fun stop_pubsub/1, [
+        fun descriptors_reach_the_owner/0,
+        fun bytes_split_across_two_recvs/0,
+        fun descriptors_still_in_flight/0,
+        fun two_messages_one_recv/0,
+        fun unclaimed_descriptors_stay_queued/0,
+        fun unnegotiated_descriptors_stop_the_connection/0,
+        fun unmarshal_failure_closes_the_queue/0,
+        fun terminate_closes_the_queue/0
+    ]}.
+
+%% `start_link/0' links the scope to the setup process, which is the process
+%% the tests then run in: the scope cannot outlive the group by accident.
+start_pubsub() ->
+    {ok, Pid} = dbus_pubsub:start_link(),
+    Pid.
+
+stop_pubsub(Pid) ->
+    gen_server:stop(Pid).
+
 %% A message whose body is a single `h' pointing at the first descriptor. Its
 %% `UNIX_FDS' field is synthesised from `fds' while marshalling.
 fd_message(Fds) ->
@@ -394,27 +414,22 @@ fd_message(Fds) ->
 
 %% The owner and the reader are both the test process: what the connection
 %% sends the owner lands in the test's own mailbox. `publish_message/2' goes
-%% through `pg', so the scope has to exist and the test has to be a member of
-%% the group the connection publishes to -- which, `handle_info/2' being called
-%% straight from the test, is the test process itself.
+%% through `dbus_pubsub', so the registry has to be up -- hence the fixture --
+%% and the test has to be a member of the group the connection publishes to,
+%% which, `handle_info/2' being called straight from the test, is the test
+%% process itself.
+%%
+%% The whole fixture runs in one process, so `negotiated_state/0' subscribes
+%% the same pid on every test; `dbus_pubsub:subscribe/2' is idempotent and one
+%% delivery is what arrives.
 negotiated_state() ->
-    Scope = test_pg_scope(),
-    ok = pg:join(Scope, self(), self()),
-    #state{reader = self(), pg_scope = Scope, agree_unix_fd = true}.
-
-%% A scope of its own per test: eunit runs each in a fresh process, and a
-%% linked scope dies with it, so a shared name would race the next start.
-test_pg_scope() ->
-    Scope = list_to_atom(
-        "dbus_connection_test_pg_" ++ integer_to_list(erlang:unique_integer([positive]))
-    ),
-    {ok, _} = pg:start_link(Scope),
-    Scope.
+    dbus_pubsub:subscribe(self(), self()),
+    #state{reader = self(), agree_unix_fd = true}.
 
 data(Data, Fds) ->
     {data, Data, Fds, self()}.
 
-descriptors_reach_the_owner_test() ->
+descriptors_reach_the_owner() ->
     Bin = dbus_marshaller:marshal_message(fd_message([3, 4])),
     {noreply, State} = handle_info(data(Bin, [7, 8]), negotiated_state()),
     ?assertMatch([#dbus_message{fds = [7, 8]}], delivered()),
@@ -422,7 +437,7 @@ descriptors_reach_the_owner_test() ->
 
 %% The descriptors are attached to the segment they arrived on, which is not
 %% the segment the message ends on.
-bytes_split_across_two_recvs_test() ->
+bytes_split_across_two_recvs() ->
     Bin = dbus_marshaller:marshal_message(fd_message([3])),
     <<Head:16/binary, Tail/binary>> = Bin,
     {noreply, State1} = handle_info(data(Head, [7]), negotiated_state()),
@@ -434,7 +449,7 @@ bytes_split_across_two_recvs_test() ->
 
 %% All the bytes and not all the descriptors: `unmarshal_data/2' answers
 %% `more' and the message waits, rather than being framed with a short list.
-descriptors_still_in_flight_test() ->
+descriptors_still_in_flight() ->
     Bin = dbus_marshaller:marshal_message(fd_message([3, 4])),
     {noreply, State1} = handle_info(data(Bin, [7]), negotiated_state()),
     ?assertEqual([], delivered()),
@@ -445,7 +460,7 @@ descriptors_still_in_flight_test() ->
 
 %% Two messages in one `sendmsg': the descriptors belong to the one that
 %% declares them, whatever order the peer packed them in.
-two_messages_one_recv_test() ->
+two_messages_one_recv() ->
     First = dbus_marshaller:marshal_message(fd_message([])),
     Second = dbus_marshaller:marshal_message(fd_message([3, 4])),
     Recv = data(<<First/binary, Second/binary>>, [7, 8]),
@@ -458,13 +473,13 @@ two_messages_one_recv_test() ->
 
 %% A leftover descriptor is a peer's, not a bug here: it belongs to a message
 %% whose bytes have not all arrived.
-unclaimed_descriptors_stay_queued_test() ->
+unclaimed_descriptors_stay_queued() ->
     Bin = dbus_marshaller:marshal_message(fd_message([3])),
     {noreply, State} = handle_info(data(Bin, [7, 8]), negotiated_state()),
     ?assertMatch([#dbus_message{fds = [7]}], delivered()),
     ?assertEqual([8], State#state.fds).
 
-unnegotiated_descriptors_stop_the_connection_test() ->
+unnegotiated_descriptors_stop_the_connection() ->
     with_fds(2, fun unnegotiated_descriptors_stop_the_connection/1).
 
 unnegotiated_descriptors_stop_the_connection(Fds) ->
@@ -477,7 +492,7 @@ unnegotiated_descriptors_stop_the_connection(Fds) ->
 
 %% Nothing was framed, so no message claimed a descriptor and the whole queue
 %% is undeliverable.
-unmarshal_failure_closes_the_queue_test() ->
+unmarshal_failure_closes_the_queue() ->
     with_fds(1, fun unmarshal_failure_closes_the_queue/1).
 
 unmarshal_failure_closes_the_queue(Fds) ->
@@ -490,7 +505,7 @@ unmarshal_failure_closes_the_queue(Fds) ->
     ?assertEqual([], State#state.fds),
     assert_closed(Fds).
 
-terminate_closes_the_queue_test() ->
+terminate_closes_the_queue() ->
     with_fds(2, fun terminate_closes_the_queue/1).
 
 terminate_closes_the_queue(Fds) ->

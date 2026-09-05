@@ -202,6 +202,10 @@ echo_through_bus(Address, Fd) ->
         AName = hello(A),
         {ok, B} = dbus_connection:start_link([Address]),
         try
+            %% Subscribed before the `Hello', so the reply to that call is
+            %% proof the cast has been handled: what `B' is waited on for is
+            %% an incoming *call*, which reaches a subscriber and nobody else.
+            ok = dbus_connection:subscribe(B),
             BName = hello(B),
             echo_through_bus(A, AName, B, BName, Fd)
         after
@@ -213,31 +217,31 @@ echo_through_bus(Address, Fd) ->
 
 echo_through_bus(A, AName, B, BName, Fd) ->
     Call = fd_call(BName, 0),
-    {ok, Serial} = dbus_connection:send(A, Call#dbus_message{fds = [Fd]}),
+    ok = dbus_connection:send(A, Call#dbus_message{fds = [Fd]}),
 
-    Received = expect_call(?ECHO_MEMBER),
+    Received = expect_call(B, ?ECHO_MEMBER),
     ?assertEqual(0, Received#dbus_message.body),
     {ok, Relayed} = dbus_message:fd(0, Received),
     ?assertNotEqual(Fd, Relayed),
 
     try
         Return = fd_return(AName, dbus_message:get_serial(Received)),
-        {ok, _} = dbus_connection:send(B, Return#dbus_message{fds = [Relayed]})
+        ok = dbus_connection:send(B, Return#dbus_message{fds = [Relayed]})
     after
         %% Sent or not, this copy is ours: `sendmsg(2)' gave the daemon a
         %% duplicate of the open file description, not this number.
         ok = dbus_fd:close(Relayed)
     end,
 
-    Echo = expect_return(Serial),
+    Echo = expect_return(A),
     ?assertEqual(0, Echo#dbus_message.body),
     {ok, Echoed} = dbus_message:fd(0, Echo),
     Echoed.
 
 hello(Conn) ->
     Call = method_call(?BUS_NAME, ?BUS_PATH, ?BUS_NAME, <<"Hello">>),
-    {ok, Serial} = dbus_connection:send(Conn, Call),
-    Msg = expect_return(Serial),
+    ok = dbus_connection:send(Conn, Call),
+    Msg = expect_return(Conn),
     Msg#dbus_message.body.
 
 %%%
@@ -280,42 +284,45 @@ fd_return(Destination, ReplySerial) ->
 %%% Receiving
 %%%
 
-%% `NameAcquired' and anything else the bus volunteers is skipped: what is
-%% waited for is named by the predicate.
-recv_dbus(Pred) ->
+%% Both connections deliver `{dbus, Conn, Type, Message}' into this one
+%% mailbox, so `Conn' is bound in the pattern: the selective receive leaves the
+%% other connection's messages queued rather than discarding them. `Type' is
+%% the atom the connection already decoded. `NameAcquired' and anything else
+%% the bus volunteers is skipped -- what is waited for is named by the
+%% predicate.
+recv_dbus(Conn, Pred) ->
     receive
-        {dbus, Msg} ->
-            case Pred(Msg) of
+        {dbus, Conn, Type, Msg} ->
+            case Pred(Type, Msg) of
                 true -> Msg;
-                false -> recv_dbus(Pred)
+                false -> recv_dbus(Conn, Pred)
             end
     after ?RECV_TIMEOUT ->
         ct:fail(no_matching_dbus_message)
     end.
 
-expect_return(Serial) ->
-    Msg = recv_dbus(fun(M) -> is_reply_to(Serial, M) end),
-    case Msg of
-        #dbus_message{header = #dbus_header{type = ?TYPE_ERROR}} ->
+%% `send/2' does not hand back a serial and does not need to: a reply reaches
+%% the process that made the call, and only for a serial the connection
+%% allocated to it. Nothing here has two calls outstanding on one connection,
+%% so the type is the whole of the correlation.
+expect_return(Conn) ->
+    Msg = recv_dbus(Conn, fun(Type, _) -> is_reply(Type) end),
+    case dbus_message:get_type(Msg) of
+        error ->
             ct:fail({dbus_error, dbus_message:find_field(?FIELD_ERROR_NAME, Msg)});
         _ ->
             Msg
     end.
 
-expect_call(Member) ->
-    recv_dbus(fun(M) -> is_call_of(Member, M) end).
+expect_call(Conn, Member) ->
+    recv_dbus(Conn, fun(Type, Msg) -> Type =:= method_call andalso is_call_of(Member, Msg) end).
 
-is_reply_to(Serial, #dbus_message{header = #dbus_header{type = Type}} = Msg) when
-    Type =:= ?TYPE_METHOD_RETURN; Type =:= ?TYPE_ERROR
-->
-    dbus_message:find_field(?FIELD_REPLY_SERIAL, Msg) =:= Serial;
-is_reply_to(_Serial, _Msg) ->
-    false.
+is_reply(method_return) -> true;
+is_reply(error) -> true;
+is_reply(_Type) -> false.
 
-is_call_of(Member, #dbus_message{header = #dbus_header{type = ?TYPE_METHOD_CALL}} = Msg) ->
-    dbus_message:find_field(?FIELD_MEMBER, Msg) =:= Member;
-is_call_of(_Member, _Msg) ->
-    false.
+is_call_of(Member, Msg) ->
+    dbus_message:find_field(?FIELD_MEMBER, Msg) =:= Member.
 
 %%%
 %%% The auth conversation, traced
