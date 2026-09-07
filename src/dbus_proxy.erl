@@ -19,6 +19,7 @@ This module defines a proxy to a D-Bus object
 -export([
     start_link/4,
     call/2,
+    rpc_call/2,
     stop/1
 ]).
 
@@ -60,6 +61,10 @@ start_link(CbMod, CbArgs, Conn, Opts) ->
 call(Proxy, Request) ->
     gen_server:call(Proxy, {proxy, Request}).
 
+-spec rpc_call(proxy(), dbus_message()) -> term().
+rpc_call(Proxy, Call) ->
+    with_conn(Proxy, fun(Conn) -> dbus_rpc:call(Conn, Call) end).
+
 -spec stop(proxy()) -> ok.
 stop(Proxy) ->
     gen_server:stop(Proxy).
@@ -88,6 +93,8 @@ handle_call({proxy, Request}, From, State) ->
         {stop, Reason, CbState1} ->
             {stop, Reason, State#state{cb_state = CbState1}}
     end;
+handle_call(get_conn, _From, State) ->
+    {reply, State#state.conn, State};
 handle_call(_Call, _From, State) ->
     {reply, ok, State}.
 
@@ -147,3 +154,11 @@ handle_callback(error, Error, State) ->
     CbState = State#state.cb_state,
     {noreply, CbState1} = CbMod:handle_dbus(Error, CbState),
     {noreply, State#state{cb_state = CbState1}}.
+
+with_conn(Proxy, Fun) ->
+    case gen_server:call(Proxy, get_conn) of
+        Conn when is_pid(Conn) ->
+            Fun(Conn);
+        _ ->
+            exit({noproc, Proxy})
+    end.

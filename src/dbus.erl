@@ -24,6 +24,10 @@ Connection to a D-Bus bus is the main application entry point for interacting wi
     | session
     | binary().
 
+-type child_id() ::
+    dbus_connection
+    | dbus_bus.
+
 -spec start_link(address()) -> gen_server:start_ret().
 start_link(Address) ->
     start_link(Address, []).
@@ -48,11 +52,11 @@ start_link(Address, ConnOpts) ->
 
 -spec get_conn(address()) -> gen_server:server_ref().
 get_conn(Address) ->
-    conn_ref(Address).
+    get_children(Address, dbus_connection).
 
 -spec get_proxy(address()) -> gen_server:server_ref().
 get_proxy(Address) ->
-    proxy_ref(Address).
+    get_children(Address, dbus_bus).
 
 -spec stop(address()) -> ok.
 stop(Address) ->
@@ -125,3 +129,21 @@ resolve_address(session) ->
     end;
 resolve_address(Address) when is_binary(Address) ->
     Address.
+
+-spec get_children(address(), child_id()) ->
+    undefined
+    | restarting
+    | pid().
+get_children(Address, Id) ->
+    SupRef = sup_ref(Address),
+    try
+        case supervisor:which_child(SupRef, Id) of
+            {error, not_found} ->
+                undefined;
+            {ok, {_Id, Child, _Type, _Module}} ->
+                Child
+        end
+    catch
+        exit:_Reason ->
+            undefined
+    end.

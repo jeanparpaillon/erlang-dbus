@@ -61,7 +61,18 @@ request_name(Proxy, Name) ->
     {ok, request_name_ret()}
     | {error, term()}.
 request_name(Proxy, Name, Opts) ->
-    dbus_proxy:call(Proxy, {request_name, Name, Opts}).
+    Flags = process_request_name_opts(Opts, 0),
+    Args = {[string, uint32], [Name, Flags]},
+    Request = dbus_method_call:build(
+        ?MEMBER_REQUEST_NAME,
+        ?PATH,
+        Args,
+        [
+            {interface, ?INTERFACE},
+            {destination, ?SERVICE_DBUS}
+        ]
+    ),
+    dbus_proxy:rpc_call(Proxy, Request).
 
 %%%
 %%% Callbacks
@@ -90,21 +101,8 @@ handle_dbus(Message, State) ->
     Member = dbus_message:find_field(?FIELD_MEMBER, Message),
     do_handle(Interface, Member, Message, State).
 
-handle_call({request_name, Name, Opts}, _From, State) ->
-    Flags = process_request_name_opts(Opts, 0),
-    Args = {[string, uint32], [Name, Flags]},
-    Request = dbus_method_call:build(
-        ?MEMBER_REQUEST_NAME,
-        ?PATH,
-        Args,
-        [
-            {interface, ?INTERFACE},
-            {destination, ?SERVICE_DBUS}
-        ]
-    ),
-
-    Ret = dbus_rpc:call(State#state.conn, Request),
-    {reply, Ret, State}.
+handle_call(_Call, _From, State) ->
+    {reply, ok, State}.
 
 do_handle(?INTERFACE, ?MEMBER_NAME_ACQUIRED, Message, State) ->
     case dbus_message:get_body(Message) of

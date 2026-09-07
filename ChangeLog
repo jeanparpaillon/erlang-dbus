@@ -3,7 +3,7 @@
 	Features:
 	- Support UNIX FD passing
 	- Enable multiple auth mechanisms negotiation
-	- Connection now loop ovetr possible addresses
+	- Connection now loop over possible addresses
 	- Support transport nonce-tcp 
 
 	Quality:
