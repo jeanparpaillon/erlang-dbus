@@ -7,7 +7,6 @@ Specification](https://dbus.freedesktop.org/doc/dbus-specification.html#message-
 """.
 
 -include("dbus.hrl").
--include("dbus_constants.hrl").
 
 -elvis([
     {elvis_style, export_used_types, #{ignore => [dbus_marshaller]}},
@@ -130,7 +129,7 @@ marshal_message(#dbus_message{header = Header, body_sig = Types, body = Content,
             <<HeaderBin/binary, BodyBin/binary>>
     catch
         error:_Err ->
-            error({?DBUS_ERROR_INVALID_PARAMETERS, Types})
+            error({invalid_parameters, Types})
     end.
 
 -doc """
