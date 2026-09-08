@@ -6,11 +6,31 @@ Defines a D-Bus error struct
 -include_lib("kernel/include/logger.hrl").
 
 -export([
+    build/3,
     cast/1
 ]).
 
 -type t() :: binary() | {binary(), binary()}.
 -export_type([t/0]).
+
+-spec build(
+    Orig :: dbus_message(),
+    ErrName :: binary() | list(),
+    ErrText :: binary() | list()
+) -> dbus_message().
+build(#dbus_message{} = Orig, ErrName, ErrText) ->
+    From = dbus_message:find_field(?FIELD_SENDER, Orig),
+    Fields = [
+        {?FIELD_ERROR_NAME, #dbus_variant{type = string, value = ErrName}},
+        {?FIELD_REPLY_SERIAL, #dbus_variant{type = uint32, value = dbus_message:get_serial(Orig)}},
+        {?FIELD_DESTINATION, #dbus_variant{type = string, value = From}},
+        {?FIELD_SIGNATURE, #dbus_variant{type = signature, value = "s"}}
+    ],
+    Header = #dbus_header{
+        type = ?TYPE_ERROR,
+        fields = Fields
+    },
+    #dbus_message{header = Header, body_sig = [string], body = ErrText}.
 
 -doc """
 Given message, returns error as a `dbus_error:t()`.
