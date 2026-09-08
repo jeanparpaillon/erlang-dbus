@@ -28,6 +28,7 @@ This module defines a proxy to a D-Bus object
     call/3,
     rpc_call/2,
     rpc_call/3,
+    get_conn/1,
     stop/1
 ]).
 
@@ -80,6 +81,10 @@ rpc_call(Proxy, Call) ->
 -spec rpc_call(proxy(), dbus_message(), timeout()) -> term().
 rpc_call(Proxy, Call, Timeout) ->
     with_conn(Proxy, fun(Conn) -> dbus_rpc:call(Conn, Call, Timeout) end).
+
+-spec get_conn(proxy()) -> dbus_connection:connection().
+get_conn(Proxy) ->
+    gen_server:call(Proxy, get_conn).
 
 -spec stop(proxy()) -> ok.
 stop(Proxy) ->
