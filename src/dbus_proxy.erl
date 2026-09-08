@@ -138,8 +138,10 @@ handle_callback(method_call, Call, State) ->
         {noreply, CbState1} ->
             {noreply, State#state{cb_state = CbState1}};
         {reply, Message, CbState1} ->
-            ok = dbus_connection:send(State#state.conn, Message),
-            {noreply, State#state{cb_state = CbState1}};
+            Serial = dbus_message:get_serial(Call),
+            handle_method_response(dbus_message:get_type(Message), Serial, Message, State#state{
+                cb_state = CbState1
+            });
         {error, Reason} ->
             ?LOG_ERROR("Error handling method call ~p: ~p", [Call, Reason]),
             {noreply, State}
@@ -154,6 +156,13 @@ handle_callback(error, Error, State) ->
     CbState = State#state.cb_state,
     {noreply, CbState1} = CbMod:handle_dbus(Error, CbState),
     {noreply, State#state{cb_state = CbState1}}.
+
+handle_method_response(Type, Serial, Message, State) when Type =:= method_return; Type =:= error ->
+    {ok, _} = dbus_connection:send(State#state.conn, dbus_message:set_serial(Serial, Message)),
+    {noreply, State};
+handle_method_response(Type, _Serial, _Message, State) ->
+    ?LOG_ERROR("Unexpected method response type ~p", [Type]),
+    {noreply, State}.
 
 with_conn(Proxy, Fun) ->
     case gen_server:call(Proxy, get_conn) of

@@ -119,14 +119,14 @@ Send given message to the D-Bus peer.
 
 The serial is allocated here, whatever the message type: calls, replies and
 signals all count against the same sequence. A reply to a method call is
-delivered to the process that sent it, as `{dbus, Conn, Type, Message}`.
+delivered to the process that sent it, as `{dbus, Conn, Type, Serial,Message}`.
 
 `#dbus_message.fds` travel with it. On a connection that did not negotiate
 `AGREE_UNIX_FD` a message carrying descriptors is `{error, unix_fd_not_negotiated}`
 and nothing is written; the descriptors stay open and stay the caller's.
 """.
 -spec send(connection(), dbus_message()) ->
-    ok | {error, term()}.
+    {ok, dbus_serial()} | {error, term()}.
 send(Connection, Message) ->
     Type = dbus_message:get_type(Message),
     gen_server:call(Connection, {send, Type, Message}).
@@ -168,7 +168,8 @@ handle_call({send, Type, Message}, From, #state{transport = Conn} = State) ->
     Data = dbus_marshaller:marshal_message(Message1),
     case dbus_transport:send(Conn, Data, Message1#dbus_message.fds) of
         ok ->
-            {reply, ok, expect_reply(Type, Message1, From, State1)};
+            {reply, {ok, dbus_message:get_serial(Message1)},
+                expect_reply(Type, Message1, From, State1)};
         {error, Reason} ->
             {reply, {error, Reason}, State1}
     end;
@@ -307,7 +308,7 @@ dispatch_return(Type, Message, State) ->
 dispatch_return(Type, Message, Serial, #state{callers = Callers} = State) ->
     case ets:lookup(Callers, Serial) of
         [{Serial, {Pid, _Tag}}] ->
-            Pid ! {dbus, self(), Type, Message},
+            Pid ! {dbus, self(), Type, Serial, Message},
             ets:delete(Callers, Serial),
             State;
         [] ->
@@ -317,7 +318,7 @@ dispatch_return(Type, Message, Serial, #state{callers = Callers} = State) ->
 publish_message(Message) ->
     dbus_pubsub:publish(
         self(),
-        {dbus, self(), dbus_message:get_type(Message), Message}
+        {dbus, self(), dbus_message:get_type(Message), dbus_message:get_serial(Message), Message}
     ).
 
 %% What the owner never received, closed here. `m:dbus_fd' is a NIF because
