@@ -284,7 +284,7 @@ fd_return(Destination, ReplySerial) ->
 %%% Receiving
 %%%
 
-%% Both connections deliver `{dbus, Conn, Type, Message}' into this one
+%% Both connections deliver `{dbus, Conn, Type, Serial, Message}' into this one
 %% mailbox, so `Conn' is bound in the pattern: the selective receive leaves the
 %% other connection's messages queued rather than discarding them. `Type' is
 %% the atom the connection already decoded. `NameAcquired' and anything else
@@ -292,7 +292,7 @@ fd_return(Destination, ReplySerial) ->
 %% predicate.
 recv_dbus(Conn, Pred) ->
     receive
-        {dbus, Conn, Type, Msg} ->
+        {dbus, Conn, Type, _Serial, Msg} ->
             case Pred(Type, Msg) of
                 true -> Msg;
                 false -> recv_dbus(Conn, Pred)
