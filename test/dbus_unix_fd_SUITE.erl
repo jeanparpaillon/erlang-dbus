@@ -217,7 +217,7 @@ echo_through_bus(Address, Fd) ->
 
 echo_through_bus(A, AName, B, BName, Fd) ->
     Call = fd_call(BName, 0),
-    ok = dbus_connection:send(A, Call#dbus_message{fds = [Fd]}),
+    {ok, _} = dbus_connection:send(A, Call#dbus_message{fds = [Fd]}),
 
     Received = expect_call(B, ?ECHO_MEMBER),
     ?assertEqual(0, Received#dbus_message.body),
@@ -226,7 +226,7 @@ echo_through_bus(A, AName, B, BName, Fd) ->
 
     try
         Return = fd_return(AName, dbus_message:get_serial(Received)),
-        ok = dbus_connection:send(B, Return#dbus_message{fds = [Relayed]})
+        {ok, _} = dbus_connection:send(B, Return#dbus_message{fds = [Relayed]})
     after
         %% Sent or not, this copy is ours: `sendmsg(2)' gave the daemon a
         %% duplicate of the open file description, not this number.
@@ -240,7 +240,7 @@ echo_through_bus(A, AName, B, BName, Fd) ->
 
 hello(Conn) ->
     Call = method_call(?BUS_NAME, ?BUS_PATH, ?BUS_NAME, <<"Hello">>),
-    ok = dbus_connection:send(Conn, Call),
+    {ok, _} = dbus_connection:send(Conn, Call),
     Msg = expect_return(Conn),
     Msg#dbus_message.body.
 
@@ -301,10 +301,10 @@ recv_dbus(Conn, Pred) ->
         ct:fail(no_matching_dbus_message)
     end.
 
-%% `send/2' does not hand back a serial and does not need to: a reply reaches
-%% the process that made the call, and only for a serial the connection
-%% allocated to it. Nothing here has two calls outstanding on one connection,
-%% so the type is the whole of the correlation.
+%% `send/2' hands back the serial it allocated, but nothing here needs it: a
+%% reply reaches the process that made the call, and only for a serial the
+%% connection allocated to it. Nothing here has two calls outstanding on one
+%% connection, so the type is the whole of the correlation.
 expect_return(Conn) ->
     Msg = recv_dbus(Conn, fun(Type, _) -> is_reply(Type) end),
     case dbus_message:get_type(Msg) of

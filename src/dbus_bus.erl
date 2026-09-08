@@ -13,7 +13,10 @@ dbus_bus is the first class application : proxies bus interfaces
 
 -export([
     init/2,
-    handle_dbus/2,
+    handle_dbus_method_call/2,
+    handle_dbus_method_return/2,
+    handle_dbus_error/2,
+    handle_dbus_signal/2,
     handle_call/3
 ]).
 
@@ -96,15 +99,24 @@ init(Conn, _Args) ->
             {error, Reason}
     end.
 
-handle_dbus(Message, State) ->
+handle_dbus_method_call(_Message, State) ->
+    {noreply, State}.
+
+handle_dbus_method_return(_Message, State) ->
+    {noreply, State}.
+
+handle_dbus_error(_Message, State) ->
+    {noreply, State}.
+
+handle_dbus_signal(Message, State) ->
     Interface = dbus_message:find_field(?FIELD_INTERFACE, Message),
     Member = dbus_message:find_field(?FIELD_MEMBER, Message),
-    do_handle(Interface, Member, Message, State).
+    do_handle_signal(Interface, Member, Message, State).
 
 handle_call(_Call, _From, State) ->
     {reply, ok, State}.
 
-do_handle(?INTERFACE, ?MEMBER_NAME_ACQUIRED, Message, State) ->
+do_handle_signal(?INTERFACE, ?MEMBER_NAME_ACQUIRED, Message, State) ->
     case dbus_message:get_body(Message) of
         <<":", _Rest/binary>> ->
             % Unique name, already stored as `unique_name`
@@ -113,7 +125,7 @@ do_handle(?INTERFACE, ?MEMBER_NAME_ACQUIRED, Message, State) ->
             State1 = State#state{acquired = [Name | State#state.acquired]},
             {noreply, State1}
     end;
-do_handle(_Interface, _Member, Message, State) ->
+do_handle_signal(_Interface, _Member, Message, State) ->
     ?LOG_INFO("Received message ~p", [Message]),
     {noreply, State}.
 

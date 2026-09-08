@@ -8,9 +8,15 @@ This module defines a proxy to a D-Bus object
 -behaviour(gen_server).
 
 -callback init(dbus_connection:connection(), term()) -> {ok, term()} | {error, term()}.
--callback handle_dbus(dbus_message(), State) ->
+-callback handle_dbus_method_call(dbus_message(), State) ->
     {reply, dbus_message(), State}
     | {noreply, State}.
+-callback handle_dbus_method_return(dbus_message(), State) ->
+    {noreply, State}.
+-callback handle_dbus_error(dbus_message(), State) ->
+    {noreply, State}.
+-callback handle_dbus_signal(dbus_message(), State) ->
+    {noreply, State}.
 -callback handle_call(term(), gen_server:from(), State) ->
     {reply, term(), State}
     | {noreply, State}
@@ -19,7 +25,9 @@ This module defines a proxy to a D-Bus object
 -export([
     start_link/4,
     call/2,
+    call/3,
     rpc_call/2,
+    rpc_call/3,
     stop/1
 ]).
 
@@ -61,9 +69,17 @@ start_link(CbMod, CbArgs, Conn, Opts) ->
 call(Proxy, Request) ->
     gen_server:call(Proxy, {proxy, Request}).
 
+-spec call(proxy(), term(), timeout()) -> term().
+call(Proxy, Request, Timeout) ->
+    gen_server:call(Proxy, {proxy, Request}, Timeout).
+
 -spec rpc_call(proxy(), dbus_message()) -> term().
 rpc_call(Proxy, Call) ->
     with_conn(Proxy, fun(Conn) -> dbus_rpc:call(Conn, Call) end).
+
+-spec rpc_call(proxy(), dbus_message(), timeout()) -> term().
+rpc_call(Proxy, Call, Timeout) ->
+    with_conn(Proxy, fun(Conn) -> dbus_rpc:call(Conn, Call, Timeout) end).
 
 -spec stop(proxy()) -> ok.
 stop(Proxy) ->
@@ -101,7 +117,7 @@ handle_call(_Call, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info({dbus, Conn, Type, Message}, #state{conn = Conn} = State) ->
+handle_info({dbus, Conn, Type, _Serial, Message}, #state{conn = Conn} = State) ->
     handle_callback(Type, Message, State);
 handle_info(_Info, State) ->
     {noreply, State}.
@@ -126,15 +142,16 @@ resolve(Name) when is_atom(Name) ->
         Pid -> Pid
     end.
 
+% Handle message from the transport
 handle_callback(signal, Signal, State) ->
     CbMod = State#state.cb_mod,
     CbState = State#state.cb_state,
-    {noreply, CbState1} = CbMod:handle_dbus(Signal, CbState),
+    {noreply, CbState1} = CbMod:handle_dbus_signal(Signal, CbState),
     {noreply, State#state{cb_state = CbState1}};
 handle_callback(method_call, Call, State) ->
     CbMod = State#state.cb_mod,
     CbState = State#state.cb_state,
-    case CbMod:handle_dbus(Call, CbState) of
+    case CbMod:handle_dbus_method_call(Call, CbState) of
         {noreply, CbState1} ->
             {noreply, State#state{cb_state = CbState1}};
         {reply, Message, CbState1} ->
@@ -149,12 +166,12 @@ handle_callback(method_call, Call, State) ->
 handle_callback(method_return, Return, State) ->
     CbMod = State#state.cb_mod,
     CbState = State#state.cb_state,
-    {noreply, CbState1} = CbMod:handle_dbus(Return, CbState),
+    {noreply, CbState1} = CbMod:handle_dbus_method_return(Return, CbState),
     {noreply, State#state{cb_state = CbState1}};
 handle_callback(error, Error, State) ->
     CbMod = State#state.cb_mod,
     CbState = State#state.cb_state,
-    {noreply, CbState1} = CbMod:handle_dbus(Error, CbState),
+    {noreply, CbState1} = CbMod:handle_dbus_error(Error, CbState),
     {noreply, State#state{cb_state = CbState1}}.
 
 handle_method_response(Type, Serial, Message, State) when Type =:= method_return; Type =:= error ->

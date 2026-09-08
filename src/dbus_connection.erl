@@ -108,7 +108,7 @@ get_guid(Connection) ->
 Subscribe to connection messages
 
 Messages are sent to subscribers as:
-`{dbus, Conn, Type, Message}`
+`{dbus, Conn, Type, Serial, Message}`
 """.
 -spec subscribe(connection()) -> ok.
 subscribe(Connection) ->
@@ -119,7 +119,7 @@ Send given message to the D-Bus peer.
 
 The serial is allocated here, whatever the message type: calls, replies and
 signals all count against the same sequence. A reply to a method call is
-delivered to the process that sent it, as `{dbus, Conn, Type, Serial,Message}`.
+delivered to the process that sent it, as `{dbus, Conn, Type, Serial, Message}`.
 
 `#dbus_message.fds` travel with it. On a connection that did not negotiate
 `AGREE_UNIX_FD` a message carrying descriptors is `{error, unix_fd_not_negotiated}`
@@ -528,7 +528,7 @@ sending_descriptors_unnegotiated_test() ->
 %%%
 delivered() ->
     receive
-        {dbus, _Conn, _Type, Msg} -> [Msg | delivered()]
+        {dbus, _Conn, _Type, _Serial, Msg} -> [Msg | delivered()]
     after 0 -> []
     end.
 
