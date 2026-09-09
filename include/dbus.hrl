@@ -126,7 +126,9 @@
     %% `dbus_message:fd/2' resolves one. The `UNIX_FDS' header field is
     %% synthesised from it while marshalling, so a caller sets this and never
     %% the field.
-    fds = [] :: [non_neg_integer()]
+    fds = [] :: [non_neg_integer()],
+    %% Accumulator field used when building messages
+    errors = #{} :: map()
 }).
 
 -type dbus_message() :: #dbus_message{}.
