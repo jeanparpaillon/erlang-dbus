@@ -29,7 +29,6 @@ Auth context can be:
 | Type | Authorization identity sent |
 |---|---|
 | `integer()` | user ID |
-| `binary()` | user ID/name as a binary |
 | `none` | no identity |
 | `uid` | user ID of the running VM |
 
@@ -67,8 +66,6 @@ init(Uid) when is_integer(Uid) andalso Uid >= 0 ->
     {ok, {identity, integer_to_binary(Uid)}};
 init(Uid) when is_integer(Uid) ->
     {error, {invalid_identity, Uid}};
-init(Uid) when is_binary(Uid) ->
-    {ok, {identity, Uid}};
 init(uid) ->
     case dbus_auth:detect_uid() of
         {ok, Uid} -> {ok, {identity, integer_to_binary(Uid)}};

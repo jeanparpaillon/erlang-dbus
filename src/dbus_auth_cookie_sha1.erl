@@ -37,7 +37,6 @@ The context is a proplist that can contain the following keys:
 
 | Key | Value Type | Identity sent |
 |---|---|---|
-| `username` | `binary` or `string` | User name trying to authenticate |
 | `uid` | `integer` | User ID trying to authenticate |
 | `keyring_dir` | `binary` or `string` | Read cookies from this dir |
 
@@ -86,7 +85,7 @@ lays out for writers.
 -define(DEFAULT_KEYRING_DIR, ".dbus-keyrings").
 
 -record(state, {
-    user = undefined :: binary() | undefined,
+    uid = undefined :: integer() | undefined,
     %% `undefined' when no home directory could be found -- reported from
     %% challenge/2, see the moduledoc.
     keyring_dir = undefined :: file:filename_all() | undefined,
@@ -124,8 +123,9 @@ There is no shortcut: the mechanism always continues, since the cookie
 cannot be located before the server has named its context and cookie ID.
 """.
 -spec initial_response(state()) -> {continue, binary(), state()}.
-initial_response(#state{user = User} = State) ->
-    {continue, hex(User), State}.
+initial_response(#state{uid = Uid} = State) ->
+    BinUid = integer_to_binary(Uid),
+    {continue, hex(BinUid), State}.
 
 -doc """
 Answers `<context> <cookie id> <server challenge>' with
@@ -163,11 +163,7 @@ answer(Context, CookieId, ServerChallenge, State) ->
 
 %%% The auth context
 process_option(uid, Uid, State) when is_integer(Uid) andalso Uid >= 0 ->
-    State#state{user = integer_to_binary(Uid)};
-process_option(username, Username, State) when is_binary(Username) ->
-    State#state{user = Username};
-process_option(username, Username, State) when is_list(Username) ->
-    State#state{user = list_to_binary(Username)};
+    State#state{uid = Uid};
 process_option(keyring_dir, KeyringDir, State) when is_binary(KeyringDir) ->
     State#state{keyring_dir = KeyringDir};
 process_option(keyring_dir, KeyringDir, State) when is_list(KeyringDir) ->
@@ -175,10 +171,10 @@ process_option(keyring_dir, KeyringDir, State) when is_list(KeyringDir) ->
 process_option(_, _, State) ->
     State.
 
-validate_options(#state{user = undefined} = State) ->
+validate_options(#state{uid = undefined} = State) ->
     case dbus_auth:detect_uid() of
         {ok, Uid} ->
-            validate_options(State#state{user = integer_to_binary(Uid)});
+            validate_options(State#state{uid = Uid});
         _ ->
             {error, no_identity}
     end;
@@ -394,8 +390,6 @@ initial_response_test_() ->
         ?_assertEqual(<<"31303030">>, Identity(#{uid => 1000})),
         ?_assertEqual(<<"30">>, Identity(#{uid => 0})),
         %% a login name is equally acceptable to the reference server
-        ?_assertEqual(<<"6a65616e">>, Identity(#{username => <<"jean">>})),
-        ?_assertEqual(<<"6a65616e">>, Identity(#{username => "jean"})),
         %% a proplist says the same thing as a map
         ?_assertEqual(<<"31303030">>, Identity([{uid, 1000}]))
     ].
@@ -590,7 +584,7 @@ no_home_test() ->
 %% reported from challenge/2 -- the state machine turns that into ERROR and
 %% gives the next mechanism its turn.
 no_keyring_dir_is_reported_from_challenge_test() ->
-    State = #state{user = <<"1000">>},
+    State = #state{uid = 1000},
     ?assertEqual(undefined, State#state.keyring_dir),
     ?assertEqual({error, no_keyring_dir}, challenge(server_data(), State)).
 
