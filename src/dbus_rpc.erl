@@ -23,11 +23,19 @@ call(Conn, Call) ->
     | ok
     | {error, term()}.
 call(Conn, Call, Timeout) ->
+    case dbus_message:get_type(Call) of
+        method_call ->
+            do_call(Conn, Call, Timeout);
+        _ ->
+            {error, {invalid_call, Call}}
+    end.
+
+do_call(Conn, Call, Timeout) ->
     case dbus_connection:send(Conn, Call) of
         {ok, Serial} ->
             case dbus_method_call:no_reply_expected(Call) of
                 true ->
-                    {ok, Serial};
+                    ok;
                 false ->
                     wait_for_return(Conn, Serial, Timeout)
             end;
